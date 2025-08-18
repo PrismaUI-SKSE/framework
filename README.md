@@ -1,45 +1,60 @@
-# PrismaUI SKSE Plugin Template
+﻿# PrismaUI
 
-This is a basic plugin template using PrismaUI and CommonLibSSE-NG.
+Skyrim Next-Gen Web UI Framework. **Work In Progress Early Ready-To-Use Stage.**
 
-> **You can download ready-to-use plugin for MO2 here: [Download PrismaUI-Example-Plugin](https://github.com/PrismaUI-SKSE/PrismaUI-Wiki/releases)**
+- **Docs and Guides: https://www.prismaui.dev**
+- **Discord Community: https://discord.com/invite/QYztzZY8RG**
 
-### Requirements
-* [XMake](https://xmake.io) [2.8.2+]
-* C++23 Compiler (MSVC, Clang-CL)
+## Contributing Guide
 
-## Getting Started
+- Feel free to remade, improve or extend this project.
+
+## Development
+
+#### Requirements
+
+- [XMake](https://xmake.io) [2.8.2+]
+- C++23 Compiler (MSVC, Clang-CL)
+- Windows 10/11
+- DirectX 11
+
+### Getting Started
+
 ```bat
-git clone --recurse-submodules https://github.com/PrismaUI-SKSE/PrismaUI-Example-Plugin.git
+git clone --recurse-submodules git@github.com:PrismaUI-SKSE/PrismaUI.git
 ```
 
 ### Build
-- To build the project, run the following command:
+
+To build the project, run the following command:
+
 ```bat
 xmake build
 ```
-> ***Note:*** *This will generate a `build/windows/` directory in the **project's root directory** with the build output.*
 
-- Move `view/index.html` to your plugin folder in `<YourPluginName>/PrismaUI/views/PrismaUI-Example-UI/index.html`.
+> **_Note:_** *This will generate a `build/windows/` directory in the **project's root directory** with the build output.*d
 
 ### Project Generation for Visual Studio
+
 If you want to generate a Visual Studio project, run the following command:
+
 ```bat
 xmake project -k vsxmake
 ```
 
-> ***Note:*** *This will generate a `vsxmakeXXXX/` directory in the **project's root directory** using the latest version of Visual Studio installed on the system.*
+> **_Note:_** _This will generate a `vsxmakeXXXX/` directory in the **project's root directory** using the latest version of Visual Studio installed on the system._
 
-### Upgrading Packages
+### Upgrading Packages (Optional)
+
 If you want to upgrade the project's dependencies, run the following commands:
+
 ```bat
 xmake repo --update
 xmake require --upgrade
 ```
 
-### Build Output (Optional)
-If you want to redirect the build output, set one of or both of the following environment variables:
+## Dependencies / Acknowledgments
 
-- Path to a Skyrim install folder: `XSE_TES5_GAME_PATH`
+This plugin utilizes the **[Ultralight](https://ultralig.ht) SDK** for rendering web content.
 
-- Path to a Mod Manager mods folder: `XSE_TES5_MODS_PATH`
+The Ultralight SDK is provided under the **[Ultralight Free License Agreement](https://ultralig.ht/free-license/LICENSE.txt)**. The full terms of this license are available in the `NOTICES.txt` file located at the root of this repository.

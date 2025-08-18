@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #pragma warning(push)
 #include <RE/Skyrim.h>

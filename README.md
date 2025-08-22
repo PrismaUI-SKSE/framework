@@ -7,7 +7,7 @@ Skyrim Next-Gen Web UI Framework. **Work In Progress Early Ready-To-Use Stage.**
 
 ## Contributing Guide
 
-- Feel free to remade, improve or extend this project.
+- Feel free to remake, improve or extend this project.
 
 ## Development
 

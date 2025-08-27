@@ -58,3 +58,19 @@ xmake require --upgrade
 This plugin utilizes the **[Ultralight](https://ultralig.ht) SDK** for rendering web content.
 
 The Ultralight SDK is provided under the **[Ultralight Free License Agreement](https://ultralig.ht/free-license/LICENSE.txt)**. The full terms of this license are available in the `NOTICES.txt` file located at the root of this repository.
+
+## License
+
+This project is licensed under the **Prisma UI Source-Available License v2**. Please see the [`LICENSE.md`](LICENSE.md) file for the full text.
+
+**TL;DR (Summary):**
+
+**You ARE allowed to:**
+*   Use the mod for non-commercial gameplay.
+*   **Share and distribute the original mod files** with anyone.
+*   Modify the mod for your own **private use**.
+*   Fork the repository to submit Pull Requests with improvements.
+
+**You ARE NOT allowed to:**
+*   **Publicly release or distribute your own modified versions** of this mod.
+*   Use the mod or its code for any commercial purpose.

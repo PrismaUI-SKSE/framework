@@ -9,7 +9,7 @@ Copyright (c) 2025 Prisma UI
 ### Granted Rights (What you ARE allowed to do)
 The Author hereby grants, free of charge, to any person obtaining a copy of the Software the following rights:
 
-1.  **To Use:** To use the Software for personal, non-commercial purposes.
+1.  **To Use:** To use the Software for **non-commercial purposes**. This includes incorporating the Software into larger, non-commercial works, such as modpacks.
 2.  **To Study:** To view and study the source code to understand how it works and to learn from it.
 3.  **To Distribute:** To copy, share, and distribute the **Original Version** of the Software freely.
 4.  **To Modify for Private Use:** To create a Modified Version for personal, private use only (i.e., not distributed or made public).
@@ -19,7 +19,7 @@ The Author hereby grants, free of charge, to any person obtaining a copy of the 
 It is strictly forbidden to:
 
 1.  **Publish Modified Versions:** You may not publicly publish, release, or distribute any **Modified Version** of the Software. All public versions must be the Original Version from the Author.
-2.  **Use for Commercial Purposes:** You may not use the Software, in whole or in part, for any commercial purpose.
+2.  **Use for Commercial Purposes:** You may not use the Software, in whole or in part, for any commercial purpose. This restriction applies even when the Software is part of a larger work like a modpack.
 
 ### Disclaimer of Warranty
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR

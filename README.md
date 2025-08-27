@@ -65,11 +65,15 @@ This project is licensed under the **Prisma UI Source-Available License v2**. Pl
 
 ### Summary
 
-**You ARE allowed to:**
-*   **Share and distribute the original mod files** with anyone.
-*   Modify the mod for your own **private use**.
-*   Fork the repository to submit Pull Requests with improvements.
+This license is designed to keep the framework free, open for contributions, and allow its use in community projects, while protecting the author's control over public versions.
 
-**You ARE NOT allowed to:**
-*   **Publicly release or distribute your own modified versions** of this mod.
-*   Use the mod or its code for any commercial purpose.
+✔️ **You ARE allowed to:**
+*   Use the framework in your game.
+*   Include the framework in **non-commercial modpacks**.
+*   **Share and distribute the original framework files** with anyone.
+*   Modify the framework for your own **private use**.
+*   Fork the repository to submit improvements via Pull Request.
+
+❌ **You ARE NOT allowed to:**
+*   **Publicly release or distribute your own modified versions** of this framework.
+*   Use the framework or any modpack containing it for **any commercial purpose**.

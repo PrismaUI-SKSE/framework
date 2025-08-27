@@ -77,5 +77,4 @@ This license is designed to keep the framework free for community and small comm
 ❌ **You ARE NOT allowed to:**
 *   **Publicly release or distribute your own modified versions** of this framework without the author's explicit written permission.
 *   **Use the framework commercially** if your company's revenue or funding is **over US$100,000** (unless you purchase a Pro License from Ultralight, Inc.).
-*   **Forget to include the required attribution notice** in your application's credits.
 *   **Reverse-engineer** the included Ultralight SDK components.

@@ -7,7 +7,7 @@ Skyrim Next-Gen Web UI Framework. **Work In Progress Early Ready-To-Use Stage.**
 
 ## Contributing Guide
 
-- Feel free to remake, improve or extend this project.
+- Feel free to contribute to this project.
 
 ## Development
 
@@ -15,8 +15,6 @@ Skyrim Next-Gen Web UI Framework. **Work In Progress Early Ready-To-Use Stage.**
 
 - [XMake](https://xmake.io) [2.8.2+]
 - C++23 Compiler (MSVC, Clang-CL)
-- Windows 10/11
-- DirectX 11
 
 ### Getting Started
 

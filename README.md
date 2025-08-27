@@ -66,7 +66,6 @@ This project is licensed under the **Prisma UI Source-Available License v2**. Pl
 ### Summary
 
 **You ARE allowed to:**
-*   Use the mod for non-commercial gameplay.
 *   **Share and distribute the original mod files** with anyone.
 *   Modify the mod for your own **private use**.
 *   Fork the repository to submit Pull Requests with improvements.

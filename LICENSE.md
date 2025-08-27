@@ -47,8 +47,6 @@ The rights granted in Section 2 are subject to the following restrictions. It is
 
 3.3. **Violate Inherited Obligations**: You must adhere to the following obligations passed down from The Ultralight License:
     (a) **No Reverse Engineering**: You may not decompile, disassemble, or otherwise attempt to discover the source code of the binary components of the Ultralight SDK included with The Software.
-    (b) **Required Attribution**: In any application you distribute that uses The Software, you must include the following line in its "credits" section or in an accompanying `NOTICES.txt` file:
-    `Please see the accompanying NOTICES.txt for full text.`
 
 **Section 4: Disclaimer of Warranty**
 

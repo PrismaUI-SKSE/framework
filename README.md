@@ -63,7 +63,7 @@ The Ultralight SDK is provided under the **[Ultralight Free License Agreement](h
 
 This project is licensed under the **Prisma UI Source-Available License v2**. Please see the [`LICENSE.md`](LICENSE.md) file for the full text.
 
-**TL;DR (Summary):**
+### Summary
 
 **You ARE allowed to:**
 *   Use the mod for non-commercial gameplay.

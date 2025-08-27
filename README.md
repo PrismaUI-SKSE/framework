@@ -61,19 +61,21 @@ The Ultralight SDK is provided under the **[Ultralight Free License Agreement](h
 
 ## License
 
-This project is licensed under the **Prisma UI Source-Available License v2**. Please see the [`LICENSE.md`](LICENSE.md) file for the full text.
+This project is licensed under the **Prisma UI Framework License**. Please see the [`LICENSE.md`](LICENSE.md) file for the full text.
 
 ### Summary
 
-This license is designed to keep the framework free, open for contributions, and allow its use in community projects, while protecting the author's control over public versions.
+This license is designed to keep the framework free for community and small commercial projects, encourage contributions, and give the author full control over public versions of the code.
 
 ✔️ **You ARE allowed to:**
-*   Use the framework in your game.
-*   Include the framework in **non-commercial modpacks**.
-*   **Share and distribute the original framework files** with anyone.
-*   Modify the framework for your own **private use**.
-*   Fork the repository to submit improvements via Pull Request.
+*   **Use** the framework in your non-commercial or small commercial project.
+*   **Use it commercially** if your company's total annual revenue and total funding are **under US$100,000**.
+*   **Share and distribute** the original, official framework files with anyone.
+*   **Modify** the framework for your own **private use**.
+*   **Fork the repository** for the sole purpose of submitting improvements back to the official project via a Pull Request.
 
 ❌ **You ARE NOT allowed to:**
-*   **Publicly release or distribute your own modified versions** of this framework.
-*   Use the framework or any modpack containing it for **any commercial purpose**.
+*   **Publicly release or distribute your own modified versions** of this framework without the author's explicit written permission.
+*   **Use the framework commercially** if your company's revenue or funding is **over US$100,000** (unless you purchase a Pro License from Ultralight, Inc.).
+*   **Forget to include the required attribution notice** in your application's credits.
+*   **Reverse-engineer** the included Ultralight SDK components.

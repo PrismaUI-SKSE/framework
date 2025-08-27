@@ -61,7 +61,7 @@ The Ultralight SDK is provided under the **[Ultralight Free License Agreement](h
 
 ## License
 
-This project is licensed under the **Prisma UI Framework License**. Please see the [`LICENSE.md`](LICENSE.md) file for the full text.
+This project is licensed under the **Prisma UI License**. Please see the [`LICENSE.md`](LICENSE.md) file for the full text.
 
 ### Summary
 

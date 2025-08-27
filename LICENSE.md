@@ -1,7 +1,7 @@
 Copyright (c) 2025 Prisma UI
 
 ### Definitions
-- "The Software" refers to this mod, including its source code, compiled versions ("binaries"), and all associated files.
+- "The Software" refers to this framework, including its source code, compiled versions ("binaries"), and all associated files.
 - "The Author" refers to Prisma UI.
 - "The Original Version" refers to the Software as distributed by the Author.
 - "A Modified Version" refers to any version of the Software that has been altered, adapted, or changed in any way from the Original Version.

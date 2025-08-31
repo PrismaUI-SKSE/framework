@@ -17,10 +17,4 @@ namespace Hooks {
         REL::Relocation<uint32_t> hook{ id, offset };
         return __install(hook, func);
     }
-
-    uintptr_t UpdateHook::Install(UpdateFunc* func)
-    {
-        REL::Relocation<uint32_t> hook{ id, offset };
-        return __install(hook, func);
-    }
 }

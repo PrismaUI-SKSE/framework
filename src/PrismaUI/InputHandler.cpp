@@ -1,25 +1,27 @@
-#include <PrismaUI/PrismaUI.h>
+﻿#include "InputHandler.h"
+#include "Core.h"
+#include "ViewManager.h"
 
 namespace PrismaUI::InputHandler {
-    namespace {
-        HWND g_hWnd = nullptr;
-        WNDPROC g_originalWndProc = nullptr;
-        SingleThreadExecutor* g_uiThreadExecutor = nullptr;
-        std::map<PrismaViewId, std::shared_ptr<Core::PrismaView>>* g_viewsMap = nullptr;
-        std::shared_mutex* g_viewsMapMutex = nullptr;
+	using namespace Core;
 
-        PrismaViewId g_currentlyFocusedViewId;
-        std::mutex g_focusedViewIdMutex;
+    HWND g_hWnd = nullptr;
+    WNDPROC g_originalWndProc = nullptr;
+    SingleThreadExecutor* g_uiThreadExecutor = nullptr;
+    std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* g_viewsMap = nullptr;
+    std::shared_mutex* g_viewsMapMutex = nullptr;
 
-        std::atomic<bool> g_isAnyInputCaptureActive = false;
+    Core::PrismaViewId g_currentlyFocusedViewId;
+    std::mutex g_focusedViewIdMutex;
 
-        std::mutex g_eventQueueMutex;
-        std::vector<InputEvent> g_eventQueue;
+    std::atomic<bool> g_isAnyInputCaptureActive = false;
 
-        const int SCROLL_LINES_PER_WHEEL_DELTA = 1;
-        
-        bool g_mouseButtonStates[3] = { false, false, false };
-    }
+    std::mutex g_eventQueueMutex;
+    std::vector<InputEvent> g_eventQueue;
+
+    const int SCROLL_LINES_PER_WHEEL_DELTA = 1;
+
+    bool g_mouseButtonStates[3] = { false, false, false };
 
     class MouseEventListener : public RE::BSTEventSink<RE::InputEvent*> {
     public:
@@ -98,16 +100,16 @@ namespace PrismaUI::InputHandler {
                             g_eventQueue.emplace_back(ev);
                         }
                     }
-                    
+
                     else if (idCode == 8 || idCode == 9) {
                         if (isPressed) {
                             ultralight::ScrollEvent ev;
                             ev.type = ultralight::ScrollEvent::kType_ScrollByPixel;
                             ev.delta_x = 0;
 
-                            int scrollPixelSize = 28;
+                    int scrollPixelSize = 28;
 
-                            PrismaViewId focusedViewId;
+                            Core::PrismaViewId focusedViewId;
                             {
                                 std::lock_guard lock(g_focusedViewIdMutex);
                                 focusedViewId = g_currentlyFocusedViewId;
@@ -122,10 +124,10 @@ namespace PrismaUI::InputHandler {
                             }
 
                             float scrollAmount = SCROLL_LINES_PER_WHEEL_DELTA * scrollPixelSize;
-                            if (idCode == 9) { 
+                            if (idCode == 9) {
                                 ev.delta_y = -scrollAmount;
                             }
-                            else { 
+                            else {
                                 ev.delta_y = scrollAmount;
                             }
 
@@ -145,7 +147,7 @@ namespace PrismaUI::InputHandler {
         }
     };
 
-    void Initialize(HWND gameHwnd, SingleThreadExecutor* coreExecutor, std::map<PrismaViewId, std::shared_ptr<Core::PrismaView>>* viewsMap, std::shared_mutex* viewsMapMutex) {
+    void Initialize(HWND gameHwnd, SingleThreadExecutor* coreExecutor, std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* viewsMap, std::shared_mutex* viewsMapMutex) {
         g_hWnd = gameHwnd;
         g_uiThreadExecutor = coreExecutor;
         g_viewsMap = viewsMap;
@@ -175,7 +177,7 @@ namespace PrismaUI::InputHandler {
         logger::info("PrismaUI::InputHandler Original WndProc set.");
     }
 
-    void EnableInputCapture(const PrismaViewId& viewId) {
+    void EnableInputCapture(const Core::PrismaViewId& viewId) {
         if (viewId == 0) {
             logger::warn("EnableInputCapture called with empty viewId.");
             return;
@@ -197,9 +199,9 @@ namespace PrismaUI::InputHandler {
         g_mouseButtonStates[0] = g_mouseButtonStates[1] = g_mouseButtonStates[2] = false;
     }
 
-    void DisableInputCapture(const PrismaViewId& viewIdToUnfocus) {
+    void DisableInputCapture(const Core::PrismaViewId& viewIdToUnfocus) {
         bool disableSystem = false;
-        PrismaViewId currentFocusedBeforeDisable;
+        Core::PrismaViewId currentFocusedBeforeDisable;
         {
             std::lock_guard lock(g_focusedViewIdMutex);
             currentFocusedBeforeDisable = g_currentlyFocusedViewId;
@@ -251,8 +253,8 @@ namespace PrismaUI::InputHandler {
         return g_isAnyInputCaptureActive.load();
     }
 
-    bool IsInputCaptureActiveForView(const PrismaViewId& viewId) {
-        PrismaViewId currentFocused;
+    bool IsInputCaptureActiveForView(const Core::PrismaViewId& viewId) {
+        Core::PrismaViewId currentFocused;
         {
             std::lock_guard lock(g_focusedViewIdMutex);
             currentFocused = g_currentlyFocusedViewId;
@@ -273,7 +275,7 @@ namespace PrismaUI::InputHandler {
 
         if (g_isAnyInputCaptureActive.load()) {
             bool handledByUI = false;
-            PrismaViewId focusedViewIdCopy;
+            Core::PrismaViewId focusedViewIdCopy;
             {
                 std::lock_guard lock(g_focusedViewIdMutex);
                 focusedViewIdCopy = g_currentlyFocusedViewId;
@@ -282,7 +284,7 @@ namespace PrismaUI::InputHandler {
             switch (uMsg) {
             case WM_KEYDOWN: {
                 if (focusedViewIdCopy != 0) {
-                    ultralight::KeyEvent keyDownEvent = PrismaUI::WindowsKeyHandler::CreateKeyEvent(ultralight::KeyEvent::kType_RawKeyDown, wParam, lParam);
+                    ultralight::KeyEvent keyDownEvent = WinKeyHandler::CreateKeyEvent(ultralight::KeyEvent::kType_RawKeyDown, wParam, lParam);
                     { std::lock_guard lock(g_eventQueueMutex); g_eventQueue.emplace_back(keyDownEvent); }
                     handledByUI = true;
 
@@ -294,14 +296,14 @@ namespace PrismaUI::InputHandler {
                     int charCount = ToUnicodeEx((UINT)wParam, ((lParam >> 16) & 0xFF), kbdState, translatedChars, 4, 0, currentLayout);
 
                     if (charCount > 0) {
-                        bool viewHasInputFieldFocus = Core::ViewHasInputFocus(focusedViewIdCopy);
+                        bool viewHasInputFieldFocus = ViewManager::ViewHasInputFocus(focusedViewIdCopy);
                         if (viewHasInputFieldFocus) {
                             for (int i = 0; i < charCount; ++i) {
                                 wchar_t ch = translatedChars[i];
                                 if (ch >= 0x20 || ch == '\t') {
                                     ultralight::KeyEvent charEvent;
                                     charEvent.type = ultralight::KeyEvent::kType_Char;
-                                    PrismaUI::WindowsKeyHandler::GetUltralightModifiers(charEvent);
+                                    WinKeyHandler::GetUltralightModifiers(charEvent);
 
                                     std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> converter;
                                     wchar_t single_char_str[2] = { ch, 0 };
@@ -323,18 +325,18 @@ namespace PrismaUI::InputHandler {
             }
             case WM_KEYUP: {
                 if (focusedViewIdCopy != 0) {
-                    ultralight::KeyEvent ev = PrismaUI::WindowsKeyHandler::CreateKeyEvent(ultralight::KeyEvent::kType_KeyUp, wParam, lParam);
+                    ultralight::KeyEvent ev = WinKeyHandler::CreateKeyEvent(ultralight::KeyEvent::kType_KeyUp, wParam, lParam);
                     { std::lock_guard lock(g_eventQueueMutex); g_eventQueue.emplace_back(ev); }
                     handledByUI = true;
                 }
                 break;
             }
             case WM_CHAR: {
-                PrismaViewId focusedViewIdCopyLocal;
+                Core::PrismaViewId focusedViewIdCopyLocal;
                 { std::lock_guard lock(g_focusedViewIdMutex); focusedViewIdCopyLocal = g_currentlyFocusedViewId; }
 
                 if (focusedViewIdCopyLocal != 0) {
-                    bool viewHasInputFieldFocus = Core::ViewHasInputFocus(focusedViewIdCopyLocal);
+                    bool viewHasInputFieldFocus = ViewManager::ViewHasInputFocus(focusedViewIdCopyLocal);
                     if (viewHasInputFieldFocus) {
                         handledByUI = true;
                     }
@@ -359,7 +361,7 @@ namespace PrismaUI::InputHandler {
     void ProcessEvents() {
         if (!g_uiThreadExecutor || !g_viewsMap || !g_viewsMapMutex) return;
 
-        PrismaViewId focusedViewIdCopy;
+        Core::PrismaViewId focusedViewIdCopy;
         {
             std::lock_guard lock(g_focusedViewIdMutex);
             focusedViewIdCopy = g_currentlyFocusedViewId;

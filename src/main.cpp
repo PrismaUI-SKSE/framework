@@ -1,5 +1,4 @@
 ﻿#include <Menus/CursorMenu/CursorMenu.h>
-#include <PrismaUI/PrismaUI.h>
 #include <PrismaUI_API.h>
 #include <API/API.h>
 
@@ -24,7 +23,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
     }
     
     SKSE::Init(a_skse);
-    logger::info("---------------- PrismaUI 1.0.0 by StarkMP <discord: starkmp> ----------------");
+    logger::info("---------------- PrismaUI 1.1.0 by StarkMP <discord: starkmp> ----------------");
     logger::info("-------------------- Docs and Guides: https://prismaui.dev -------------------");
     SKSE::AllocTrampoline(1 << 10);
 
@@ -36,8 +35,6 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 extern "C" DLLEXPORT void* SKSEAPI RequestPluginAPI(const PRISMA_UI_API::InterfaceVersion a_interfaceVersion)
 {
     auto api = PluginAPI::PrismaUIInterface::GetSingleton();
-
-    logger::info("RequestPluginAPI called");
 
     switch (a_interfaceVersion) {
     case PRISMA_UI_API::InterfaceVersion::V1:

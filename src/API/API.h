@@ -1,7 +1,6 @@
 ﻿#pragma once
 
 #include <PrismaUI_API.h>
-#include <PrismaUI/PrismaUI.h>
 
 class PluginAPI
 {

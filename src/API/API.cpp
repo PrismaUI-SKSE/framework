@@ -1,5 +1,7 @@
 ﻿#include "API.h"
 #include <Utils/Encoding.h>
+#include <PrismaUI/ViewManager.h>
+#include <PrismaUI/Communication.h>
 
 PrismaView PluginAPI::PrismaUIInterface::CreateView(const char* htmlPath, PRISMA_UI_API::OnDomReadyCallback onDomReadyCallback) noexcept
 {
@@ -7,22 +9,14 @@ PrismaView PluginAPI::PrismaUIInterface::CreateView(const char* htmlPath, PRISMA
         return 0;
     }
 
-    std::function<void(PrismaView)> domReadyWrapper = nullptr;
+    std::function<void(PrismaUI::Core::PrismaViewId)> domReadyWrapper = nullptr;
     if (onDomReadyCallback) {
-        domReadyWrapper = [onDomReadyCallback](PrismaView viewId) {
+        domReadyWrapper = [onDomReadyCallback](PrismaUI::Core::PrismaViewId viewId) {
             onDomReadyCallback(viewId);
         };
     }
 
-    PrismaViewId newViewId = PrismaUI::Core::Create(htmlPath, domReadyWrapper);
-
-    std::shared_lock lock(PrismaUI::Core::viewsMutex);
-    auto it = PrismaUI::Core::views.find(newViewId);
-    if (it != PrismaUI::Core::views.end()) {
-        return it->first;
-    }
-
-    return 0; 
+    return PrismaUI::ViewManager::Create(htmlPath, domReadyWrapper);
 }
 
 void PluginAPI::PrismaUIInterface::Invoke(PrismaView view, const char* script, PRISMA_UI_API::JSCallback callback) noexcept
@@ -49,7 +43,7 @@ void PluginAPI::PrismaUIInterface::Invoke(PrismaView view, const char* script, P
             };
     }
     
-    return PrismaUI::Core::Invoke(view, _script, callbackWrapper);
+    return PrismaUI::Communication::Invoke(view, _script, callbackWrapper);
 }
 
 void PluginAPI::PrismaUIInterface::InteropCall(PrismaView view, const char* functionName, const char* argument) noexcept
@@ -67,7 +61,7 @@ void PluginAPI::PrismaUIInterface::InteropCall(PrismaView view, const char* func
         processedArgument = convertFromANSIToUTF8(argument);
     }
 
-    return PrismaUI::Core::InteropCall(view, functionName, processedArgument);
+    return PrismaUI::Communication::InteropCall(view, functionName, processedArgument);
 }
 
 void PluginAPI::PrismaUIInterface::RegisterJSListener(PrismaView view, const char* fnName, PRISMA_UI_API::JSListenerCallback callback) noexcept
@@ -80,7 +74,7 @@ void PluginAPI::PrismaUIInterface::RegisterJSListener(PrismaView view, const cha
         callback(arg.c_str());
         };
 
-    return PrismaUI::Core::RegisterJSListener(view, fnName, callbackWrapper);
+    return PrismaUI::Communication::RegisterJSListener(view, fnName, callbackWrapper);
 }
 
 bool PluginAPI::PrismaUIInterface::HasFocus(PrismaView view) noexcept
@@ -88,7 +82,7 @@ bool PluginAPI::PrismaUIInterface::HasFocus(PrismaView view) noexcept
     if (!view) {
         return false;
     }
-    return PrismaUI::Core::HasFocus(view);
+    return PrismaUI::ViewManager::HasFocus(view);
 }
 
 bool PluginAPI::PrismaUIInterface::Focus(PrismaView view, bool pauseGame) noexcept
@@ -96,7 +90,7 @@ bool PluginAPI::PrismaUIInterface::Focus(PrismaView view, bool pauseGame) noexce
     if (!view) {
         return false;
     }
-    return PrismaUI::Core::Focus(view, pauseGame);
+    return PrismaUI::ViewManager::Focus(view, pauseGame);
 }
 
 void PluginAPI::PrismaUIInterface::Unfocus(PrismaView view) noexcept
@@ -104,7 +98,7 @@ void PluginAPI::PrismaUIInterface::Unfocus(PrismaView view) noexcept
     if (!view) {
         return;
     }
-    return PrismaUI::Core::Unfocus(view);
+    return PrismaUI::ViewManager::Unfocus(view);
 }
 
 int PluginAPI::PrismaUIInterface::GetScrollingPixelSize(PrismaView view) noexcept
@@ -112,7 +106,7 @@ int PluginAPI::PrismaUIInterface::GetScrollingPixelSize(PrismaView view) noexcep
     if (!view) {
         return 28;
     }
-    return PrismaUI::Core::GetScrollingPixelSize(view);
+    return PrismaUI::ViewManager::GetScrollingPixelSize(view);
 }
 
 void PluginAPI::PrismaUIInterface::SetScrollingPixelSize(PrismaView view, int pixelSize) noexcept
@@ -120,7 +114,7 @@ void PluginAPI::PrismaUIInterface::SetScrollingPixelSize(PrismaView view, int pi
     if (!view) {
         return;
     }
-    return PrismaUI::Core::SetScrollingPixelSize(view, pixelSize);
+    return PrismaUI::ViewManager::SetScrollingPixelSize(view, pixelSize);
 }
 
 bool PluginAPI::PrismaUIInterface::IsValid(PrismaView view) noexcept
@@ -128,7 +122,7 @@ bool PluginAPI::PrismaUIInterface::IsValid(PrismaView view) noexcept
     if (!view) {
         return false;
     }
-    return PrismaUI::Core::IsValid(view);
+    return PrismaUI::ViewManager::IsValid(view);
 }
 
 void PluginAPI::PrismaUIInterface::Destroy(PrismaView view) noexcept
@@ -136,5 +130,5 @@ void PluginAPI::PrismaUIInterface::Destroy(PrismaView view) noexcept
     if (!view) {
         return;
     }
-    return PrismaUI::Core::Destroy(view);
+    return PrismaUI::ViewManager::Destroy(view);
 }

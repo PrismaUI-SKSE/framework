@@ -1,8 +1,6 @@
-﻿#include <PrismaUI/PrismaUI.h>
+﻿#include "WinKeyHandler.h"
 
-namespace PrismaUI::WindowsKeyHandler {
-	using namespace ultralight::KeyCodes;
-
+namespace WinKeyHandler {
 	int WinKeyToUltralightKey(UINT win_key) {
 		switch (win_key) {
 		case VK_BACK: return GK_BACK;

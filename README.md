@@ -7,7 +7,7 @@ Skyrim Next-Gen Web UI Framework. **Work In Progress Early Ready-To-Use Stage.**
 
 ## Contributing Guide
 
-- Feel free to remade, improve or extend this project.
+- Feel free to contribute to this project.
 
 ## Development
 
@@ -15,8 +15,6 @@ Skyrim Next-Gen Web UI Framework. **Work In Progress Early Ready-To-Use Stage.**
 
 - [XMake](https://xmake.io) [2.8.2+]
 - C++23 Compiler (MSVC, Clang-CL)
-- Windows 10/11
-- DirectX 11
 
 ### Getting Started
 
@@ -58,3 +56,23 @@ xmake require --upgrade
 This plugin utilizes the **[Ultralight](https://ultralig.ht) SDK** for rendering web content.
 
 The Ultralight SDK is provided under the **[Ultralight Free License Agreement](https://ultralig.ht/free-license/LICENSE.txt)**. The full terms of this license are available in the `NOTICES.txt` file located at the root of this repository.
+
+## License
+
+This project is licensed under the **Prisma UI License**. Please see the [`LICENSE.md`](LICENSE.md) file for the full text.
+
+### Summary
+
+This license is designed to keep the framework free for community and small commercial projects, encourage contributions, and give the author full control over public versions of the code.
+
+✔️ **You ARE allowed to:**
+*   **Use** the framework in your non-commercial or small commercial project.
+*   **Use it commercially** if your company's total annual revenue and total funding are **under US$100,000**.
+*   **Share and distribute** the original, official framework files with anyone.
+*   **Modify** the framework for your own **private use**.
+*   **Fork the repository** for the sole purpose of submitting improvements back to the official project via a Pull Request.
+
+❌ **You ARE NOT allowed to:**
+*   **Publicly release or distribute your own modified versions** of this framework without the author's explicit written permission.
+*   **Use the framework commercially** if your company's revenue or funding is **over US$100,000** (unless you purchase a Pro License from Ultralight, Inc.).
+*   **Reverse-engineer** the included Ultralight SDK components.

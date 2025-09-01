@@ -44,7 +44,7 @@ namespace PrismaUI::Core {
 		InitHooks();
 
 		logicRunner = std::make_unique<RepeatingTaskRunner>([]() {
-			uiThread.submit(&UpdateLogic);
+			uiThread.submit(&UpdateLogic).get();
 			});
 
 		uiThread.submit([] {

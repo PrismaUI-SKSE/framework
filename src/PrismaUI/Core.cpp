@@ -1,4 +1,5 @@
 ﻿#include "Core.h"
+#include "GPUDriver.h"
 #include "ViewRenderer.h"
 #include "ViewManager.h"
 #include "Listeners.h"
@@ -11,6 +12,7 @@ namespace PrismaUI::Core {
 	using namespace PrismaUI::ViewManager;
 	using namespace PrismaUI::InputHandler;
 
+	std::unique_ptr<GPUDriver> gpuDriver;
 	SingleThreadExecutor uiThread;
 	std::unique_ptr<RepeatingTaskRunner> logicRunner;
 	NanoIdGenerator generator;
@@ -36,24 +38,37 @@ namespace PrismaUI::Core {
 	inline REL::Relocation<Hooks::D3DPresentHook::D3DPresentFunc> RealD3dPresentFunc;
 
 	PrismaView::~PrismaView() {
-		ViewRenderer::ReleaseViewTexture(this);
+		// Resource release is now handled by ViewManager::Destroy
 	}
 
 	void InitializeCoreSystem() {
 		logger::info("Initializing PrismaUI Core System...");
 		InitHooks();
 
+		// Restore the logic runner for proper Update() timing
 		logicRunner = std::make_unique<RepeatingTaskRunner>([]() {
-			uiThread.submit(&UpdateLogic).get();
+			uiThread.submit([]() {
+				if (renderer) {
+					renderer->Update();
+				}
 			});
+		});
+
+		InitGraphics();
+		if (!d3dDevice || !d3dContext) {
+			logger::critical("Failed to initialize graphics, aborting CoreSystem init.");
+			return;
+		}
+
+		gpuDriver = std::make_unique<GPUDriver>(d3dDevice, d3dContext);
 
 		uiThread.submit([] {
 			try {
 				Platform& plat = Platform::instance();
 				plat.set_logger(new MyUltralightLogger());
 				plat.set_font_loader(ultralight::GetPlatformFontLoader());
-
 				plat.set_file_system(ultralight::GetPlatformFileSystem("."));
+				plat.set_gpu_driver(gpuDriver.get());
 
 				Config config;
 				plat.set_config(config);
@@ -61,18 +76,15 @@ namespace PrismaUI::Core {
 				renderer = Renderer::Create();
 				if (!renderer) {
 					logger::critical("Failed to create Ultralight Renderer!");
-				}
-				else {
+				} else {
 					logger::info("Ultralight Platform configured and Renderer created on UI thread.");
 				}
-			}
-			catch (const std::exception& e) {
+			} catch (const std::exception& e) {
 				logger::critical("Exception during Ultralight Platform/Renderer init on UI thread: {}", e.what());
-			}
-			catch (...) {
+			} catch (...) {
 				logger::critical("Unknown exception during Ultralight Platform/Renderer init on UI thread.");
 			}
-			}).get();
+		}).get();
 
 		auto ui = RE::UI::GetSingleton();
 		ui->Register(FocusMenu::MENU_NAME, FocusMenu::Creator);
@@ -160,101 +172,111 @@ namespace PrismaUI::Core {
 			if (!d3dDevice || !d3dContext || !spriteBatch || !commonStates || !hWnd || screenSize.width == 0) return;
 		}
 
-		std::vector<PrismaViewId> viewsWithPendingRelease;
-		{
-			std::shared_lock lock(viewsMutex);
-			for (const auto& pair : views) {
-				if (pair.second && pair.second->pendingResourceRelease.load()) {
-					viewsWithPendingRelease.push_back(pair.first);
-				}
+		// Submit all Ultralight logic to the dedicated UI thread and wait for completion
+		uiThread.submit([]() {
+			if (!renderer) {
+				return;
 			}
-		}
 
-		for (const auto& viewId : viewsWithPendingRelease) {
-			std::shared_ptr<PrismaView> viewData = nullptr;
+			// 1. Check for and initialize any pending views (Update() is now handled by logicRunner)
 			{
-				std::shared_lock lock(viewsMutex);
-				auto it = views.find(viewId);
-				if (it != views.end()) {
-					viewData = it->second;
+				std::vector<std::shared_ptr<PrismaView>> viewsToInitialize;
+				{
+					std::shared_lock lock(viewsMutex);
+					for (auto& pair : views) {
+						if (pair.second && !pair.second->ultralightView && !pair.second->htmlPathToLoad.empty()) {
+							viewsToInitialize.push_back(pair.second);
+						}
+					}
 				}
-			}
 
-			if (viewData) {
-				logger::debug("D3DPresent: Releasing D3D resources for View [{}] from render thread", viewId);
-				ViewRenderer::ReleaseViewTexture(viewData.get());
-				viewData->pendingResourceRelease = false;
-			}
-		}
+				for (auto& viewData : viewsToInitialize) {
+					if (viewData->ultralightView) continue;
 
-		uiThread.submit([dev = d3dDevice, ctx = d3dContext, hwnd = hWnd]() {
-			if (!dev || !ctx || !hwnd || !renderer) return;
+					logger::info("Creating View [{}] for path: {}", viewData->id, viewData->htmlPathToLoad);
 
-			std::vector<std::shared_ptr<PrismaView>> viewsToInitialize;
-			{
-				std::shared_lock lock(viewsMutex);
-				for (auto& pair : views) {
-					if (pair.second && !pair.second->ultralightView && !pair.second->htmlPathToLoad.empty()) {
-						viewsToInitialize.push_back(pair.second);
+					if (screenSize.width == 0 || screenSize.height == 0) {
+						logger::error("Cannot create View [{}], screen size is zero.", viewData->id);
+						continue;
+					}
+
+					ViewConfig view_config;
+					view_config.is_accelerated = true;
+					view_config.is_transparent = true;
+					view_config.initial_device_scale = 1.0;
+
+					// This call is now safely on the UI thread
+					viewData->ultralightView = renderer->CreateView(screenSize.width, screenSize.height, view_config, nullptr);
+
+					if (viewData->ultralightView) {
+						viewData->loadListener = std::make_unique<Listeners::MyLoadListener>(viewData->id);
+						viewData->viewListener = std::make_unique<Listeners::MyViewListener>(viewData->id);
+						viewData->ultralightView->set_load_listener(viewData->loadListener.get());
+						viewData->ultralightView->set_view_listener(viewData->viewListener.get());
+						viewData->ultralightView->LoadURL(String(viewData->htmlPathToLoad.c_str()));
+						viewData->ultralightView->Unfocus();
+						viewData->htmlPathToLoad.clear();
+						logger::info("View [{}] successfully created and loading URL.", viewData->id);
+					} else {
+						logger::error("Failed to create Ultralight View for ID [{}].", viewData->id);
+						viewData->htmlPathToLoad = "[CREATION FAILED]";
 					}
 				}
 			}
 
-			for (auto& viewData : viewsToInitialize) {
-				if (viewData->ultralightView) continue;
+			// 2. Refresh display and render the frame (this generates the command list for the GPUDriver)
+			renderer->RefreshDisplay(0);
+			renderer->Render();
 
-				logger::info("UI Thread: Creating View [{}] for path: {}", viewData->id, viewData->htmlPathToLoad);
-
-				if (screenSize.width == 0 || screenSize.height == 0) {
-					logger::error("UI Thread: Cannot create View [{}], screen size is zero.", viewData->id);
-					continue;
-				}
-
-				ViewConfig view_config;
-				view_config.is_accelerated = false;
-				view_config.is_transparent = true;
-
-				viewData->ultralightView = renderer->CreateView(screenSize.width, screenSize.height, view_config, nullptr);
-
-				if (viewData->ultralightView) {
-					viewData->loadListener = std::make_unique<Listeners::MyLoadListener>(viewData->id);
-					viewData->viewListener = std::make_unique<Listeners::MyViewListener>(viewData->id);
-					viewData->ultralightView->set_load_listener(viewData->loadListener.get());
-					viewData->ultralightView->set_view_listener(viewData->viewListener.get());
-					viewData->ultralightView->LoadURL(String(viewData->htmlPathToLoad.c_str()));
-					viewData->ultralightView->Unfocus();
-					viewData->htmlPathToLoad.clear();
-					logger::info("UI Thread: View [{}] successfully created and loading URL.", viewData->id);
-				}
-				else {
-					logger::error("UI Thread: Failed to create Ultralight View for ID [{}].", viewData->id);
-					viewData->htmlPathToLoad = "[CREATION FAILED]";
-				}
-			}
-
+			// 3. Process any pending input events
 			ProcessEvents();
+		}).wait(); // Wait for UI thread to complete before proceeding
 
-			if (renderer) {
-				renderer->RefreshDisplay(0);
-				renderer->Render();
-			}
+		// On the main render thread, execute the command list generated by the UI thread.
+		if (gpuDriver && gpuDriver->HasCommands()) {
+			ID3D11DeviceContext* context = d3dContext;
+			
+			// Save state
+			ID3D11BlendState* backupBlendState = nullptr;
+			FLOAT backupBlendFactor[4];
+			UINT backupSampleMask = 0;
+			ID3D11DepthStencilState* backupDepthStencilState = nullptr;
+			UINT backupStencilRef = 0;
+			ID3D11RasterizerState* backupRasterizerState = nullptr;
+			ID3D11InputLayout* backupInputLayout = nullptr;
+			D3D11_PRIMITIVE_TOPOLOGY backupPrimitiveTopology;
+			ID3D11Buffer* backupVertexBuffer = nullptr;
+			UINT backupVertexBufferStride = 0;
+			UINT backupVertexBufferOffset = 0;
+			ID3D11Buffer* backupIndexBuffer = nullptr;
+			DXGI_FORMAT backupIndexBufferFormat = DXGI_FORMAT_UNKNOWN;
+			UINT backupIndexBufferOffset = 0;
 
-			RenderViews();
-			});
+			context->OMGetBlendState(&backupBlendState, backupBlendFactor, &backupSampleMask);
+			context->OMGetDepthStencilState(&backupDepthStencilState, &backupStencilRef);
+			context->RSGetState(&backupRasterizerState);
+			context->IAGetInputLayout(&backupInputLayout);
+			context->IAGetPrimitiveTopology(&backupPrimitiveTopology);
+			context->IAGetVertexBuffers(0, 1, &backupVertexBuffer, &backupVertexBufferStride, &backupVertexBufferOffset);
+			context->IAGetIndexBuffer(&backupIndexBuffer, &backupIndexBufferFormat, &backupIndexBufferOffset);
 
-		std::vector<std::shared_ptr<PrismaView>> viewsToCheck;
-		{
-			std::shared_lock lock(viewsMutex);
-			viewsToCheck.reserve(views.size());
-			for (const auto& pair : views) {
-				if (pair.second && pair.second->ultralightView) {
-					viewsToCheck.push_back(pair.second);
-				}
-			}
-		}
+			gpuDriver->DrawCommandList();
 
-		for (const auto& viewData : viewsToCheck) {
-			UpdateSingleTextureFromBuffer(viewData);
+			// Restore state
+			context->OMSetBlendState(backupBlendState, backupBlendFactor, backupSampleMask);
+			context->OMSetDepthStencilState(backupDepthStencilState, backupStencilRef);
+			context->RSSetState(backupRasterizerState);
+			context->IASetInputLayout(backupInputLayout);
+			context->IASetPrimitiveTopology(backupPrimitiveTopology);
+			context->IASetVertexBuffers(0, 1, &backupVertexBuffer, &backupVertexBufferStride, &backupVertexBufferOffset);
+			context->IASetIndexBuffer(backupIndexBuffer, backupIndexBufferFormat, backupIndexBufferOffset);
+
+			if (backupBlendState) backupBlendState->Release();
+			if (backupDepthStencilState) backupDepthStencilState->Release();
+			if (backupRasterizerState) backupRasterizerState->Release();
+			if (backupInputLayout) backupInputLayout->Release();
+			if (backupVertexBuffer) backupVertexBuffer->Release();
+			if (backupIndexBuffer) backupIndexBuffer->Release();
 		}
 
 		DrawViews();
@@ -284,7 +306,8 @@ namespace PrismaUI::Core {
 		cursorTexture.Reset();
 		spriteBatch.reset();
 		commonStates.reset();
-		logger::debug("DirectXTK resources released.");
+		gpuDriver.reset();
+		logger::debug("Graphics resources released.");
 
 		if (s_originalWndProc && hWnd) {
 			SetWindowLongPtr(hWnd, GWLP_WNDPROC, (LONG_PTR)s_originalWndProc);

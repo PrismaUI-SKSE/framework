@@ -73,6 +73,12 @@ namespace PrismaUI::Listeners {
 	MyUltralightLogger::~MyUltralightLogger() = default;
 
 	void MyUltralightLogger::LogMessage(LogLevel log_level, const String& message) {
-		// Implementation was empty, so keep it empty.
+		const char* level_str = "UNKNOWN";
+		switch (log_level) {
+			case LogLevel::Error: level_str = "ERROR"; break;
+			case LogLevel::Warning: level_str = "WARNING"; break;
+			case LogLevel::Info: level_str = "INFO"; break;
+		}
+		logger::info("Ultralight [{}]: {}", level_str, message.utf8().data());
 	}
 }

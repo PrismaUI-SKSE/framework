@@ -2,6 +2,7 @@
 #include "Core.h"
 #include "InputHandler.h"
 #include "Listeners.h"
+#include "GPUDriver.h"
 
 namespace PrismaUI::ViewManager {
 	using namespace Core;
@@ -321,123 +322,49 @@ namespace PrismaUI::ViewManager {
 				viewDataToDestroy = std::move(it->second);
 				views.erase(it);
 				logger::debug("Destroy: Removed View [{}] from views map", viewId);
-			}
-			else {
+			} else {
 				logger::warn("Destroy: View ID [{}] not found after checking validity.", viewId);
 				return;
 			}
 		}
 
 		viewDataToDestroy->isHidden = true;
-		logger::debug("Destroy: Marked View [{}] as hidden", viewId);
 
 		{
 			std::lock_guard<std::mutex> lock(jsCallbacksMutex);
-			logger::debug("Destroy: Removing JavaScript callbacks for View [{}]", viewId);
-
 			auto it = jsCallbacks.begin();
-			size_t removedCallbacks = 0;
-
 			while (it != jsCallbacks.end()) {
 				if (it->first.first == viewId) {
 					it = jsCallbacks.erase(it);
-					removedCallbacks++;
-				}
-				else {
+				} else {
 					++it;
 				}
 			}
-
-			if (removedCallbacks > 0) {
-				logger::debug("Destroy: Removed {} JavaScript callback(s) for View [{}]",
-					removedCallbacks, viewId);
-			}
 		}
 
-		logger::debug("Destroy: Cleaning up Ultralight resources (on UI thread) for View [{}]", viewId);
-		auto ultralightCleanupFuture = uiThread.submit([viewId, viewData = viewDataToDestroy]() {
-			try {
-				logger::debug("Destroy: Beginning Ultralight resources cleanup for View [{}]", viewId);
-
-				if (viewData->ultralightView) {
-					logger::debug("Destroy: Detaching listeners for View [{}]", viewId);
-					viewData->ultralightView->set_load_listener(nullptr);
-					viewData->ultralightView->set_view_listener(nullptr);
-
-					viewData->loadListener.reset();
-					viewData->viewListener.reset();
-
-					viewData->ultralightView = nullptr;
-					logger::debug("Destroy: Ultralight View object released for View [{}]", viewId);
-				}
-
-				{
-					std::lock_guard lock(viewData->bufferMutex);
-					viewData->pixelBuffer.clear();
-					viewData->pixelBuffer.shrink_to_fit();
-					viewData->bufferWidth = 0;
-					viewData->bufferHeight = 0;
-					viewData->bufferStride = 0;
-					logger::debug("Destroy: Pixel buffer cleared for View [{}]", viewId);
-				}
-
-				viewData->isLoadingFinished = false;
-				viewData->newFrameReady = false;
-
-				logger::debug("Destroy: Ultralight resources for View [{}] cleaned up successfully", viewId);
-
-				return true;
-			}
-			catch (const std::exception& e) {
-				logger::error("Destroy: Exception during Ultralight resource cleanup for View [{}]: {}", viewId, e.what());
-				return false;
-			}
-			catch (...) {
-				logger::error("Destroy: Unknown exception during Ultralight resource cleanup for View [{}]", viewId);
-				return false;
-			}
-			});
-
-		try {
-			bool ultralight_success = ultralightCleanupFuture.get();
-			if (ultralight_success) {
-				logger::debug("Destroy: Ultralight resources cleanup completed successfully for View [{}]", viewId);
-			}
-			else {
-				logger::warn("Destroy: Ultralight resources cleanup reported failure for View [{}]", viewId);
-			}
-		}
-		catch (const std::exception& e) {
-			logger::error("Destroy: Exception waiting for Ultralight cleanup for View [{}]: {}", viewId, e.what());
+		// Get RenderTarget before destroying the view on the UI thread
+		ultralight::RenderTarget renderTarget;
+		if (viewDataToDestroy->ultralightView) {
+			renderTarget = viewDataToDestroy->ultralightView->render_target();
 		}
 
-		bool hasD3DResources = (viewDataToDestroy->texture != nullptr || viewDataToDestroy->textureView != nullptr);
-
-		if (hasD3DResources) {
-			logger::debug("Destroy: D3D resources present for View [{}], forcing manual cleanup", viewId);
-
-			if (viewDataToDestroy->textureView) {
-				logger::debug("Destroy: Releasing textureView for View [{}]", viewId);
-				viewDataToDestroy->textureView->Release();
-				viewDataToDestroy->textureView = nullptr;
+		// Asynchronously destroy Ultralight resources on the UI thread
+		uiThread.submit([viewData = viewDataToDestroy]() {
+			if (viewData->ultralightView) {
+				viewData->ultralightView->set_load_listener(nullptr);
+				viewData->ultralightView->set_view_listener(nullptr);
+				viewData->loadListener.reset();
+				viewData->viewListener.reset();
+				viewData->ultralightView = nullptr;
 			}
+		}).wait();
 
-			if (viewDataToDestroy->texture) {
-				logger::debug("Destroy: Releasing texture for View [{}]", viewId);
-				viewDataToDestroy->texture->Release();
-				viewDataToDestroy->texture = nullptr;
-			}
-
-			viewDataToDestroy->textureWidth = 0;
-			viewDataToDestroy->textureHeight = 0;
-
-			logger::debug("Destroy: D3D resources released for View [{}]", viewId);
+		// Synchronously destroy GPU resources on the main thread
+		if (gpuDriver && renderTarget.texture_id != 0) {
+			gpuDriver->DestroyRenderBuffer(renderTarget.render_buffer_id);
+			gpuDriver->DestroyTexture(renderTarget.texture_id);
+			logger::debug("Destroy: GPU resources for RenderTarget of View [{}] released.", viewId);
 		}
-		else {
-			logger::debug("Destroy: No D3D resources to release for View [{}]", viewId);
-		}
-
-		viewDataToDestroy->pendingResourceRelease = false;
 
 		logger::info("Destroy: View [{}] successfully destroyed", viewId);
 	}

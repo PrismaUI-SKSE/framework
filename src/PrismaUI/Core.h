@@ -11,6 +11,7 @@
 #include <Utils/RepeatingTaskRunner.h>
 #include <Hooks/Hooks.h>
 #include <Menus/FocusMenu/FocusMenu.h>
+#include "GPUDriver.h"
 
 #include <d3d11.h>
 #include <DirectXTK/SpriteBatch.h>
@@ -53,22 +54,12 @@ namespace PrismaUI::Core {
 		std::function<void(const PrismaViewId&)> domReadyCallback;
 		int scrollingPixelSize = 28;
 		std::atomic<bool> isPaused = false;
-
-		ID3D11Texture2D* texture = nullptr;
-		ID3D11ShaderResourceView* textureView = nullptr;
-		uint32_t textureWidth = 0;
-		uint32_t textureHeight = 0;
-		std::vector<std::byte> pixelBuffer;
-		uint32_t bufferWidth = 0;
-		uint32_t bufferHeight = 0;
-		uint32_t bufferStride = 0;
-		std::mutex bufferMutex;
-		std::atomic<bool> newFrameReady = false;
 		std::atomic<bool> pendingResourceRelease = false;
 
 		~PrismaView();
 	};
 
+	extern std::unique_ptr<GPUDriver> gpuDriver;
 	extern SingleThreadExecutor uiThread;
 	extern std::unique_ptr<RepeatingTaskRunner> logicRunner;
 	extern NanoIdGenerator generator;

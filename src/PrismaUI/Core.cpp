@@ -13,7 +13,7 @@ namespace PrismaUI::Core {
 	using namespace PrismaUI::InputHandler;
 
 	std::unique_ptr<GPUDriver> gpuDriver;
-	SingleThreadExecutor uiThread;
+	SingleThreadExecutor ultralightThread;
 	std::unique_ptr<RepeatingTaskRunner> logicRunner;
 	NanoIdGenerator generator;
 	std::atomic<bool> coreInitialized = false;
@@ -47,7 +47,7 @@ namespace PrismaUI::Core {
 
 		// Restore the logic runner for proper Update() timing
 		logicRunner = std::make_unique<RepeatingTaskRunner>([]() {
-			uiThread.submit([]() {
+			ultralightThread.submit([]() {
 				if (renderer) {
 					renderer->Update();
 				}
@@ -62,7 +62,7 @@ namespace PrismaUI::Core {
 
 		gpuDriver = std::make_unique<GPUDriver>(d3dDevice, d3dContext);
 
-		uiThread.submit([] {
+		ultralightThread.submit([] {
 			try {
 				Platform& plat = Platform::instance();
 				plat.set_logger(new MyUltralightLogger());
@@ -118,7 +118,7 @@ namespace PrismaUI::Core {
 					bool expected_ih_init = false;
 
 					if (input_handler_initialized.compare_exchange_strong(expected_ih_init, true)) {
-						Initialize(hWnd, &uiThread, &views, &viewsMutex);
+						Initialize(hWnd, &ultralightThread, &views, &viewsMutex);
 						SetOriginalWndProc(s_originalWndProc);
 						logger::debug("PrismaUI::InputHandler initialized and original WndProc passed.");
 					}
@@ -162,6 +162,9 @@ namespace PrismaUI::Core {
 		}
 	}
 
+	// Skyrim D3D Present Hooked Method.
+	// Calls once per frame.
+	// IMPORTANT: This method always changes the thread and then we need to use "ultralightThread" to make our Ultralight API calls thread-safe.
 	void D3DPresent(uint32_t a_p1) {
 		RealD3dPresentFunc(a_p1);
 
@@ -172,8 +175,8 @@ namespace PrismaUI::Core {
 			if (!d3dDevice || !d3dContext || !spriteBatch || !commonStates || !hWnd || screenSize.width == 0) return;
 		}
 
-		// Submit all Ultralight logic to the dedicated UI thread and wait for completion
-		uiThread.submit([]() {
+		// Submit all Ultralight logic to the dedicated ultralightThread and wait for completion
+		ultralightThread.submit([]() {
 			if (!renderer) {
 				return;
 			}
@@ -330,7 +333,7 @@ namespace PrismaUI::Core {
 			views.clear();
 		}
 		if (renderer) {
-			uiThread.submit([renderer_ptr = renderer]() mutable {
+			ultralightThread.submit([renderer_ptr = renderer]() mutable {
 				logger::info("Releasing global renderer on UI thread.");
 				renderer_ptr = nullptr;
 				}).get();

@@ -66,7 +66,7 @@ namespace PrismaUI::ViewManager {
 
 		if (viewData) {
 			viewData->isHidden = true;
-			uiThread.submit([view_ptr = viewData->ultralightView]() {
+			ultralightThread.submit([view_ptr = viewData->ultralightView]() {
 				if (view_ptr) view_ptr->Unfocus();
 				});
 			logger::debug("View [{}] marked as Hidden and Unfocused.", viewId);
@@ -109,7 +109,7 @@ namespace PrismaUI::ViewManager {
 				std::shared_lock lock(viewsMutex);
 				for (const auto& pair : views) {
 					if (pair.first != viewId) {
-						auto future = uiThread.submit([view_ptr = pair.second->ultralightView]() -> bool {
+						auto future = ultralightThread.submit([view_ptr = pair.second->ultralightView]() -> bool {
 							return view_ptr ? view_ptr->HasFocus() : false;
 							});
 						try {
@@ -128,7 +128,7 @@ namespace PrismaUI::ViewManager {
 				Unfocus(idToUnfocus);
 			}
 
-			uiThread.submit([view_ptr = viewData->ultralightView]() {
+			ultralightThread.submit([view_ptr = viewData->ultralightView]() {
 				if (view_ptr) view_ptr->Focus();
 				});
 			PrismaUI::InputHandler::EnableInputCapture(viewId);
@@ -179,7 +179,7 @@ namespace PrismaUI::ViewManager {
 			}
 
 			PrismaUI::InputHandler::DisableInputCapture(viewId);
-			uiThread.submit([view_ptr = viewData->ultralightView]() {
+			ultralightThread.submit([view_ptr = viewData->ultralightView]() {
 				if (view_ptr) view_ptr->Unfocus();
 				});
 
@@ -228,7 +228,7 @@ namespace PrismaUI::ViewManager {
 		}
 
 		if (viewData) {
-			auto future = uiThread.submit([view_ptr = viewData->ultralightView]() -> bool {
+			auto future = ultralightThread.submit([view_ptr = viewData->ultralightView]() -> bool {
 				return view_ptr ? view_ptr->HasFocus() : false;
 				});
 			try {
@@ -256,7 +256,7 @@ namespace PrismaUI::ViewManager {
 		}
 
 		if (viewData && viewData->ultralightView) {
-			auto future = uiThread.submit([view_ptr = viewData->ultralightView]() -> bool {
+			auto future = ultralightThread.submit([view_ptr = viewData->ultralightView]() -> bool {
 				if (view_ptr) {
 					return view_ptr->HasInputFocus();
 				}
@@ -349,7 +349,7 @@ namespace PrismaUI::ViewManager {
 		}
 
 		// Asynchronously destroy Ultralight resources on the UI thread
-		uiThread.submit([viewData = viewDataToDestroy]() {
+		ultralightThread.submit([viewData = viewDataToDestroy]() {
 			if (viewData->ultralightView) {
 				viewData->ultralightView->set_load_listener(nullptr);
 				viewData->ultralightView->set_view_listener(nullptr);

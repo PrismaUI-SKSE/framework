@@ -60,7 +60,7 @@ namespace PrismaUI::Core {
 	};
 
 	extern std::unique_ptr<GPUDriver> gpuDriver;
-	extern SingleThreadExecutor uiThread;
+	extern SingleThreadExecutor ultralightThread;
 	extern std::unique_ptr<RepeatingTaskRunner> logicRunner;
 	extern NanoIdGenerator generator;
 	extern std::atomic<bool> coreInitialized;

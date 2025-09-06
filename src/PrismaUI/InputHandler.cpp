@@ -7,7 +7,7 @@ namespace PrismaUI::InputHandler {
 
     HWND g_hWnd = nullptr;
     WNDPROC g_originalWndProc = nullptr;
-    SingleThreadExecutor* g_uiThreadExecutor = nullptr;
+    SingleThreadExecutor* g_ultralightThreadExecutor = nullptr;
     std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* g_viewsMap = nullptr;
     std::shared_mutex* g_viewsMapMutex = nullptr;
 
@@ -149,7 +149,7 @@ namespace PrismaUI::InputHandler {
 
     void Initialize(HWND gameHwnd, SingleThreadExecutor* coreExecutor, std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* viewsMap, std::shared_mutex* viewsMapMutex) {
         g_hWnd = gameHwnd;
-        g_uiThreadExecutor = coreExecutor;
+        g_ultralightThreadExecutor = coreExecutor;
         g_viewsMap = viewsMap;
         g_viewsMapMutex = viewsMapMutex;
         g_isAnyInputCaptureActive = false;
@@ -219,8 +219,8 @@ namespace PrismaUI::InputHandler {
 
                 g_mouseButtonStates[0] = g_mouseButtonStates[1] = g_mouseButtonStates[2] = false;
 
-                if (g_uiThreadExecutor && currentFocusedBeforeDisable != 0) {
-                    g_uiThreadExecutor->submit([viewId_copy = currentFocusedBeforeDisable]() {
+                if (g_ultralightThreadExecutor && currentFocusedBeforeDisable != 0) {
+                    g_ultralightThreadExecutor->submit([viewId_copy = currentFocusedBeforeDisable]() {
                         std::shared_ptr<Core::PrismaView> targetViewData = nullptr;
                         {
                             std::shared_lock lock(*g_viewsMapMutex);
@@ -359,7 +359,7 @@ namespace PrismaUI::InputHandler {
     }
 
     void ProcessEvents() {
-        if (!g_uiThreadExecutor || !g_viewsMap || !g_viewsMapMutex) return;
+        if (!g_ultralightThreadExecutor || !g_viewsMap || !g_viewsMapMutex) return;
 
         Core::PrismaViewId focusedViewIdCopy;
         {
@@ -381,7 +381,7 @@ namespace PrismaUI::InputHandler {
             eventsToProcess.swap(g_eventQueue);
         }
 
-        g_uiThreadExecutor->submit([viewId_copy = focusedViewIdCopy, ev_queue = std::move(eventsToProcess)]() {
+        g_ultralightThreadExecutor->submit([viewId_copy = focusedViewIdCopy, ev_queue = std::move(eventsToProcess)]() {
             std::shared_ptr<Core::PrismaView> targetViewData = nullptr;
             {
                 std::shared_lock lock(*g_viewsMapMutex);
@@ -428,7 +428,7 @@ namespace PrismaUI::InputHandler {
 
         g_hWnd = nullptr;
         g_originalWndProc = nullptr;
-        g_uiThreadExecutor = nullptr;
+        g_ultralightThreadExecutor = nullptr;
         g_viewsMap = nullptr;
         g_viewsMapMutex = nullptr;
         logger::info("PrismaUI::InputHandler Shutdown.");

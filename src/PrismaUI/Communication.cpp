@@ -24,7 +24,7 @@ namespace PrismaUI::Communication {
 			return;
 		}
 
-		uiThread.submit([view_ptr = viewData->ultralightView, script_copy = script, callback]() {
+		ultralightThread.submit([view_ptr = viewData->ultralightView, script_copy = script, callback]() {
 			String result = "";
 			if (view_ptr) {
 				try {
@@ -70,7 +70,7 @@ namespace PrismaUI::Communication {
 		}
 
 		if (viewData && viewData->ultralightView && viewData->isLoadingFinished) {
-			uiThread.submit([viewId, name]() {
+			ultralightThread.submit([viewId, name]() {
 				BindJSCallbacks(viewId);
 				});
 		}
@@ -262,7 +262,7 @@ namespace PrismaUI::Communication {
 			return;
 		}
 
-		uiThread.submit([view_ptr = viewData->ultralightView, funcName = functionName, arg = argument, viewId]() {
+		ultralightThread.submit([view_ptr = viewData->ultralightView, funcName = functionName, arg = argument, viewId]() {
 			if (!view_ptr) {
 				return;
 			}

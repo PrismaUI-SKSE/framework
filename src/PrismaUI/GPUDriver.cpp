@@ -311,6 +311,47 @@ void GPUDriver::DrawCommandList() {
         if (command_list_.empty()) return;
         list = std::move(command_list_);
     }
+
+    // Save original state
+    ID3D11RenderTargetView*   backup_rtv = nullptr;
+    ID3D11DepthStencilView*   backup_dsv = nullptr;
+    ID3D11BlendState*         backup_blend_state = nullptr;
+    FLOAT                     backup_blend_factor[4];
+    UINT                      backup_sample_mask = 0;
+    ID3D11DepthStencilState*  backup_depth_stencil_state = nullptr;
+    UINT                      backup_stencil_ref = 0;
+    ID3D11RasterizerState*    backup_rasterizer_state = nullptr;
+    ID3D11InputLayout*        backup_input_layout = nullptr;
+    D3D11_PRIMITIVE_TOPOLOGY  backup_primitive_topology;
+    ID3D11Buffer*             backup_vb = nullptr;
+    UINT                      backup_vb_stride = 0;
+    UINT                      backup_vb_offset = 0;
+    ID3D11Buffer*             backup_ib = nullptr;
+    DXGI_FORMAT               backup_ib_format = DXGI_FORMAT_UNKNOWN;
+    UINT                      backup_ib_offset = 0;
+    ID3D11VertexShader*       backup_vs = nullptr;
+    ID3D11PixelShader*        backup_ps = nullptr;
+    ID3D11SamplerState*       backup_sampler_state = nullptr;
+    ID3D11Buffer*             backup_constant_buffer_vs = nullptr;
+    ID3D11Buffer*             backup_constant_buffer_ps = nullptr;
+    UINT                      num_viewports = 1;
+    D3D11_VIEWPORT            backup_viewport;
+
+    context_->OMGetRenderTargets(1, &backup_rtv, &backup_dsv);
+    context_->OMGetBlendState(&backup_blend_state, backup_blend_factor, &backup_sample_mask);
+    context_->OMGetDepthStencilState(&backup_depth_stencil_state, &backup_stencil_ref);
+    context_->RSGetState(&backup_rasterizer_state);
+    context_->IAGetInputLayout(&backup_input_layout);
+    context_->IAGetPrimitiveTopology(&backup_primitive_topology);
+    context_->IAGetVertexBuffers(0, 1, &backup_vb, &backup_vb_stride, &backup_vb_offset);
+    context_->IAGetIndexBuffer(&backup_ib, &backup_ib_format, &backup_ib_offset);
+    context_->VSGetShader(&backup_vs, nullptr, nullptr);
+    context_->PSGetShader(&backup_ps, nullptr, nullptr);
+    context_->PSGetSamplers(0, 1, &backup_sampler_state);
+    context_->VSGetConstantBuffers(0, 1, &backup_constant_buffer_vs);
+    context_->PSGetConstantBuffers(0, 1, &backup_constant_buffer_ps);
+    context_->RSGetViewports(&num_viewports, &backup_viewport);
+
     // logger::debug("GPUDriver::DrawCommandList, num_commands: {}", list.size());
     for (const auto& command : list) {
         if (command.command_type == ultralight::CommandType::DrawGeometry) {
@@ -319,6 +360,37 @@ void GPUDriver::DrawCommandList() {
             ClearRenderBuffer(command.gpu_state.render_buffer_id);
         }
     }
+
+    // Restore original state
+    context_->OMSetRenderTargets(1, &backup_rtv, backup_dsv);
+    context_->OMSetBlendState(backup_blend_state, backup_blend_factor, backup_sample_mask);
+    context_->OMSetDepthStencilState(backup_depth_stencil_state, backup_stencil_ref);
+    context_->RSSetState(backup_rasterizer_state);
+    context_->IASetInputLayout(backup_input_layout);
+    context_->IASetPrimitiveTopology(backup_primitive_topology);
+    context_->IASetVertexBuffers(0, 1, &backup_vb, &backup_vb_stride, &backup_vb_offset);
+    context_->IASetIndexBuffer(backup_ib, backup_ib_format, backup_ib_offset);
+    context_->VSSetShader(backup_vs, nullptr, 0);
+    context_->PSSetShader(backup_ps, nullptr, 0);
+    context_->PSSetSamplers(0, 1, &backup_sampler_state);
+    context_->VSSetConstantBuffers(0, 1, &backup_constant_buffer_vs);
+    context_->PSSetConstantBuffers(0, 1, &backup_constant_buffer_ps);
+    context_->RSSetViewports(1, &backup_viewport);
+
+    // Release acquired references
+    if (backup_rtv) backup_rtv->Release();
+    if (backup_dsv) backup_dsv->Release();
+    if (backup_blend_state) backup_blend_state->Release();
+    if (backup_depth_stencil_state) backup_depth_stencil_state->Release();
+    if (backup_rasterizer_state) backup_rasterizer_state->Release();
+    if (backup_input_layout) backup_input_layout->Release();
+    if (backup_vb) backup_vb->Release();
+    if (backup_ib) backup_ib->Release();
+    if (backup_vs) backup_vs->Release();
+    if (backup_ps) backup_ps->Release();
+    if (backup_sampler_state) backup_sampler_state->Release();
+    if (backup_constant_buffer_vs) backup_constant_buffer_vs->Release();
+    if (backup_constant_buffer_ps) backup_constant_buffer_ps->Release();
 }
 
 ID3D11ShaderResourceView* GPUDriver::GetShaderResourceView(uint32_t texture_id) {

@@ -13,7 +13,7 @@ namespace PrismaUI::Listeners {
 
 	void MyLoadListener::OnBeginLoading(View* caller, uint64_t frame_id, bool is_main_frame, const String& url) {
 		logger::info("View [{}]: LoadListener: Begin loading URL: {}", viewId_, url.utf8().data());
-		uiThread.submit([id = viewId_] {
+		ultralightThread.submit([id = viewId_] {
 			std::shared_lock lock(viewsMutex);
 			auto it = views.find(id);
 			if (it != views.end()) {
@@ -24,7 +24,7 @@ namespace PrismaUI::Listeners {
 
 	void MyLoadListener::OnFinishLoading(View* caller, uint64_t frame_id, bool is_main_frame, const String& url) {
 		logger::info("View [{}]: LoadListener: Finished loading URL: {}", viewId_, url.utf8().data());
-		uiThread.submit([id = viewId_] {
+		ultralightThread.submit([id = viewId_] {
 			std::shared_lock lock(viewsMutex);
 			auto it = views.find(id);
 			if (it != views.end()) {
@@ -36,7 +36,7 @@ namespace PrismaUI::Listeners {
 
 	void MyLoadListener::OnFailLoading(View* caller, uint64_t frame_id, bool is_main_frame, const String& url, const String& description, const String& error_domain, int error_code) {
 		logger::error("View [{}]: LoadListener: Failed loading URL: {}. Error: {}", viewId_, url.utf8().data(), description.utf8().data());
-		uiThread.submit([id = viewId_] {
+		ultralightThread.submit([id = viewId_] {
 			std::shared_lock lock(viewsMutex);
 			auto it = views.find(id);
 			if (it != views.end()) {
@@ -51,7 +51,7 @@ namespace PrismaUI::Listeners {
 
 	void MyLoadListener::OnDOMReady(View* caller, uint64_t frame_id, bool is_main_frame, const String& url) {
 		logger::info("View [{}]: LoadListener: DOM ready.", viewId_);
-		uiThread.submit([id = viewId_] {
+		ultralightThread.submit([id = viewId_] {
 			std::shared_lock lock(viewsMutex);
 			auto it = views.find(id);
 			if (it != views.end() && it->second->domReadyCallback) {

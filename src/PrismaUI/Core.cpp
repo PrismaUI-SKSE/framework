@@ -11,7 +11,7 @@ namespace PrismaUI::Core {
 	using namespace PrismaUI::ViewManager;
 	using namespace PrismaUI::InputHandler;
 
-	SingleThreadExecutor uiThread;
+	SingleThreadExecutor ultralightThread;
 	std::unique_ptr<RepeatingTaskRunner> logicRunner;
 	NanoIdGenerator generator;
 	std::atomic<bool> coreInitialized = false;
@@ -44,10 +44,10 @@ namespace PrismaUI::Core {
 		InitHooks();
 
 		logicRunner = std::make_unique<RepeatingTaskRunner>([]() {
-			uiThread.submit(&UpdateLogic).get();
+			ultralightThread.submit(&UpdateLogic).get();
 			});
 
-		uiThread.submit([] {
+		ultralightThread.submit([] {
 			try {
 				Platform& plat = Platform::instance();
 				plat.set_logger(new MyUltralightLogger());
@@ -106,7 +106,7 @@ namespace PrismaUI::Core {
 					bool expected_ih_init = false;
 
 					if (input_handler_initialized.compare_exchange_strong(expected_ih_init, true)) {
-						Initialize(hWnd, &uiThread, &views, &viewsMutex);
+						Initialize(hWnd, &ultralightThread, &views, &viewsMutex);
 						SetOriginalWndProc(s_originalWndProc);
 						logger::debug("PrismaUI::InputHandler initialized and original WndProc passed.");
 					}
@@ -187,7 +187,7 @@ namespace PrismaUI::Core {
 			}
 		}
 
-		uiThread.submit([dev = d3dDevice, ctx = d3dContext, hwnd = hWnd]() {
+		ultralightThread.submit([dev = d3dDevice, ctx = d3dContext, hwnd = hWnd]() {
 			if (!dev || !ctx || !hwnd || !renderer) return;
 
 			std::vector<std::shared_ptr<PrismaView>> viewsToInitialize;
@@ -307,7 +307,7 @@ namespace PrismaUI::Core {
 			views.clear();
 		}
 		if (renderer) {
-			uiThread.submit([renderer_ptr = renderer]() mutable {
+			ultralightThread.submit([renderer_ptr = renderer]() mutable {
 				logger::info("Releasing global renderer on UI thread.");
 				renderer_ptr = nullptr;
 				}).get();

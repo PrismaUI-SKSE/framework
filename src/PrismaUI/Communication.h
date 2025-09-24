@@ -21,7 +21,4 @@ namespace PrismaUI::Communication {
 		const JSValueRef arguments[], JSValueRef* exception);
 	void RegisterJSListener(const Core::PrismaViewId& viewId, const std::string& name, Core::SimpleJSCallback callback);
 	void InteropCall(const Core::PrismaViewId& viewId, const std::string& functionName, const std::string& argument);
-	JSValueRef JSCallbackDispatcher(JSContextRef ctx, JSObjectRef function,
-		JSObjectRef thisObject, size_t argumentCount,
-		const JSValueRef arguments[], JSValueRef* exception);
 }

@@ -45,22 +45,13 @@ namespace PrismaUI::Core {
 		logger::info("Initializing PrismaUI Core System...");
 		InitHooks();
 
-		// Restore the logic runner for proper Update() timing
 		logicRunner = std::make_unique<RepeatingTaskRunner>([]() {
 			ultralightThread.submit([]() {
 				if (renderer) {
 					renderer->Update();
 				}
+				});
 			});
-		});
-
-		InitGraphics();
-		if (!d3dDevice || !d3dContext) {
-			logger::critical("Failed to initialize graphics, aborting CoreSystem init.");
-			return;
-		}
-
-		gpuDriver = std::make_unique<GPUDriver>(d3dDevice, d3dContext);
 
 		ultralightThread.submit([] {
 			try {
@@ -68,28 +59,20 @@ namespace PrismaUI::Core {
 				plat.set_logger(new MyUltralightLogger());
 				plat.set_font_loader(ultralight::GetPlatformFontLoader());
 				plat.set_file_system(ultralight::GetPlatformFileSystem("."));
-				plat.set_gpu_driver(gpuDriver.get());
-
-				Config config;
-				plat.set_config(config);
-
-				renderer = Renderer::Create();
-				if (!renderer) {
-					logger::critical("Failed to create Ultralight Renderer!");
-				} else {
-					logger::info("Ultralight Platform configured and Renderer created on UI thread.");
-				}
-			} catch (const std::exception& e) {
-				logger::critical("Exception during Ultralight Platform/Renderer init on UI thread: {}", e.what());
-			} catch (...) {
-				logger::critical("Unknown exception during Ultralight Platform/Renderer init on UI thread.");
+				logger::info("Ultralight Platform configured on UI thread (pre-init).");
 			}
-		}).get();
+			catch (const std::exception& e) {
+				logger::critical("Exception during Ultralight Platform pre-init on UI thread: {}", e.what());
+			}
+			catch (...) {
+				logger::critical("Unknown exception during Ultralight Platform pre-init on UI thread.");
+			}
+			}).get();
 
 		auto ui = RE::UI::GetSingleton();
 		ui->Register(FocusMenu::MENU_NAME, FocusMenu::Creator);
 
-		logger::info("PrismaUI Core System Initialized.");
+		logger::info("PrismaUI Core System Initialized (pending graphics thread init).");
 	}
 
 	void InitHooks() {
@@ -133,18 +116,6 @@ namespace PrismaUI::Core {
 		}
 
 		if (d3dDevice && d3dContext) {
-			if (!commonStates || !spriteBatch) {
-				try {
-					commonStates = std::make_unique<DirectX::CommonStates>(d3dDevice);
-					spriteBatch = std::make_unique<DirectX::SpriteBatch>(d3dContext);
-					logger::info("DirectXTK SpriteBatch and CommonStates (re)initialized.");
-				}
-				catch (const std::exception& e) {
-					logger::critical("Failed to initialize DirectXTK: {}", e.what());
-					commonStates.reset(); spriteBatch.reset();
-				}
-			}
-
 			if (!cursorTexture && d3dDevice) {
 				try {
 					DirectX::CreateWICTextureFromFile(d3dDevice, L"Data/PrismaUI/misc/cursor.png", nullptr, &cursorTexture);
@@ -158,7 +129,6 @@ namespace PrismaUI::Core {
 		}
 		else {
 			logger::error("Cannot initialize DirectXTK: D3D device or context is null.");
-			commonStates.reset(); spriteBatch.reset();
 		}
 	}
 
@@ -169,6 +139,61 @@ namespace PrismaUI::Core {
 		RealD3dPresentFunc(a_p1);
 
 		if (!coreInitialized) return;
+
+		if (!renderer) {
+			InitGraphics();
+			if (!d3dDevice || !d3dContext) {
+				return;
+			}
+
+			try {
+				commonStates = std::make_unique<DirectX::CommonStates>(d3dDevice);
+				spriteBatch = std::make_unique<DirectX::SpriteBatch>(d3dContext);
+				logger::info("DirectXTK SpriteBatch and CommonStates initialized.");
+			}
+			catch (const std::exception& e) {
+				logger::critical("Failed to initialize DirectXTK: {}", e.what());
+				return;
+			}
+
+			// Create GPUDriver in ultralightThread (correct thread for Ultralight API)
+			ultralightThread.submit([device = d3dDevice, context = d3dContext]() {
+				try {
+					gpuDriver = std::make_unique<GPUDriver>(device, context);
+					logger::info("GPUDriver created successfully in ultralightThread.");
+
+					Platform& plat = Platform::instance();
+					plat.set_gpu_driver(gpuDriver.get());
+
+					Config config;
+					plat.set_config(config);
+
+					renderer = Renderer::Create();
+					if (!renderer) {
+						logger::critical("Failed to create Ultralight Renderer!");
+					}
+					else {
+						logger::info("Ultralight GPU Driver set and Renderer created on UI thread.");
+					}
+				}
+				catch (const std::exception& e) {
+					logger::critical("Exception during Ultralight Renderer/GPUDriver init on UI thread: {}", e.what());
+				}
+				catch (...) {
+					logger::critical("Unknown exception during Ultralight Renderer/GPUDriver init on UI thread.");
+				}
+			}).get();
+
+			if (!renderer || !gpuDriver) {
+				logger::critical("Full PrismaUI initialization failed because Ultralight Renderer or GPUDriver could not be created.");
+				gpuDriver.reset();
+				commonStates.reset();
+				spriteBatch.reset();
+				return;
+			}
+
+			logger::info("PrismaUI Graphics and Renderer successfully initialized on D3D/UI threads.");
+		}
 
 		if (!d3dDevice || !d3dContext || !spriteBatch || !commonStates || !hWnd || screenSize.width == 0) {
 			InitGraphics();
@@ -228,7 +253,6 @@ namespace PrismaUI::Core {
 			}
 
 			// 2. Refresh display and render the frame (this generates the command list for the GPUDriver)
-			renderer->RefreshDisplay(0);
 			renderer->Render();
 
 			// 3. Process any pending input events

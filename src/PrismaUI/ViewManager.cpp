@@ -11,15 +11,6 @@ namespace PrismaUI::ViewManager {
 		bool expected_init = false;
 		if (coreInitialized.compare_exchange_strong(expected_init, true)) {
 			Core::InitializeCoreSystem();
-			if (!renderer) {
-				coreInitialized = false;
-				logger::critical("Core initialization failed: Renderer not created.");
-				throw std::runtime_error("PrismaUI Core Renderer initialization failed.");
-			}
-		}
-		else if (!renderer) {
-			logger::critical("Cannot create HTML view: Core Renderer is null despite initialization flag.");
-			throw std::runtime_error("PrismaUI Core Renderer is unexpectedly null.");
 		}
 
 		Core::PrismaViewId newViewId = generator.generate();

@@ -29,6 +29,9 @@ public:
 		virtual bool HasFocus(PrismaView view) noexcept override;
 		virtual bool Focus(PrismaView view, bool pauseGame = false) noexcept override;
 		virtual void Unfocus(PrismaView view) noexcept override;
+		virtual void Show(PrismaView view) noexcept override;
+		virtual void Hide(PrismaView view) noexcept override;
+		virtual bool IsHidden(PrismaView view) noexcept override;
 		virtual int GetScrollingPixelSize(PrismaView view) noexcept override;
 		virtual void SetScrollingPixelSize(PrismaView view, int pixelSize) noexcept override;
 		virtual bool IsValid(PrismaView view) noexcept override;

@@ -42,8 +42,15 @@ namespace PrismaUI::ViewManager {
 	}
 
 	void Show(const Core::PrismaViewId& viewId) {
+		if (!IsHidden(viewId)) {
+			logger::warn("Show: View [{}] is already visible.", viewId);
+			return;
+		}
+
 		std::shared_lock lock(viewsMutex);
+
 		auto it = views.find(viewId);
+		
 		if (it != views.end()) {
 			it->second->isHidden = false;
 			logger::debug("View [{}] marked as Visible.", viewId);
@@ -54,6 +61,11 @@ namespace PrismaUI::ViewManager {
 	}
 
 	void Hide(const Core::PrismaViewId& viewId) {
+		if (IsHidden(viewId)) {
+			logger::warn("Hide: View [{}] is already hidden.", viewId);
+			return;
+		}
+
 		std::shared_ptr<PrismaView> viewData = nullptr;
 		{
 			std::shared_lock lock(viewsMutex);
@@ -91,6 +103,11 @@ namespace PrismaUI::ViewManager {
 	}
 
 	bool Focus(const Core::PrismaViewId& viewId, bool pauseGame) {
+		if (HasFocus(viewId)) {
+			logger::warn("Focus: View [{}] already has focus.", viewId);
+			return false;
+		}
+
 		auto ui = RE::UI::GetSingleton();
 		if (ui && ui->IsMenuOpen(RE::Console::MENU_NAME)) return false;
 
@@ -164,6 +181,11 @@ namespace PrismaUI::ViewManager {
 	}
 
 	void Unfocus(const Core::PrismaViewId& viewId) {
+		if (!HasFocus(viewId)) {
+			logger::warn("Unfocus: View [{}] does not have focus.", viewId);
+			return;
+		}
+
 		std::shared_ptr<PrismaView> viewData = nullptr;
 		{ std::shared_lock lock(viewsMutex); auto it = views.find(viewId); if (it != views.end()) viewData = it->second; }
 

@@ -12,8 +12,8 @@ set_warnings("allextra")
 
 set_policy("package.requires_lock", true)
 
-add_rules("mode.release")
---add_rules("mode.debug", "mode.releasedbg")
+-- add_rules("mode.release")
+add_rules("mode.debug", "mode.releasedbg")
 add_rules("plugin.vsxmake.autoupdate")
 
 local ULTRALIGHT_SDK_ROOT = "lib/ultralight-1.4.0"

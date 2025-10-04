@@ -51,6 +51,15 @@ namespace PRISMA_UI_API
 		// Remove focus from view.
 		virtual void Unfocus(PrismaView view) noexcept = 0;
 
+		// Show a hidden view.
+		virtual void Show(PrismaView view) noexcept = 0;
+
+		// Hide a visible view.
+		virtual void Hide(PrismaView view) noexcept = 0;
+
+		// Returns true if view is hidden.
+		virtual bool IsHidden(PrismaView view) noexcept = 0;
+
 		// Get scroll size in pixels.
 		virtual int GetScrollingPixelSize(PrismaView view) noexcept = 0;
 

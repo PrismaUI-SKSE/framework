@@ -101,6 +101,30 @@ void PluginAPI::PrismaUIInterface::Unfocus(PrismaView view) noexcept
     return PrismaUI::ViewManager::Unfocus(view);
 }
 
+void PluginAPI::PrismaUIInterface::Show(PrismaView view) noexcept
+{
+	if (!view) {
+		return;
+	}
+	return PrismaUI::ViewManager::Show(view);
+}
+
+void PluginAPI::PrismaUIInterface::Hide(PrismaView view) noexcept
+{
+	if (!view) {
+		return;
+	}
+	return PrismaUI::ViewManager::Hide(view);
+}
+
+bool PluginAPI::PrismaUIInterface::IsHidden(PrismaView view) noexcept
+{
+	if (!view) {
+		return true;
+	}
+	return PrismaUI::ViewManager::IsHidden(view);
+}
+
 int PluginAPI::PrismaUIInterface::GetScrollingPixelSize(PrismaView view) noexcept
 {
     if (!view) {

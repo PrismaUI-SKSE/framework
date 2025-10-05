@@ -1,6 +1,6 @@
 ﻿# Prisma UI
 
-Skyrim Next-Gen Web UI Framework. **Work In Progress Early Ready-To-Use Stage.**
+Skyrim Next-Gen Web UI Framework.
 
 - **Docs and Guides: https://www.prismaui.dev**
 - **Discord Community: https://discord.com/invite/QYztzZY8RG**

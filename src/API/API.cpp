@@ -176,3 +176,35 @@ int PluginAPI::PrismaUIInterface::GetOrder(PrismaView view) noexcept
 	}
 	return PrismaUI::ViewManager::GetOrder(view);
 }
+
+void PluginAPI::PrismaUIInterface::CreateInspectorView(PrismaView view) noexcept
+{
+    if (!view) {
+        return;
+    }
+    return PrismaUI::ViewManager::CreateInspectorView(view);
+}
+
+void PluginAPI::PrismaUIInterface::SetInspectorVisibility(PrismaView view, bool visible) noexcept
+{
+    if (!view) {
+        return;
+    }
+    return PrismaUI::ViewManager::SetInspectorVisibility(view, visible);
+}
+
+bool PluginAPI::PrismaUIInterface::IsInspectorVisible(PrismaView view) noexcept
+{
+    if (!view) {
+        return false;
+    }
+    return PrismaUI::ViewManager::IsInspectorVisible(view);
+}
+
+void PluginAPI::PrismaUIInterface::SetInspectorBounds(PrismaView view, float topLeftX, float topLeftY, unsigned int width, unsigned int height) noexcept
+{
+    if (!view) {
+        return;
+    }
+    return PrismaUI::ViewManager::SetInspectorBounds(view, topLeftX, topLeftY, width, height);
+}

@@ -3,6 +3,7 @@
 #include "InputHandler.h"
 #include "Listeners.h"
 #include "ViewOperationQueue.h"
+#include "Inspector.h"
 
 namespace PrismaUI::ViewManager {
 	using namespace Core;
@@ -451,6 +452,13 @@ namespace PrismaUI::ViewManager {
 			try {
 				logger::debug("Destroy: Beginning Ultralight resources cleanup for View [{}]", viewId);
 
+				// Clean up inspector resources first
+				if (viewData->inspectorView) {
+					logger::debug("Destroy: Releasing inspector view for View [{}]", viewId);
+					viewData->inspectorView = nullptr;
+				}
+				Inspector::DestroyInspectorResources(viewData.get());
+
 				if (viewData->ultralightView) {
 					logger::debug("Destroy: Detaching listeners for View [{}]", viewId);
 					viewData->ultralightView->set_load_listener(nullptr);
@@ -554,5 +562,23 @@ namespace PrismaUI::ViewManager {
 		}
 		logger::warn("GetOrder: View ID [{}] not found, returning -1.", viewId);
 		return -1;
+	}
+
+	// ========== Inspector API Wrappers ==========
+
+	void CreateInspectorView(const Core::PrismaViewId& viewId) {
+		Inspector::CreateInspectorView(viewId);
+	}
+
+	void SetInspectorVisibility(const Core::PrismaViewId& viewId, bool visible) {
+		Inspector::SetInspectorVisibility(viewId, visible);
+	}
+
+	bool IsInspectorVisible(const Core::PrismaViewId& viewId) {
+		return Inspector::IsInspectorVisible(viewId);
+	}
+
+	void SetInspectorBounds(const Core::PrismaViewId& viewId, float topLeftX, float topLeftY, uint32_t width, uint32_t height) {
+		Inspector::SetInspectorBounds(viewId, topLeftX, topLeftY, width, height);
 	}
 }

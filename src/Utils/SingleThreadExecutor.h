@@ -9,9 +9,17 @@
 #include <stdexcept>
 #include <utility>
 #include <type_traits>
+#include <vector>
+#include <algorithm>
 
 class SingleThreadExecutor {
 public:
+    enum class Priority {
+        HIGH = 0,    // Input events - immediate processing
+        MEDIUM = 1,  // Inspector updates - debugging tool
+        LOW = 2      // Primary view rendering - can tolerate delays
+    };
+
     SingleThreadExecutor();
     ~SingleThreadExecutor();
 
@@ -22,6 +30,12 @@ public:
 
     template<typename F, typename... Args>
     auto submit(F&& f, Args&&... args) -> std::future<std::invoke_result_t<F, Args...>>
+    {
+        return submit_with_priority(Priority::LOW, std::forward<F>(f), std::forward<Args>(args)...);
+    }
+
+    template<typename F, typename... Args>
+    auto submit_with_priority(Priority priority, F&& f, Args&&... args) -> std::future<std::invoke_result_t<F, Args...>>
     {
         using ReturnType = std::invoke_result_t<F, Args...>;
 
@@ -35,17 +49,35 @@ public:
             if (stop_) {
                 throw std::runtime_error("Executor is stopping");
             }
-            tasks_.emplace([task_ptr]() { (*task_ptr)(); });
+            tasks_.push_back({priority, [task_ptr]() { (*task_ptr)(); }});
+            std::push_heap(tasks_.begin(), tasks_.end(), TaskCompare());
         }
         condition_.notify_one();
         return res;
     }
 
+    bool IsWorkerThread() const {
+        return std::this_thread::get_id() == worker_thread_id_;
+    }
+
 private:
+    struct Task {
+        Priority priority;
+        std::function<void()> func;
+    };
+
+    struct TaskCompare {
+        bool operator()(const Task& a, const Task& b) const {
+            // Lower priority value = higher priority (inverted for max heap)
+            return static_cast<int>(a.priority) > static_cast<int>(b.priority);
+        }
+    };
+
     void run();
 
     std::thread worker_thread_;
-    std::queue<std::function<void()>> tasks_;
+    std::thread::id worker_thread_id_;
+    std::vector<Task> tasks_;  // Using vector as heap for priority queue
     std::mutex queue_mutex_;
     std::condition_variable condition_;
     bool stop_;
@@ -53,6 +85,7 @@ private:
 
 inline SingleThreadExecutor::SingleThreadExecutor() : stop_(false) {
     worker_thread_ = std::thread(&SingleThreadExecutor::run, this);
+    worker_thread_id_ = worker_thread_.get_id();
 }
 
 inline SingleThreadExecutor::~SingleThreadExecutor() {
@@ -75,8 +108,10 @@ inline void SingleThreadExecutor::run() {
             if (stop_ && tasks_.empty()) {
                 return;
             }
-            task = std::move(tasks_.front());
-            tasks_.pop();
+            // Pop highest priority task from heap
+            std::pop_heap(tasks_.begin(), tasks_.end(), TaskCompare());
+            task = std::move(tasks_.back().func);
+            tasks_.pop_back();
         }
         try {
             task();

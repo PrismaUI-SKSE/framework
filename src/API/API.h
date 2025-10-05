@@ -37,6 +37,12 @@ public:
 		virtual bool IsValid(PrismaView view) noexcept override;
 		virtual void Destroy(PrismaView view) noexcept override;
 
+		// Inspector methods
+		virtual void CreateInspectorView(PrismaView view) noexcept override;
+		virtual void SetInspectorVisibility(PrismaView view, bool visible) noexcept override;
+		virtual bool IsInspectorVisible(PrismaView view) noexcept override;
+		virtual void SetInspectorBounds(PrismaView view, float topLeftX, float topLeftY, unsigned int width, unsigned int height) noexcept override;
+
 	private:
 		unsigned long apiTID = 0;
 	};

@@ -45,6 +45,7 @@ namespace PrismaUI::Core {
 	struct PrismaView {
 		PrismaViewId id;
 		RefPtr<View> ultralightView = nullptr;
+		RefPtr<View> inspectorView = nullptr;
 		std::string htmlPathToLoad;
 		std::atomic<bool> isHidden = false;
 		std::unique_ptr<Listeners::MyLoadListener> loadListener;
@@ -53,7 +54,27 @@ namespace PrismaUI::Core {
 		std::function<void(const PrismaViewId&)> domReadyCallback;
 		int scrollingPixelSize = 28;
 		std::atomic<bool> isPaused = false;
+		std::atomic<bool> inspectorVisible = false;
 
+		// Inspector rendering data
+		std::vector<std::byte> inspectorPixelBuffer;
+		uint32_t inspectorBufferWidth = 0;
+		uint32_t inspectorBufferHeight = 0;
+		uint32_t inspectorBufferStride = 0;
+		std::mutex inspectorBufferMutex;
+		std::atomic<bool> inspectorFrameReady = false;
+		std::atomic<bool> inspectorPointerHover = false;
+		ID3D11Texture2D* inspectorTexture = nullptr;
+		ID3D11ShaderResourceView* inspectorTextureView = nullptr;
+		uint32_t inspectorTextureWidth = 0;
+		uint32_t inspectorTextureHeight = 0;
+		float inspectorPosX = 0.0f;
+		float inspectorPosY = 0.0f;
+		uint32_t inspectorDisplayWidth = 0;
+		uint32_t inspectorDisplayHeight = 0;
+		float inspectorOpacity = 1.0f;
+
+		// Primary view rendering data
 		ID3D11Texture2D* texture = nullptr;
 		ID3D11ShaderResourceView* textureView = nullptr;
 		uint32_t textureWidth = 0;
@@ -105,4 +126,10 @@ namespace PrismaUI::Core {
 	void InitGraphics();
 	void D3DPresent(uint32_t a_p1);
 	void Shutdown();
+
+	// Inspector View functions
+	void CreateInspectorView(const PrismaViewId& viewId);
+	void SetInspectorVisibility(const PrismaViewId& viewId, bool visible);
+	bool IsInspectorVisible(const PrismaViewId& viewId);
+	void SetInspectorBounds(const PrismaViewId& viewId, float topLeftX, float topLeftY, uint32_t width, uint32_t height);
 }

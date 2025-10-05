@@ -25,4 +25,10 @@ namespace PrismaUI::ViewManager {
 	bool IsValid(const Core::PrismaViewId& viewId);
 	void SetScrollingPixelSize(const Core::PrismaViewId& viewId, int pixelSize);
 	int GetScrollingPixelSize(const Core::PrismaViewId& viewId);
+
+	// Inspector View functions
+	void CreateInspectorView(const Core::PrismaViewId& viewId);
+	void SetInspectorVisibility(const Core::PrismaViewId& viewId, bool visible);
+	bool IsInspectorVisible(const Core::PrismaViewId& viewId);
+	void SetInspectorBounds(const Core::PrismaViewId& viewId, float topLeftX, float topLeftY, uint32_t width, uint32_t height);
 }

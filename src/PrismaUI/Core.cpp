@@ -4,6 +4,7 @@
 #include "Listeners.h"
 #include "InputHandler.h"
 #include "Communication.h"
+#include "Inspector.h"
 
 namespace PrismaUI::Core {
 	using namespace PrismaUI::Listeners;
@@ -183,6 +184,7 @@ namespace PrismaUI::Core {
 			if (viewData) {
 				logger::debug("D3DPresent: Releasing D3D resources for View [{}] from render thread", viewId);
 				ViewRenderer::ReleaseViewTexture(viewData.get());
+				Inspector::ReleaseInspectorTexture(viewData.get());
 				viewData->pendingResourceRelease = false;
 			}
 		}

@@ -1,4 +1,4 @@
-﻿# PrismaUI
+﻿# Prisma UI
 
 Skyrim Next-Gen Web UI Framework. **Work In Progress Early Ready-To-Use Stage.**
 

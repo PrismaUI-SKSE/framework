@@ -35,6 +35,7 @@ namespace PrismaUI::Listeners {
 		virtual ~MyViewListener();
 
 		virtual void OnAddConsoleMessage(View* caller, const ConsoleMessage& message) override;
+		virtual RefPtr<View> OnCreateInspectorView(View* caller, bool is_local, const String& inspectedURL) override;
 	};
 
 	class MyUltralightLogger : public Logger {

@@ -71,6 +71,18 @@ namespace PRISMA_UI_API
 
 		// Completely destroy view.
 		virtual void Destroy(PrismaView view) noexcept = 0;
+
+		// Create inspector view for debugging.
+		virtual void CreateInspectorView(PrismaView view) noexcept = 0;
+
+		// Show or hide the inspector overlay.
+		virtual void SetInspectorVisibility(PrismaView view, bool visible) noexcept = 0;
+
+		// Returns true if inspector is visible.
+		virtual bool IsInspectorVisible(PrismaView view) noexcept = 0;
+
+		// Set inspector window position and size.
+		virtual void SetInspectorBounds(PrismaView view, float topLeftX, float topLeftY, unsigned int width, unsigned int height) noexcept = 0;
 	};
 
 	typedef void* (*_RequestPluginAPI)(const InterfaceVersion interfaceVersion);

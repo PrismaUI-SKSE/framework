@@ -238,6 +238,10 @@ namespace PrismaUI::ViewRenderer {
 
 		if (viewsToDraw.empty()) return;
 
+		std::sort(viewsToDraw.begin(), viewsToDraw.end(), [](const std::shared_ptr<Core::PrismaView>& a, const std::shared_ptr<Core::PrismaView>& b) {
+			return a->order < b->order;
+		});
+
 		try {
 			ID3D11BlendState* backupBlendState = nullptr; FLOAT backupBlendFactor[4]; UINT backupSampleMask = 0;
 			ID3D11DepthStencilState* backupDepthStencilState = nullptr; UINT backupStencilRef = 0;

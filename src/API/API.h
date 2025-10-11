@@ -36,6 +36,8 @@ public:
 		virtual void SetScrollingPixelSize(PrismaView view, int pixelSize) noexcept override;
 		virtual bool IsValid(PrismaView view) noexcept override;
 		virtual void Destroy(PrismaView view) noexcept override;
+		virtual void SetOrder(PrismaView view, int order) noexcept override;
+		virtual int GetOrder(PrismaView view) noexcept override;
 
 	private:
 		unsigned long apiTID = 0;

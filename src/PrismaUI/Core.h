@@ -53,6 +53,7 @@ namespace PrismaUI::Core {
 		std::function<void(const PrismaViewId&)> domReadyCallback;
 		int scrollingPixelSize = 28;
 		std::atomic<bool> isPaused = false;
+		int order = 0;
 
 		ID3D11Texture2D* texture = nullptr;
 		ID3D11ShaderResourceView* textureView = nullptr;

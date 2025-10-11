@@ -33,10 +33,21 @@ namespace PrismaUI::ViewManager {
 
 		{
 			std::unique_lock lock(viewsMutex);
+			int maxOrder = -1;
+			if (views.empty()) {
+				viewData->order = 0;
+			} else {
+				for (const auto& pair : views) {
+					if (pair.second->order > maxOrder) {
+						maxOrder = pair.second->order;
+					}
+				}
+				viewData->order = maxOrder + 1;
+			}
 			views[newViewId] = viewData;
 		}
 
-		logger::info("View [{}] creation requested for path: {}. Actual view will be created by UI thread.", newViewId, fileUrl);
+		logger::info("View [{}] creation requested for path: {} with order <{}>. Actual view will be created by UI thread.", newViewId, fileUrl, viewData->order);
 
 		return newViewId;
 	}
@@ -462,5 +473,27 @@ namespace PrismaUI::ViewManager {
 		viewDataToDestroy->pendingResourceRelease = false;
 
 		logger::info("Destroy: View [{}] successfully destroyed", viewId);
+	}
+
+	void SetOrder(const Core::PrismaViewId& viewId, int order) {
+		std::shared_lock lock(viewsMutex);
+		auto it = views.find(viewId);
+		if (it != views.end()) {
+			it->second->order = order;
+			logger::debug("SetOrder: Set order {} for view [{}]", order, viewId);
+		}
+		else {
+			logger::warn("SetOrder: View ID [{}] not found.", viewId);
+		}
+	}
+
+	int GetOrder(const Core::PrismaViewId& viewId) {
+		std::shared_lock lock(viewsMutex);
+		auto it = views.find(viewId);
+		if (it != views.end()) {
+			return it->second->order;
+		}
+		logger::warn("GetOrder: View ID [{}] not found, returning -1.", viewId);
+		return -1;
 	}
 }

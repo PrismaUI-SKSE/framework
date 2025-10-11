@@ -28,7 +28,7 @@ namespace PrismaUI::Communication {
 			String result = "";
 			if (view_ptr) {
 				try {
-					result = view_ptr->EvaluateScript(script_copy);
+					result = view_ptr->EvaluateScript(script_copy, nullptr, "");
 				}
 				catch (const std::exception& e) {
 					logger::error("Exception during EvaluateScript: {}", e.what());
@@ -105,7 +105,7 @@ namespace PrismaUI::Communication {
 			return;
 		}
 
-		auto scoped_context = viewData->ultralightView->LockJSContext();
+		auto scoped_context = viewData->ultralightView->LockJSContext("");
 		JSContextRef ctx = (*scoped_context);
 		JSObjectRef globalObj = JSContextGetGlobalObject(ctx);
 
@@ -262,7 +262,7 @@ namespace PrismaUI::Communication {
 				return;
 			}
 
-			auto scoped_context = view_ptr->LockJSContext();
+			auto scoped_context = view_ptr->LockJSContext("");
 			JSContextRef ctx = (*scoped_context);
 			JSValueRef exception = nullptr;
 

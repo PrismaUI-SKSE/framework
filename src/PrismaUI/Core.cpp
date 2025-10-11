@@ -213,6 +213,10 @@ namespace PrismaUI::Core {
 				ViewConfig view_config;
 				view_config.is_accelerated = false;
 				view_config.is_transparent = true;
+				view_config.initial_focus = false;
+				view_config.enable_images = true;
+				view_config.enable_javascript = true;
+				view_config.enable_compositor = false;
 
 				viewData->ultralightView = renderer->CreateView(screenSize.width, screenSize.height, view_config, nullptr);
 

@@ -2,6 +2,7 @@
 #include "Core.h"
 #include "InputHandler.h"
 #include "Listeners.h"
+#include "ViewOperationQueue.h"
 
 namespace PrismaUI::ViewManager {
 	using namespace Core;
@@ -52,50 +53,97 @@ namespace PrismaUI::ViewManager {
 		return newViewId;
 	}
 
-	void Show(const Core::PrismaViewId& viewId) {
-		if (!IsHidden(viewId)) {
-			logger::warn("Show: View [{}] is already visible.", viewId);
+	// Helper function to perform unfocus operations (used by Hide, Unfocus, and Focus)
+	// closeFocusMenu: whether to close FocusMenu (false when switching focus between views)
+	static void PerformUnfocusOperations(const Core::PrismaViewId& viewId, std::shared_ptr<PrismaView> viewData, bool closeFocusMenu = true) {
+		if (!viewData || !viewData->ultralightView) {
 			return;
 		}
 
-		std::shared_lock lock(viewsMutex);
+		if (viewData->isPaused.load()) {
+			auto ui = RE::UI::GetSingleton();
+			if (ui && ui->numPausesGame > 0) {
+				ui->numPausesGame--;
+			}
+			viewData->isPaused.store(false);
+		}
 
-		auto it = views.find(viewId);
+		PrismaUI::InputHandler::DisableInputCapture(viewId);
+		viewData->ultralightView->Unfocus();
 		
-		if (it != views.end()) {
-			it->second->isHidden = false;
-			logger::debug("View [{}] marked as Visible.", viewId);
+		if (closeFocusMenu) {
+			FocusMenu::Close();
 		}
-		else {
+
+		auto controlMap = RE::ControlMap::GetSingleton();
+		controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kWheelZoom, true);
+		controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kLooking, true);
+		controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kJumping, true);
+		controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kMovement, true);
+		controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kActivate, true);
+		controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kPOVSwitch, true);
+		controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kVATS, true);
+	}
+
+	void Show(const Core::PrismaViewId& viewId) {
+		if (!ViewManager::IsValid(viewId)) {
 			logger::warn("Show: View ID [{}] not found.", viewId);
+			return;
 		}
+
+		ViewOperationQueue::EnqueueOperation(viewId, [viewId]() {
+			std::shared_ptr<PrismaView> viewData = nullptr;
+			{
+				std::shared_lock lock(viewsMutex);
+				auto it = views.find(viewId);
+				if (it != views.end()) {
+					viewData = it->second;
+				}
+			}
+
+			if (viewData) {
+				if (!viewData->isHidden.load()) {
+					logger::debug("Show: View [{}] is already visible.", viewId);
+					return;
+				}
+				viewData->isHidden = false;
+				logger::debug("View [{}] marked as Visible.", viewId);
+			}
+		});
 	}
 
 	void Hide(const Core::PrismaViewId& viewId) {
-		if (IsHidden(viewId)) {
-			logger::warn("Hide: View [{}] is already hidden.", viewId);
+		if (!ViewManager::IsValid(viewId)) {
+			logger::warn("Hide: View ID [{}] not found.", viewId);
 			return;
 		}
 
-		std::shared_ptr<PrismaView> viewData = nullptr;
-		{
-			std::shared_lock lock(viewsMutex);
-			auto it = views.find(viewId);
-			if (it != views.end()) {
-				viewData = it->second;
+		ViewOperationQueue::EnqueueOperation(viewId, [viewId]() {
+			std::shared_ptr<PrismaView> viewData = nullptr;
+			{
+				std::shared_lock lock(viewsMutex);
+				auto it = views.find(viewId);
+				if (it != views.end()) {
+					viewData = it->second;
+				}
 			}
-		}
 
-		if (viewData) {
-			viewData->isHidden = true;
-			ultralightThread.submit([view_ptr = viewData->ultralightView]() {
-				if (view_ptr) view_ptr->Unfocus();
-				});
-			logger::debug("View [{}] marked as Hidden and Unfocused.", viewId);
-		}
-		else {
-			logger::warn("Hide: View ID [{}] not found.", viewId);
-		}
+			if (viewData) {
+				if (viewData->isHidden.load()) {
+					logger::debug("Hide: View [{}] is already hidden.", viewId);
+					return;
+				}
+
+				// If view has focus, unfocus it first
+				if (viewData->ultralightView && viewData->ultralightView->HasFocus()) {
+					PerformUnfocusOperations(viewId, viewData);
+					logger::debug("Hide: View [{}] was focused, unfocused it.", viewId);
+				}
+
+				viewData->isHidden = true;
+				logger::debug("View [{}] marked as Hidden.", viewId);
+			}
+		});
 	}
 
 	bool IsHidden(const Core::PrismaViewId& viewId) {
@@ -114,52 +162,75 @@ namespace PrismaUI::ViewManager {
 	}
 
 	bool Focus(const Core::PrismaViewId& viewId, bool pauseGame) {
-		if (HasFocus(viewId)) {
-			logger::warn("Focus: View [{}] already has focus.", viewId);
+		if (!ViewManager::IsValid(viewId)) {
+			logger::warn("Focus: View ID [{}] not found.", viewId);
 			return false;
 		}
 
 		auto ui = RE::UI::GetSingleton();
-		if (ui && ui->IsMenuOpen(RE::Console::MENU_NAME)) return false;
+		if (ui && ui->IsMenuOpen(RE::Console::MENU_NAME)) {
+			logger::warn("Focus: Cannot focus view [{}] while console is open.", viewId);
+			return false;
+		}
 
-		std::shared_ptr<PrismaView> viewData = nullptr;
-		{ std::shared_lock lock(viewsMutex); auto it = views.find(viewId); if (it != views.end()) viewData = it->second; }
-
-		if (viewData && viewData->ultralightView) {
-			if (viewData->isHidden.load()) {
-				logger::warn("Focus: View [{}] is hidden, cannot focus.", viewId);
-				return false;
+		ViewOperationQueue::EnqueueOperation(viewId, [viewId, pauseGame]() {
+			std::shared_ptr<PrismaView> viewData = nullptr;
+			{
+				std::shared_lock lock(viewsMutex);
+				auto it = views.find(viewId);
+				if (it != views.end()) {
+					viewData = it->second;
+				}
 			}
 
+			if (!viewData || !viewData->ultralightView) {
+				logger::warn("Focus: View [{}] or its Ultralight View is not ready.", viewId);
+				return;
+			}
+
+			if (viewData->isHidden.load()) {
+				logger::warn("Focus: View [{}] is hidden, cannot focus.", viewId);
+				return;
+			}
+
+			if (viewData->ultralightView->HasFocus()) {
+				logger::debug("Focus: View [{}] already has focus.", viewId);
+				return;
+			}
+
+			// Unfocus other views
 			std::vector<Core::PrismaViewId> viewsToUnfocus;
 			{
 				std::shared_lock lock(viewsMutex);
 				for (const auto& pair : views) {
-					if (pair.first != viewId) {
-						auto future = ultralightThread.submit([view_ptr = pair.second->ultralightView]() -> bool {
-							return view_ptr ? view_ptr->HasFocus() : false;
-							});
-						try {
-							if (future.get()) {
-								viewsToUnfocus.push_back(pair.first);
-							}
-						}
-						catch (const std::exception& e) {
-							logger::error("Exception checking focus state during Focus op: {}", e.what());
-						}
+					if (pair.first != viewId && pair.second->ultralightView && pair.second->ultralightView->HasFocus()) {
+						viewsToUnfocus.push_back(pair.first);
 					}
 				}
 			}
 
 			for (const auto& idToUnfocus : viewsToUnfocus) {
-				Unfocus(idToUnfocus);
+				ViewOperationQueue::EnqueueOperation(idToUnfocus, [idToUnfocus]() {
+					std::shared_ptr<PrismaView> vd = nullptr;
+					{
+						std::shared_lock lock(viewsMutex);
+						auto it = views.find(idToUnfocus);
+						if (it != views.end()) {
+							vd = it->second;
+						}
+					}
+
+					if (vd && vd->ultralightView) {
+						// Don't close FocusMenu when switching focus between views
+						PerformUnfocusOperations(idToUnfocus, vd, false);
+						logger::debug("Unfocus: View [{}] unfocused (focus switching).", idToUnfocus);
+					}
+				});
 			}
 
-			ultralightThread.submit([view_ptr = viewData->ultralightView]() {
-				if (view_ptr) view_ptr->Focus();
-				});
+			// Focus this view
+			viewData->ultralightView->Focus();
 			PrismaUI::InputHandler::EnableInputCapture(viewId);
-
 			FocusMenu::Open();
 
 			auto controlMap = RE::ControlMap::GetSingleton();
@@ -171,82 +242,66 @@ namespace PrismaUI::ViewManager {
 			controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kPOVSwitch, false);
 			controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kVATS, false);
 
-			if (pauseGame && ui) {
-				ui->numPausesGame++;
-				viewData->isPaused.store(true);
-				logger::debug("Game paused for View [{}]", viewId);
+			if (pauseGame) {
+				auto ui = RE::UI::GetSingleton();
+				if (ui) {
+					ui->numPausesGame++;
+					viewData->isPaused.store(true);
+					logger::debug("Game paused for View [{}]", viewId);
+				}
 			}
 
-			logger::debug("Focus requested and input capture enabled for View [{}].", viewId);
+			logger::debug("Focus: View [{}] focused successfully.", viewId);
+		});
 
-			return true;
-		}
-		else if (viewData) {
-			logger::warn("Focus: View [{}] Ultralight View is not ready.", viewId);
-		}
-		else {
-			logger::warn("Focus: View ID [{}] not found.", viewId);
-		}
-
-		return false;
+		return true;
 	}
 
 	void Unfocus(const Core::PrismaViewId& viewId) {
-		if (!HasFocus(viewId)) {
-			logger::warn("Unfocus: View [{}] does not have focus.", viewId);
+		if (!ViewManager::IsValid(viewId)) {
+			logger::warn("Unfocus: View ID [{}] not found.", viewId);
 			return;
 		}
 
-		std::shared_ptr<PrismaView> viewData = nullptr;
-		{ std::shared_lock lock(viewsMutex); auto it = views.find(viewId); if (it != views.end()) viewData = it->second; }
-
-		if (viewData && viewData->ultralightView) {
-			if (viewData->isPaused.load()) {
-				auto ui = RE::UI::GetSingleton();
-				if (ui && ui->numPausesGame > 0) {
-					ui->numPausesGame--;
-					logger::debug("Game unpaused for View [{}]", viewId);
+		ViewOperationQueue::EnqueueOperation(viewId, [viewId]() {
+			std::shared_ptr<PrismaView> viewData = nullptr;
+			{
+				std::shared_lock lock(viewsMutex);
+				auto it = views.find(viewId);
+				if (it != views.end()) {
+					viewData = it->second;
 				}
-				viewData->isPaused.store(false);
 			}
 
-			PrismaUI::InputHandler::DisableInputCapture(viewId);
-			ultralightThread.submit([view_ptr = viewData->ultralightView]() {
-				if (view_ptr) view_ptr->Unfocus();
-				});
-
-			FocusMenu::Close();
-
-			auto controlMap = RE::ControlMap::GetSingleton();
-			controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kWheelZoom, true);
-			controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kLooking, true);
-			controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kJumping, true);
-			controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kMovement, true);
-			controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kActivate, true);
-			controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kPOVSwitch, true);
-			controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kVATS, true);
-
-			logger::debug("Unfocus requested and input capture disabled for View [{}].", viewId);
-		}
-		else if (viewData) {
-			if (viewData->isPaused.load()) {
-				auto ui = RE::UI::GetSingleton();
-				if (ui && ui->numPausesGame > 0) {
-					ui->numPausesGame--;
-					logger::debug("Game unpaused for View [{}]", viewId);
-				}
-				viewData->isPaused.store(false);
+			if (!viewData) {
+				logger::warn("Unfocus: View [{}] not found during operation execution.", viewId);
+				PrismaUI::InputHandler::DisableInputCapture(0);
+				FocusMenu::Close();
+				return;
 			}
 
-			logger::warn("Unfocus: View [{}] Ultralight View is not ready.", viewId);
-			PrismaUI::InputHandler::DisableInputCapture(viewId);
-			FocusMenu::Close();
-		}
-		else {
-			logger::warn("Unfocus: View ID [{}] not found.", viewId);
-			PrismaUI::InputHandler::DisableInputCapture(0);
-			FocusMenu::Close();
-		}
+			if (!viewData->ultralightView) {
+				logger::warn("Unfocus: View [{}] Ultralight View is not ready.", viewId);
+				if (viewData->isPaused.load()) {
+					auto ui = RE::UI::GetSingleton();
+					if (ui && ui->numPausesGame > 0) {
+						ui->numPausesGame--;
+					}
+					viewData->isPaused.store(false);
+				}
+				PrismaUI::InputHandler::DisableInputCapture(viewId);
+				FocusMenu::Close();
+				return;
+			}
+
+			if (!viewData->ultralightView->HasFocus()) {
+				logger::debug("Unfocus: View [{}] does not have focus.", viewId);
+				return;
+			}
+
+			PerformUnfocusOperations(viewId, viewData);
+			logger::debug("Unfocus: View [{}] unfocused successfully.", viewId);
+		});
 	}
 
 	bool HasFocus(const Core::PrismaViewId& viewId) {
@@ -340,6 +395,10 @@ namespace PrismaUI::ViewManager {
 			logger::warn("Destroy: View ID [{}] not found.", viewId);
 			return;
 		}
+
+		// Clear pending operations for this view to prevent execution after destruction
+		ViewOperationQueue::ClearOperations(viewId);
+		logger::debug("Destroy: Cleared pending operations for View [{}]", viewId);
 
 		if (HasFocus(viewId)) {
 			logger::debug("Destroy: View [{}] has focus, unfocusing first.", viewId);

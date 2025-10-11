@@ -23,6 +23,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <queue>
 #include <mutex>
 #include <future>
 #include <stdexcept>
@@ -66,6 +67,12 @@ namespace PrismaUI::Core {
 		std::mutex bufferMutex;
 		std::atomic<bool> newFrameReady = false;
 		std::atomic<bool> pendingResourceRelease = false;
+
+		// Operation queue fields for thread-safe sequential execution
+		std::mutex operationMutex;
+		std::queue<std::function<void()>> pendingOperations;
+		std::atomic<bool> isProcessingOperation = false;
+		std::atomic<int> queuedOperationsCount = 0;
 
 		~PrismaView();
 	};

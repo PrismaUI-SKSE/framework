@@ -28,7 +28,7 @@ namespace PrismaUI::Communication {
 			String result = "";
 			if (view_ptr) {
 				try {
-					result = view_ptr->EvaluateScript(script_copy);
+					result = view_ptr->EvaluateScript(script_copy, nullptr, "");
 				}
 				catch (const std::exception& e) {
 					logger::error("Exception during EvaluateScript: {}", e.what());
@@ -105,7 +105,7 @@ namespace PrismaUI::Communication {
 			return;
 		}
 
-		auto scoped_context = viewData->ultralightView->LockJSContext();
+		auto scoped_context = viewData->ultralightView->LockJSContext("");
 		JSContextRef ctx = (*scoped_context);
 		JSObjectRef globalObj = JSContextGetGlobalObject(ctx);
 
@@ -147,7 +147,7 @@ namespace PrismaUI::Communication {
 		}
 	}
 
-		JSValueRef JSCallbackDispatcher(JSContextRef ctx, JSObjectRef function,
+	JSValueRef JSCallbackDispatcher(JSContextRef ctx, JSObjectRef function,
 		JSObjectRef thisObject, size_t argumentCount,
 		const JSValueRef arguments[], JSValueRef* exception) {
 
@@ -209,24 +209,19 @@ namespace PrismaUI::Communication {
 		if (targetCallback) {
 			logger::debug("JSCallbackDispatcher: Target callback found. Invoking with data: '{}'", paramStrData);
 			try {
-				targetCallback(paramStrData);
+				auto task = SKSE::GetTaskInterface();
+
+				task->AddTask([callback = targetCallback, data = paramStrData]() {
+					callback(data);
+				});
+
 				logger::debug("JSCallbackDispatcher: Target callback invoked successfully.");
 			}
 			catch (const std::exception& e) {
 				logger::error("JSCallbackDispatcher: C++ exception in registered callback for '{}'/'{}': {}", retrievedName, retrievedViewId, e.what());
-				if (exception) {
-					JSStringRef errorStr = JSStringCreateWithUTF8CString(e.what());
-					*exception = JSValueMakeString(ctx, errorStr);
-					JSStringRelease(errorStr);
-				}
 			}
 			catch (...) {
 				logger::error("JSCallbackDispatcher: Unknown C++ exception in registered callback for '{}'/'{}'", retrievedName, retrievedViewId);
-				if (exception) {
-					JSStringRef errorStr = JSStringCreateWithUTF8CString("Unknown C++ error in JS callback.");
-					*exception = JSValueMakeString(ctx, errorStr);
-					JSStringRelease(errorStr);
-				}
 			}
 		}
 		else {
@@ -267,7 +262,7 @@ namespace PrismaUI::Communication {
 				return;
 			}
 
-			auto scoped_context = view_ptr->LockJSContext();
+			auto scoped_context = view_ptr->LockJSContext("");
 			JSContextRef ctx = (*scoped_context);
 			JSValueRef exception = nullptr;
 
@@ -401,24 +396,19 @@ namespace PrismaUI::Communication {
 		if (targetCallback) {
 			logger::debug("InvokeCppCallback: Found callback. Invoking with data: '{}'", paramStr);
 			try {
-				targetCallback(paramStr);
+				auto task = SKSE::GetTaskInterface();
+
+				task->AddTask([callback = targetCallback, data = paramStr]() {
+					callback(data);
+				});
+
 				logger::debug("InvokeCppCallback: Callback invoked successfully");
 			}
 			catch (const std::exception& e) {
 				logger::error("InvokeCppCallback: Exception in callback: {}", e.what());
-				if (exception) {
-					JSStringRef errStr = JSStringCreateWithUTF8CString(e.what());
-					*exception = JSValueMakeString(ctx, errStr);
-					JSStringRelease(errStr);
-				}
 			}
 			catch (...) {
 				logger::error("InvokeCppCallback: Unknown exception in callback");
-				if (exception) {
-					JSStringRef errStr = JSStringCreateWithUTF8CString("Unknown error in C++ callback");
-					*exception = JSValueMakeString(ctx, errStr);
-					JSStringRelease(errStr);
-				}
 			}
 		}
 		else {

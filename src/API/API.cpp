@@ -12,7 +12,11 @@ PrismaView PluginAPI::PrismaUIInterface::CreateView(const char* htmlPath, PRISMA
     std::function<void(PrismaUI::Core::PrismaViewId)> domReadyWrapper = nullptr;
     if (onDomReadyCallback) {
         domReadyWrapper = [onDomReadyCallback](PrismaUI::Core::PrismaViewId viewId) {
-            onDomReadyCallback(viewId);
+            auto task = SKSE::GetTaskInterface();
+
+            task->AddTask([callback = onDomReadyCallback, id = viewId]() {
+                callback(id);
+            });
         };
     }
 
@@ -155,4 +159,20 @@ void PluginAPI::PrismaUIInterface::Destroy(PrismaView view) noexcept
         return;
     }
     return PrismaUI::ViewManager::Destroy(view);
+}
+
+void PluginAPI::PrismaUIInterface::SetOrder(PrismaView view, int order) noexcept
+{
+	if (!view) {
+		return;
+	}
+	return PrismaUI::ViewManager::SetOrder(view, order);
+}
+
+int PluginAPI::PrismaUIInterface::GetOrder(PrismaView view) noexcept
+{
+	if (!view) {
+		return -1;
+	}
+	return PrismaUI::ViewManager::GetOrder(view);
 }

@@ -71,6 +71,12 @@ namespace PRISMA_UI_API
 
 		// Completely destroy view.
 		virtual void Destroy(PrismaView view) noexcept = 0;
+
+		// Set view order.
+		virtual void SetOrder(PrismaView view, int order) noexcept = 0;
+
+		// Get view order.
+		virtual int GetOrder(PrismaView view) noexcept = 0;
 	};
 
 	typedef void* (*_RequestPluginAPI)(const InterfaceVersion interfaceVersion);

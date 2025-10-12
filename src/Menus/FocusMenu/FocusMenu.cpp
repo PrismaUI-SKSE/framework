@@ -48,20 +48,24 @@ bool FocusMenu::IsOpen()
 
 void FocusMenu::Open()
 {
-	auto ui = RE::UI::GetSingleton();
-	auto msgQ = RE::UIMessageQueue::GetSingleton();
+	SKSE::GetTaskInterface()->AddUITask([=] {
+		auto ui = RE::UI::GetSingleton();
+		auto msgQ = RE::UIMessageQueue::GetSingleton();
 
-	if (ui && msgQ && !IsOpen()) {
-		msgQ->AddMessage(MENU_NAME, RE::UI_MESSAGE_TYPE::kShow, nullptr);
-	}
+		if (ui && msgQ && !IsOpen()) {
+			msgQ->AddMessage(MENU_NAME, RE::UI_MESSAGE_TYPE::kShow, nullptr);
+		}
+	});
 }
 
 void FocusMenu::Close()
 {
-	auto ui = RE::UI::GetSingleton();
-	auto msgQ = RE::UIMessageQueue::GetSingleton();
+	SKSE::GetTaskInterface()->AddUITask([=] {
+		auto ui = RE::UI::GetSingleton();
+		auto msgQ = RE::UIMessageQueue::GetSingleton();
 
-	if (ui && msgQ && IsOpen()) {
-		msgQ->AddMessage(MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr);
-	}
+		if (ui && msgQ && IsOpen()) {
+			msgQ->AddMessage(MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr);
+		}
+	});
 }

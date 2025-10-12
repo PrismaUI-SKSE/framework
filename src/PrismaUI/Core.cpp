@@ -4,6 +4,7 @@
 #include "Listeners.h"
 #include "InputHandler.h"
 #include "Communication.h"
+#include "ViewOperationQueue.h"
 
 namespace PrismaUI::Core {
 	using namespace PrismaUI::Listeners;
@@ -186,6 +187,9 @@ namespace PrismaUI::Core {
 				viewData->pendingResourceRelease = false;
 			}
 		}
+
+		// Process pending operations for all views
+		ViewOperationQueue::ProcessAllViewOperations();
 
 		ultralightThread.submit([dev = d3dDevice, ctx = d3dContext, hwnd = hWnd]() {
 			if (!dev || !ctx || !hwnd || !renderer) return;

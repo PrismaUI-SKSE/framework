@@ -106,36 +106,30 @@ namespace PrismaUI::ViewRenderer {
 			return;
 		}
 
-		bool expected = true;
-		if (!viewData->newFrameReady.compare_exchange_strong(expected, false)) {
-			return;
+		// Update main view texture if frame is ready
+		const bool mainFrameReady = viewData->newFrameReady.exchange(false);
+		if (mainFrameReady) {
+			std::lock_guard lock(viewData->bufferMutex);
+			if (!viewData->pixelBuffer.empty() && viewData->bufferWidth > 0 && viewData->bufferHeight > 0) {
+				CopyPixelsToTexture(viewData.get(), viewData->pixelBuffer.data(),
+					viewData->bufferWidth, viewData->bufferHeight,
+					viewData->bufferStride);
+			}
 		}
 
-		std::lock_guard lock(viewData->bufferMutex);
-		if (viewData->pixelBuffer.empty() || viewData->bufferWidth == 0 || viewData->bufferHeight == 0) {
-			return;
-		}
-
-		CopyPixelsToTexture(viewData.get(), viewData->pixelBuffer.data(),
-			viewData->bufferWidth, viewData->bufferHeight,
-			viewData->bufferStride);
-
-		// Update inspector texture if visible and ready
-		if (viewData->inspectorVisible.load() && viewData->inspectorFrameReady.load()) {
-			bool expectedInspector = true;
-			if (viewData->inspectorFrameReady.compare_exchange_strong(expectedInspector, false)) {
-				std::lock_guard inspectorLock(viewData->inspectorBufferMutex);
-				if (!viewData->inspectorPixelBuffer.empty() && 
-					viewData->inspectorBufferWidth > 0 && 
-					viewData->inspectorBufferHeight > 0) {
-					Inspector::CopyInspectorPixelsToTexture(
-						viewData.get(),
-						viewData->inspectorPixelBuffer.data(),
-						viewData->inspectorBufferWidth,
-						viewData->inspectorBufferHeight,
-						viewData->inspectorBufferStride
-					);
-				}
+		// Update inspector texture independently (don't gate on main view frame)
+		if (viewData->inspectorVisible.load() && viewData->inspectorFrameReady.exchange(false)) {
+			std::lock_guard inspectorLock(viewData->inspectorBufferMutex);
+			if (!viewData->inspectorPixelBuffer.empty() && 
+				viewData->inspectorBufferWidth > 0 && 
+				viewData->inspectorBufferHeight > 0) {
+				Inspector::CopyInspectorPixelsToTexture(
+					viewData.get(),
+					viewData->inspectorPixelBuffer.data(),
+					viewData->inspectorBufferWidth,
+					viewData->inspectorBufferHeight,
+					viewData->inspectorBufferStride
+				);
 			}
 		}
 	}

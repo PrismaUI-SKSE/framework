@@ -15,6 +15,8 @@
 #endif
 
 namespace PrismaUI::Inspector {
+	// BGRA pixel format constant
+	constexpr uint32_t BYTES_PER_PIXEL = 4;
 	using namespace Core;
 
 	namespace {
@@ -175,12 +177,13 @@ namespace PrismaUI::Inspector {
 		viewData->inspectorVisible.store(visible);
 		viewData->inspectorPointerHover.store(false);
 
-		if (visible && viewData->ultralightView && ViewManager::HasFocus(viewId)) {
+		if (visible && viewData->inspectorView) {
+			// Focus the inspector view when made visible
 			auto future = ultralightThread.submit_with_priority(SingleThreadExecutor::Priority::MEDIUM, [view = viewData]() {
 				if (view->inspectorView) {
 					view->inspectorView->Focus();
 				}
-				if (view->ultralightView) {
+				if (view->ultralightView && view->ultralightView->HasFocus()) {
 					view->ultralightView->Unfocus();
 				}
 			});
@@ -387,7 +390,7 @@ namespace PrismaUI::Inspector {
 			uint8_t* dst = static_cast<uint8_t*>(mapped.pData);
 
 			for (uint32_t row = 0; row < height; ++row) {
-				std::memcpy(dst + row * mapped.RowPitch, src + row * stride, width * 4);
+				std::memcpy(dst + row * mapped.RowPitch, src + row * stride, width * BYTES_PER_PIXEL);
 			}
 
 			d3dContext->Unmap(viewData->inspectorTexture, 0);

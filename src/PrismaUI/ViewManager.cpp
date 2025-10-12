@@ -23,7 +23,14 @@ namespace PrismaUI::ViewManager {
 		}
 
 		Core::PrismaViewId newViewId = generator.generate();
-		std::string fileUrl = "file:///Data/PrismaUI/views/" + htmlPath;
+		
+		// Check if htmlPath is a website URL (starts with http:// or https://)
+		std::string fileUrl;
+		if (htmlPath.substr(0, 7) == "http://" || htmlPath.substr(0, 8) == "https://") {
+			fileUrl = htmlPath;
+		} else {
+			fileUrl = "file:///Data/PrismaUI/views/" + htmlPath;
+		}
 
 		auto viewData = std::make_shared<Core::PrismaView>();
 		viewData->id = newViewId;

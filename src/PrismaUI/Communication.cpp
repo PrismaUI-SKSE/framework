@@ -209,11 +209,7 @@ namespace PrismaUI::Communication {
 		if (targetCallback) {
 			logger::debug("JSCallbackDispatcher: Target callback found. Invoking with data: '{}'", paramStrData);
 			try {
-				auto task = SKSE::GetTaskInterface();
-
-				task->AddTask([callback = targetCallback, data = paramStrData]() {
-					callback(data);
-				});
+				targetCallback(paramStrData);
 
 				logger::debug("JSCallbackDispatcher: Target callback invoked successfully.");
 			}
@@ -396,11 +392,7 @@ namespace PrismaUI::Communication {
 		if (targetCallback) {
 			logger::debug("InvokeCppCallback: Found callback. Invoking with data: '{}'", paramStr);
 			try {
-				auto task = SKSE::GetTaskInterface();
-
-				task->AddTask([callback = targetCallback, data = paramStr]() {
-					callback(data);
-				});
+				targetCallback(paramStr);
 
 				logger::debug("InvokeCppCallback: Callback invoked successfully");
 			}

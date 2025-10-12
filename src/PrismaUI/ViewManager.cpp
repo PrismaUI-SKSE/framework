@@ -167,12 +167,6 @@ namespace PrismaUI::ViewManager {
 			return false;
 		}
 
-		auto ui = RE::UI::GetSingleton();
-		if (ui && ui->IsMenuOpen(RE::Console::MENU_NAME)) {
-			logger::warn("Focus: Cannot focus view [{}] while console is open.", viewId);
-			return false;
-		}
-
 		ViewOperationQueue::EnqueueOperation(viewId, [viewId, pauseGame]() {
 			std::shared_ptr<PrismaView> viewData = nullptr;
 			{

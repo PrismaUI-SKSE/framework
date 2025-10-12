@@ -16,7 +16,7 @@ set_policy("package.requires_lock", true)
 add_rules("mode.debug", "mode.releasedbg")
 add_rules("plugin.vsxmake.autoupdate")
 
-local ULTRALIGHT_SDK_ROOT = "lib/ultralight-1.4.0"
+local ULTRALIGHT_SDK_ROOT = "lib/ultralight"
 local ULTRALIGHT_INCLUDE_DIR = ULTRALIGHT_SDK_ROOT .. "/include"
 local ULTRALIGHT_BINARY_DIR = ULTRALIGHT_SDK_ROOT .. "/bin"
 local ULTRALIGHT_LIBRARY_DIR = ULTRALIGHT_SDK_ROOT .. "/lib"

@@ -393,27 +393,62 @@ namespace PrismaUI::InputHandler {
 
             if (targetViewData && targetViewData->ultralightView) {
                 ultralight::View* ulView = targetViewData->ultralightView.get();
+                ultralight::View* inspectorView = targetViewData->inspectorView ? targetViewData->inspectorView.get() : nullptr;
+                
                 for (const auto& event_variant : ev_queue) {
-                    std::visit([ulView](const auto& arg) {
+                    std::visit([ulView, inspectorView, &targetViewData](const auto& arg) {
                         using T = std::decay_t<decltype(arg)>;
                         if constexpr (std::is_same_v<T, ultralight::MouseEvent>) {
-                            ulView->FireMouseEvent(arg);
-                        }
-                        else if constexpr (std::is_same_v<T, ultralight::ScrollEvent>) {
-                            ulView->FireScrollEvent(arg);
-                        }
-                        else if constexpr (std::is_same_v<T, ultralight::KeyEvent>) {
-                            if (arg.type == ultralight::KeyEvent::kType_RawKeyDown || arg.type == ultralight::KeyEvent::kType_KeyUp) {
-                                ultralight::String keyIdentifier = arg.key_identifier;
-                                ultralight::GetKeyIdentifierFromVirtualKeyCode(arg.virtual_key_code, keyIdentifier);
+                            // Check if mouse is over inspector bounds when inspector is visible
+                            bool mouseOverInspector = false;
+                            if (inspectorView && targetViewData->inspectorVisible.load()) {
+                                const float inspX = targetViewData->inspectorPosX;
+                                const float inspY = targetViewData->inspectorPosY;
+                                const float inspW = static_cast<float>(targetViewData->inspectorDisplayWidth);
+                                const float inspH = static_cast<float>(targetViewData->inspectorDisplayHeight);
+                                
+                                const float mouseX = static_cast<float>(arg.x);
+                                const float mouseY = static_cast<float>(arg.y);
+                                
+                                if (mouseX >= inspX && mouseX < (inspX + inspW) &&
+                                    mouseY >= inspY && mouseY < (inspY + inspH)) {
+                                    mouseOverInspector = true;
+                                    targetViewData->inspectorPointerHover.store(true);
+                                } else {
+                                    targetViewData->inspectorPointerHover.store(false);
+                                }
                             }
-
-                            ulView->FireKeyEvent(arg);
+                            
+                            if (mouseOverInspector) {
+                                // Translate mouse coordinates to inspector view
+                                ultralight::MouseEvent inspectorEvent = arg;
+                                inspectorEvent.x = arg.x - static_cast<int>(targetViewData->inspectorPosX);
+                                inspectorEvent.y = arg.y - static_cast<int>(targetViewData->inspectorPosY);
+                                inspectorView->FireMouseEvent(inspectorEvent);
+                            } else {
+                                ulView->FireMouseEvent(arg);
+                            }
+                        } else if constexpr (std::is_same_v<T, ultralight::ScrollEvent>) {
+                            // Route scroll events to inspector if mouse is over it
+                            if (inspectorView && targetViewData->inspectorVisible.load() && 
+                                targetViewData->inspectorPointerHover.load()) {
+                                inspectorView->FireScrollEvent(arg);
+                            } else {
+                                ulView->FireScrollEvent(arg);
+                            }
+                        } else if constexpr (std::is_same_v<T, ultralight::KeyEvent>) {
+                            // Route keyboard events to inspector if it's visible and focused
+                            if (inspectorView && targetViewData->inspectorVisible.load() && 
+                                inspectorView->HasFocus()) {
+                                inspectorView->FireKeyEvent(arg);
+                            } else {
+                                ulView->FireKeyEvent(arg);
+                            }
                         }
-                        }, event_variant);
+                    }, event_variant);
                 }
             }
-            });
+        });
     }
 
     void Shutdown() {

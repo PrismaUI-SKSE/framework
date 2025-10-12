@@ -39,6 +39,12 @@ public:
 		virtual void SetOrder(PrismaView view, int order) noexcept override;
 		virtual int GetOrder(PrismaView view) noexcept override;
 
+		// Inspector methods
+		virtual void CreateInspectorView(PrismaView view) noexcept override;
+		virtual void SetInspectorVisibility(PrismaView view, bool visible) noexcept override;
+		virtual bool IsInspectorVisible(PrismaView view) noexcept override;
+		virtual void SetInspectorBounds(PrismaView view, float topLeftX, float topLeftY, unsigned int width, unsigned int height) noexcept override;
+
 	private:
 		unsigned long apiTID = 0;
 	};

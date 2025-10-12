@@ -69,6 +69,39 @@ namespace PrismaUI::Listeners {
 		logger::info("View [{}]: JSConsole: {}", viewId_, message.message().utf8().data());
 	}
 
+	RefPtr<View> MyViewListener::OnCreateInspectorView(View* caller, bool is_local, const String& inspectedURL) {
+		logger::info("View [{}]: ViewListener: OnCreateInspectorView called (is_local={}, URL={})", 
+			viewId_, is_local, inspectedURL.utf8().data());
+
+		RefPtr<View> inspectorView = nullptr;
+
+		std::shared_lock lock(viewsMutex);
+		auto it = views.find(viewId_);
+		if (it != views.end() && it->second) {
+			auto viewData = it->second;
+
+			if (!viewData->inspectorView && viewData->ultralightView && renderer) {
+				uint32_t width = viewData->inspectorDisplayWidth > 0 ? viewData->inspectorDisplayWidth : 800;
+				uint32_t height = viewData->inspectorDisplayHeight > 0 ? viewData->inspectorDisplayHeight : 600;
+
+				ViewConfig config;
+				config.is_accelerated = false;
+				config.is_transparent = true;
+
+				viewData->inspectorView = renderer->CreateView(width, height, config, nullptr);
+				inspectorView = viewData->inspectorView;
+
+				logger::info("View [{}]: Inspector view created with size {}x{}", viewId_, width, height);
+			}
+			else if (viewData->inspectorView) {
+				inspectorView = viewData->inspectorView;
+				logger::info("View [{}]: Returning existing inspector view", viewId_);
+			}
+		}
+
+		return inspectorView;
+	}
+
 	// MyUltralightLogger
 	MyUltralightLogger::~MyUltralightLogger() = default;
 

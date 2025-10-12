@@ -9,7 +9,7 @@
                 commit = "2111b79aae54ba2bdbf6b39a9fe5b6bec116b527",
                 url = "https://github.com/xmake-io/xmake-repo.git"
             },
-            version = "4.0.0-rc1"
+            version = "3.31.1"
         },
         ["directxmath#31fecfc4"] = {
             repo = {
@@ -38,7 +38,7 @@
         ["rapidcsv#31fecfc4"] = {
             repo = {
                 branch = "master",
-                commit = "af7eae5a80b40e382927170080b54e0f258f7a27",
+                commit = "873a175d3945b4080ab884a292b9351723337666",
                 url = "https://github.com/xmake-io/xmake-repo.git"
             },
             version = "v8.87"
@@ -46,7 +46,7 @@
         ["spdlog#9c36f0a9"] = {
             repo = {
                 branch = "master",
-                commit = "3df5cf899dd47cf780633d7e74d805a289e1d6c6",
+                commit = "873a175d3945b4080ab884a292b9351723337666",
                 url = "https://github.com/xmake-io/xmake-repo.git"
             },
             version = "v1.15.3"

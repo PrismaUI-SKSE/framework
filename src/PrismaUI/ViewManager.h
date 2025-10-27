@@ -17,7 +17,7 @@ namespace PrismaUI::ViewManager {
 	void Show(const Core::PrismaViewId& viewId);
 	void Hide(const Core::PrismaViewId& viewId);
 	bool IsHidden(const Core::PrismaViewId& viewId);
-	bool Focus(const Core::PrismaViewId& viewId, bool pauseGame = false);
+	bool Focus(const Core::PrismaViewId& viewId, bool pauseGame = false, bool disableFocusMenu = false);
 	void Unfocus(const Core::PrismaViewId& viewId);
 	bool HasFocus(const Core::PrismaViewId& viewId);
 	bool ViewHasInputFocus(const Core::PrismaViewId& viewId);
@@ -27,4 +27,5 @@ namespace PrismaUI::ViewManager {
 	int GetScrollingPixelSize(const Core::PrismaViewId& viewId);
 	void SetOrder(const Core::PrismaViewId& viewId, int order);
 	int GetOrder(const Core::PrismaViewId& viewId);
+	bool HasAnyActiveFocus();
 }

@@ -1,5 +1,5 @@
 ﻿#include "CursorMenu.h"
-#include <Menus/FocusMenu/FocusMenu.h>
+#include <PrismaUI/ViewManager.h>
 
 void CursorMenuEx::AdvanceMovie_Hook(float a_interval, std::uint32_t a_currentTime)
 {
@@ -10,11 +10,12 @@ void CursorMenuEx::AdvanceMovie_Hook(float a_interval, std::uint32_t a_currentTi
 
 		CursorMenuEx* menu = static_cast<CursorMenuEx*>(cursorMenu.get());
 
-		if (FocusMenu::IsOpen() && cursorMenu && cursorMenu->uiMovie && cursorMenu->uiMovie->GetVisible() == true) {
-			cursorMenu->uiMovie->SetVisible(false);
-		}
+		auto hasAnyFocus = PrismaUI::ViewManager::HasAnyActiveFocus();
 
-		if (!FocusMenu::IsOpen() && cursorMenu && cursorMenu->uiMovie && cursorMenu->uiMovie->GetVisible() == false) {
+		// forced setting vanilla cursor state
+		if (hasAnyFocus && cursorMenu && cursorMenu->uiMovie && cursorMenu->uiMovie->GetVisible() == true) {
+			cursorMenu->uiMovie->SetVisible(false);
+		} else if (!hasAnyFocus && cursorMenu && cursorMenu->uiMovie && cursorMenu->uiMovie->GetVisible() == false) {
 			cursorMenu->uiMovie->SetVisible(true);
 		}
 
@@ -25,7 +26,7 @@ void CursorMenuEx::AdvanceMovie_Hook(float a_interval, std::uint32_t a_currentTi
 RE::UI_MESSAGE_RESULTS CursorMenuEx::ProcessMessage_Hook(RE::UIMessage& a_message)
 {
 	if (a_message.type == RE::UI_MESSAGE_TYPE::kHide) {
-		if (FocusMenu::IsOpen()) {
+		if (PrismaUI::ViewManager::HasAnyActiveFocus()) {
 			return RE::UI_MESSAGE_RESULTS::kIgnore;
 		}
 

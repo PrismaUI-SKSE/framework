@@ -46,7 +46,7 @@ namespace PRISMA_UI_API
 		virtual bool HasFocus(PrismaView view) noexcept = 0;
 
 		// Set focus on view.
-		virtual bool Focus(PrismaView view, bool pauseGame = false) noexcept = 0;
+		virtual bool Focus(PrismaView view, bool pauseGame = false, bool disableFocusMenu = false) noexcept = 0;
 
 		// Remove focus from view.
 		virtual void Unfocus(PrismaView view) noexcept = 0;
@@ -77,6 +77,9 @@ namespace PRISMA_UI_API
 
 		// Get view order.
 		virtual int GetOrder(PrismaView view) noexcept = 0;
+
+		// Returns true if any view has active focus.
+		virtual bool HasAnyActiveFocus() noexcept = 0;
 	};
 
 	typedef void* (*_RequestPluginAPI)(const InterfaceVersion interfaceVersion);

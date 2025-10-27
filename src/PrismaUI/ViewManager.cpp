@@ -168,13 +168,13 @@ namespace PrismaUI::ViewManager {
 		return views.find(viewId) != views.end();
 	}
 
-	bool Focus(const Core::PrismaViewId& viewId, bool pauseGame) {
+	bool Focus(const Core::PrismaViewId& viewId, bool pauseGame, bool disableFocusMenu) {
 		if (!ViewManager::IsValid(viewId)) {
 			logger::warn("Focus: View ID [{}] not found.", viewId);
 			return false;
 		}
 
-		ViewOperationQueue::EnqueueOperation(viewId, [viewId, pauseGame]() {
+		ViewOperationQueue::EnqueueOperation(viewId, [viewId, pauseGame, disableFocusMenu]() {
 			std::shared_ptr<PrismaView> viewData = nullptr;
 			{
 				std::shared_lock lock(viewsMutex);
@@ -232,7 +232,10 @@ namespace PrismaUI::ViewManager {
 			// Focus this view
 			viewData->ultralightView->Focus();
 			PrismaUI::InputHandler::EnableInputCapture(viewId);
-			FocusMenu::Open();
+			
+			if (!disableFocusMenu) {
+				FocusMenu::Open();
+			}
 
 			auto controlMap = RE::ControlMap::GetSingleton();
 			controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kWheelZoom, false);
@@ -555,5 +558,27 @@ namespace PrismaUI::ViewManager {
 		}
 		logger::warn("GetOrder: View ID [{}] not found, returning -1.", viewId);
 		return -1;
+	}
+
+	bool HasAnyActiveFocus() {
+		std::shared_lock lock(viewsMutex);
+		
+		for (const auto& pair : views) {
+			if (pair.second && pair.second->ultralightView) {
+				auto future = ultralightThread.submit([view_ptr = pair.second->ultralightView]() -> bool {
+					return view_ptr ? view_ptr->HasFocus() : false;
+				});
+				
+				try {
+					if (future.get()) {
+						return true;
+					}
+				} catch (const std::exception& e) {
+					logger::error("HasAnyActiveFocus: Exception checking focus for view: {}", e.what());
+				}
+			}
+		}
+		
+		return false;
 	}
 }

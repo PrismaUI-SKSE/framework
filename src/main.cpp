@@ -23,7 +23,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
     }
     
     SKSE::Init(a_skse);
-    logger::info("---------------- PrismaUI 1.1.0 by StarkMP <discord: starkmp> ----------------");
+    logger::info("---------------- PrismaUI 1.1.1 by StarkMP <discord: starkmp> ----------------");
     logger::info("-------------------- Docs and Guides: https://prismaui.dev -------------------");
     SKSE::AllocTrampoline(1 << 10);
 

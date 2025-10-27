@@ -92,12 +92,12 @@ bool PluginAPI::PrismaUIInterface::HasFocus(PrismaView view) noexcept
     return PrismaUI::ViewManager::HasFocus(view);
 }
 
-bool PluginAPI::PrismaUIInterface::Focus(PrismaView view, bool pauseGame) noexcept
+bool PluginAPI::PrismaUIInterface::Focus(PrismaView view, bool pauseGame, bool disableFocusMenu) noexcept
 {
     if (!view) {
         return false;
     }
-    return PrismaUI::ViewManager::Focus(view, pauseGame);
+    return PrismaUI::ViewManager::Focus(view, pauseGame, disableFocusMenu);
 }
 
 void PluginAPI::PrismaUIInterface::Unfocus(PrismaView view) noexcept
@@ -178,4 +178,9 @@ int PluginAPI::PrismaUIInterface::GetOrder(PrismaView view) noexcept
 		return -1;
 	}
 	return PrismaUI::ViewManager::GetOrder(view);
+}
+
+bool PluginAPI::PrismaUIInterface::HasAnyActiveFocus() noexcept
+{
+	return PrismaUI::ViewManager::HasAnyActiveFocus();
 }

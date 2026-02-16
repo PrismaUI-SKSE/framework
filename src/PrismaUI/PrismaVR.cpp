@@ -1,6 +1,19 @@
 // PrismaVR.cpp — Universal VR Bridge for Prisma UI
 // Translates 2D Prisma views into 3D VR overlays with full interaction.
-// Works on both OpenComposite Unleashed and SteamVR runtimes.
+// Works on both OpenComposite Unleashed but CANNOT get to work with Steam runtimes.
+// Perhaps I can figure a work around out in the future, but the main issue is
+// I simply don't have direct access to the Steam API, Skyrim engine calls it directly.
+// Steam KB has limited features anyway and attempts were turning into extremely
+//..... undesirable outcomes, best to place Open Composite Unleashed (OCU) as a requirment
+// I built the system, I know it works, and I can maintain it. Even a successful 
+// coupling of Steam's API  would mean Prisma UI Would be reliant on the whim of our boy, Gabe.
+// That's unreliable and not as future proof. 
+// There IS another way, use Prisma itself to generate the Keyboard, but that's STILL
+// limited in function outside OCU (Which can call a KB anywhere and the key advantage that makes it worth the dependency.) 
+// Hotkeys via Steam would be unreachable to open menus, and it could ONLY respond upon text box interaction. It would be
+// Prisma UI VR without full capability, leading to endless feature request... and regression 
+// request for SkyUIVR MCM pages, which is counter to Precisely what Prisma UI is intended to be
+// a scaleform replacement. And now for the big boy.
 
 #include "PrismaVR.h"
 #include "PrismaVR_Bridge.h"
@@ -190,6 +203,11 @@ namespace openvr {
 // Vtable call infrastructure
 // OpenVR C++ interfaces are obtained via VR_GetGenericInterface. Rather than
 // defining fake C++ classes (which crash if even one vtable entry is wrong),
+// But before we judge, I feel this approach will be quite safe if limiting to SkyrimVR 
+// Only way it breaks is if you count slots from the wrong header version (SkyrimVR there IS only one version)
+// which is a development mistake, not a runtime risk. Only Caution is the attempt 
+// to use for Fallout 4 VR. I'd need to check if IVROverlay slots are identical. 
+// Ok, it's a rebel move but the smartest way to handle the legacy target
 // we call specific vtable slots by index — counted from IVROverlay_026.h.
 // On x64 Windows, all calling conventions use the Microsoft x64 ABI.
 // ============================================================================
@@ -276,7 +294,7 @@ static VR_GetGenericInterface_t g_vrGetInterface = nullptr;
 
 // Raw interface pointers obtained via VR_GetGenericInterface.
 // Called through VCall<> with explicit vtable slot indices.
-// Works identically on SteamVR (native) and OpenComposite (reimplemented).
+// Works identically on SteamVR (If we figure something out in the future) and OpenComposite (reimplemented).
 static void* g_overlay = nullptr;  // IVROverlay_026
 static void* g_system = nullptr;   // IVRSystem_022
 
@@ -323,6 +341,10 @@ struct HitInfo {
 };
 static HitInfo g_hitInfo[2]; // 0=left, 1=right
 
+
+// I decided to put the lasers in Prisma UI I think this would be the right call for future integration
+// I could keep all the laser logic in OCU but if it is decided to expand this would be a nice have
+// From the end user perspective using OCU they wouldn't even be able to tell the difference.
 // Laser beam overlays (beams from controllers, dots rendered via CSS on the panel)
 static openvr::VROverlayHandle_t g_laserBeamHandle[2] = {0, 0};
 static ID3D11Texture2D* g_laserBeamTex = nullptr;
@@ -383,12 +405,13 @@ static std::atomic<bool> g_textInputFocused{false}; // true ONLY when an <input>
 static std::atomic<bool> g_interactiveDragActive{false}; // true when trigger-holding on a slider/range/scrollbar — suppresses panel grab
 
 // Active hand for mouse interaction: -1 = none (first click activates), 0 = left, 1 = right.
+// TAKE NOTE: Scaleform Mouse appearing in SkyrimVR leads to CTD
 // Only the active hand sends mouse move/click events to Ultralight.
 // Both hands still show cursor dots and can grab panels.
 // Switches when the OTHER hand clicks on a panel.
 static int g_mouseActiveHand = -1;
 
-// ── Aim pose data from OpenComposite (exposed via window property) ──
+// ----Aim pose data from OpenComposite (exposed via window property)-----
 // OC computes aim poses from OpenXR's /input/aim/pose — universally correct
 // for all controllers (Quest, Vive, Index, Pico, WMR, etc.) with zero calibration.
 struct OCAimPoseData {
@@ -451,7 +474,7 @@ static bool DetectVR()
 }
 
 // ============================================================================
-// Section 5b: Laser beam overlay creation
+// Section 5b: Laser beam overlay creation, They will match OCU's 
 // ============================================================================
 
 static void CreateLaserOverlays()
@@ -518,7 +541,7 @@ static void CreateLaserOverlays()
 }
 
 // ============================================================================
-// Section 6: Transform helpers
+// Section 6: Transform helpers- PAIN IN THE ASS!!
 // ============================================================================
 
 static void BuildOverlayTransform(const VROverlayState& state, openvr::HmdMatrix34_t& out)
@@ -537,7 +560,7 @@ static void BuildOverlayTransform(const VROverlayState& state, openvr::HmdMatrix
 	float ux = state.upX / ul, uy = state.upY / ul, uz = state.upZ / ul;
 
 	// Right = up x forward
-	float rx = uy * fz - uz * fy;
+	float rx = uy * fz - uz * fy; 
 	float ry = uz * fx - ux * fz;
 	float rz = ux * fy - uy * fx;
 
@@ -548,7 +571,7 @@ static void BuildOverlayTransform(const VROverlayState& state, openvr::HmdMatrix
 
 	// HmdMatrix34_t: row-major, columns = basis vectors
 	// Col 0 = right, Col 1 = up, Col 2 = forward, Col 3 = translation
-	out.m[0][0] = rx; out.m[0][1] = ux; out.m[0][2] = fx; out.m[0][3] = state.posX;
+	out.m[0][0] = rx; out.m[0][1] = ux; out.m[0][2] = fx; out.m[0][3] = state.posX; //THESE WORK WITH META... I NEED OTHER SPECS!
 	out.m[1][0] = ry; out.m[1][1] = uy; out.m[1][2] = fy; out.m[1][3] = state.posY;
 	out.m[2][0] = rz; out.m[2][1] = uz; out.m[2][2] = fz; out.m[2][3] = state.posZ;
 }
@@ -622,7 +645,7 @@ static void PositionNewOverlay(VROverlayState& state, int viewIndex)
 // Section 8: Overlay lifecycle
 // ============================================================================
 
-// CreateVROverlay — Creates an OpenVR overlay for a Prisma view and places it in 3D space.
+// CreateVROverlay - Creates an OpenVR overlay for a Prisma view and places it in 3D space.
 //
 // Each Prisma view gets one VR overlay with its D3D11 texture as the content.
 // New overlays spawn in front of the player in an arc pattern (first centered,
@@ -1289,8 +1312,8 @@ static float ControllerDistance(const ControllerInfo& a, const ControllerInfo& b
 //   While the primary hand holds grab, the second hand's trigger enters resize mode.
 //   Panel width scales proportionally to the change in distance between controllers
 //   (pinch-to-zoom). Panel position moves to the midpoint between both hands.
-//   Both thumbsticks can push/pull the panel depth during resize.
-//
+//   Both thumbsticks can push/pull the panel depth during resize. (Should I clean up the lasers during this time?
+//   nah, I think it will be ok) 
 // Single-hand grab:
 //   Panel follows the aiming ray at the original grab distance. The grabbing hand's
 //   thumbstick Y scrolls the panel content. The OTHER hand's thumbstick Y adjusts
@@ -1395,11 +1418,14 @@ static void ProcessGrabMoveResize()
 		}
 
 		// --- Grab release: primary trigger released ---
+		// Couple of ways to go here I think what I'm going to do is when exiting out of the menu
+		// It'll come back at its default size and state. Catch 22 with the end user
+		// If I leave it in place when it reopens users will complain, if I leave it like this users will complain.
 		if (!ctrl.triggerPressed) {
 			ovl.isGrabbed = false;
 			ovl.isResizing = false;
 			ovl.grabbedByController = -1;
-			ovl.worldLocked = true; // Stay in place after grab
+			ovl.worldLocked = true; // Stay in place after grab very important..
 		}
 
 		// Update overlay transform
@@ -1412,6 +1438,7 @@ static void ProcessGrabMoveResize()
 
 // ============================================================================
 // Section 12b: Face all world-locked overlays toward the player
+// Pretty self explanatory
 // ============================================================================
 
 static void FaceOverlaysToPlayer()
@@ -1579,8 +1606,10 @@ static void UpdateHeadRelativeOverlays()
 // could leave behind dozens of world-locked panels across multiple locations.
 // These could register and stack up invisibly (user has long since moved on) and waste 
 // both VR overlay resources and per-frame texture submission calls.
-//
-// Many modders WILL NOT THINK of cleanup calls and this will cause support tickets 
+// The maximum distance feature that I put in place should mitigate many of these
+// However modders can become creative and find workarounds...and they WILL. 
+// And of these extremely creative and talented modders
+// Many WILL NOT THINK of cleanup calls and this could cause support tickets to Prisma
 // if left unhandled. Users will report "performance gets worse the longer I play" 
 // or "my overlays stopped working" Bad modding practices could erroneously be seen as
 // a Prisma UI issue if not properly handled. VR HAS to set such limits anyway. 

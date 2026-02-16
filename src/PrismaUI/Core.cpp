@@ -10,6 +10,7 @@
 #include "ViewManager.h"
 #include "ViewOperationQueue.h"
 #include "ViewRenderer.h"
+#include "PrismaVR.h"
 
 namespace {
     // SEH exception class to convert structured exceptions to C++ exceptions
@@ -161,8 +162,14 @@ namespace PrismaUI::Core {
             })
             .get();
 
+        PrismaVR::Initialize();
+
         auto ui = RE::UI::GetSingleton();
-        ui->Register(FocusMenu::MENU_NAME, FocusMenu::Creator);
+        if (!PrismaVR::IsVRActive()) {
+            ui->Register(FocusMenu::MENU_NAME, FocusMenu::Creator);
+        } else {
+            logger::info("VR detected — skipping FocusMenu (cursor) registration. Laser interaction active.");
+        }
 
         logger::info("PrismaUI Core System Initialized.");
     }
@@ -477,9 +484,13 @@ namespace PrismaUI::Core {
 
         DrawViews();
         DrawCursor();
+
+        // VR overlay rendering (no-op if not in VR mode)
+        PrismaVR::OnFrame();
     }
 
     void Shutdown() {
+        PrismaVR::Shutdown();
         logger::info("Shutting down PrismaUI Core System...");
 
         std::vector<PrismaViewId> viewIdsToDestroy;

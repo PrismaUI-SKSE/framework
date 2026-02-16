@@ -4,6 +4,7 @@
 
 #include "Communication.h"
 #include "Core.h"
+#include "PrismaVR.h"
 #include "Utils/Encoding.h"
 #include "ViewManager.h"
 #pragma comment(lib, "comctl32.lib")
@@ -237,6 +238,12 @@ namespace PrismaUI::InputHandler {
             RE::InputEvent* const* a_event,
             [[maybe_unused]] RE::BSTEventSource<RE::InputEvent*>* a_eventSource) override {
             if (!a_event || !*a_event || !g_isAnyInputCaptureActive.load()) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            // In VR, PrismaVR laser handles all pointer/scroll interaction directly.
+            // Skip mouse/scroll queuing to prevent conflict with laser coordinates.
+            if (PrismaVR::IsVRActive()) {
                 return RE::BSEventNotifyControl::kContinue;
             }
 

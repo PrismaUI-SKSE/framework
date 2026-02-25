@@ -193,15 +193,13 @@ namespace PrismaUI::Core {
             if (input_handler_initialized.compare_exchange_strong(expected_ih_init, true)) {
                 Initialize(hWnd, &ultralightThread, &views, &viewsMutex);
 
-                // Schedule WndProc hook installation on the main thread (required for
-                // SetWindowSubclass)
-                SKSE::GetTaskInterface()->AddTask([]() {
-                    if (InstallWndProcHook()) {
-                        logger::info("WndProc hook installed successfully.");
-                    } else {
-                        logger::error("Failed to install WndProc hook!");
-                    }
-                });
+                // Install WndProc subclass directly here — SetWindowSubclass requires
+                // being called from the thread that owns the HWND (this render thread).
+                if (InstallWndProcHook()) {
+                    logger::info("WndProc hook installed successfully.");
+                } else {
+                    logger::error("Failed to install WndProc hook!");
+                }
             }
         } else if (!hWnd) {
             logger::warn("InitGraphics: Could not obtain HWND.");

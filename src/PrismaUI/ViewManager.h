@@ -1,5 +1,8 @@
 ﻿#pragma once
 
+#include <cstdint>
+#include <functional>
+
 #pragma warning(push)
 #pragma warning(disable : 4100)
 #include <AppCore/Platform.h>
@@ -8,6 +11,10 @@
 #include <Ultralight/Ultralight.h>
 #include <Ultralight/View.h>
 #pragma warning(pop)
+
+namespace PRISMA_UI_API {
+    enum class ConsoleMessageLevel : uint8_t;
+}
 
 namespace PrismaUI::Core {
     typedef uint64_t PrismaViewId;
@@ -39,4 +46,8 @@ namespace PrismaUI::ViewManager {
     void SetInspectorBounds(const Core::PrismaViewId& viewId, float topLeftX, float topLeftY, uint32_t width,
                             uint32_t height);
     bool HasAnyActiveFocus();
+
+    // Console message callback registration
+    void RegisterConsoleCallback(const Core::PrismaViewId& viewId,
+                                 std::function<void(Core::PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> callback);
 }

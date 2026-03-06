@@ -52,11 +52,13 @@ RequestPluginAPI(const PRISMA_UI_API::InterfaceVersion a_interfaceVersion) {
 
   switch (a_interfaceVersion) {
   case PRISMA_UI_API::InterfaceVersion::V1:
-    logger::info("RequestPluginAPI returned the API singleton");
-    return static_cast<void *>(api);
+    logger::info("RequestPluginAPI returned V1 interface");
+    return static_cast<PRISMA_UI_API::IVPrismaUI1*>(api);
+  case PRISMA_UI_API::InterfaceVersion::V2:
+    logger::info("RequestPluginAPI returned V2 interface");
+    return static_cast<PRISMA_UI_API::IVPrismaUI2*>(api);
+  default:
+    logger::info("RequestPluginAPI requested unsupported interface version");
+    return nullptr;
   }
-
-  logger::info("RequestPluginAPI requested the wrong interface version");
-
-  return nullptr;
 }

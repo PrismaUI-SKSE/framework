@@ -614,4 +614,15 @@ namespace PrismaUI::ViewManager {
             return false;
         }
     }
+
+    void RegisterConsoleCallback(const Core::PrismaViewId& viewId,
+                                 std::function<void(Core::PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> callback) {
+        std::unique_lock lock(viewsMutex);
+        auto it = views.find(viewId);
+        if (it != views.end() && it->second) {
+            it->second->consoleMessageCallback = std::move(callback);
+        } else {
+            logger::warn("RegisterConsoleCallback: View ID [{}] not found.", viewId);
+        }
+    }
 }

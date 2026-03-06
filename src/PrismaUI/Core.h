@@ -35,6 +35,10 @@
 #include "Utils/NanoID.h"
 #include "Utils/SingleThreadExecutor.h"
 
+namespace PRISMA_UI_API {
+    enum class ConsoleMessageLevel : uint8_t;
+}
+
 namespace PrismaUI::Listeners {
     class MyLoadListener;
     class MyViewListener;
@@ -57,6 +61,7 @@ namespace PrismaUI::Core {
         std::unique_ptr<Listeners::MyViewListener> viewListener;
         std::atomic<bool> isLoadingFinished = false;
         std::function<void(const PrismaViewId&)> domReadyCallback;
+        std::function<void(PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> consoleMessageCallback;
         int scrollingPixelSize = 28;
         std::atomic<bool> isPaused = false;
         int order = 0;

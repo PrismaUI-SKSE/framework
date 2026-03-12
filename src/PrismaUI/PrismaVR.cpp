@@ -1,19 +1,6 @@
 // PrismaVR.cpp — Universal VR Bridge for Prisma UI
 // Translates 2D Prisma views into 3D VR overlays with full interaction.
-// Works on both OpenComposite Unleashed but CANNOT get to work with Steam runtimes.
-// Perhaps I can figure a work around out in the future, but the main issue is
-// I simply don't have direct access to the Steam API, Skyrim engine calls it directly.
-// Steam KB has limited features anyway and attempts were turning into extremely
-//..... undesirable outcomes, best to place Open Composite Unleashed (OCU) as a requirment
-// I built the system, I know it works, and I can maintain it. Even a successful 
-// coupling of Steam's API  would mean Prisma UI Would be reliant on the whim of our boy, Gabe.
-// That's unreliable and not as future proof. 
-// There IS another way, use Prisma itself to generate the Keyboard, but that's STILL
-// limited in function outside OCU (Which can call a KB anywhere and the key advantage that makes it worth the dependency.) 
-// Hotkeys via Steam would be unreachable to open menus, and it could ONLY respond upon text box interaction. It would be
-// Prisma UI VR without full capability, leading to endless feature request... and regression 
-// request for SkyUIVR MCM pages, which is counter to Precisely what Prisma UI is intended to be
-// a scaleform replacement. And now for the big boy.
+// Works on both OpenComposite Unleashed and SteamVR runtimes.
 
 #include "PrismaVR.h"
 #include "PrismaVR_Bridge.h"
@@ -203,11 +190,6 @@ namespace openvr {
 // Vtable call infrastructure
 // OpenVR C++ interfaces are obtained via VR_GetGenericInterface. Rather than
 // defining fake C++ classes (which crash if even one vtable entry is wrong),
-// But before we judge, I feel this approach will be quite safe if limiting to SkyrimVR 
-// Only way it breaks is if you count slots from the wrong header version (SkyrimVR there IS only one version)
-// which is a development mistake, not a runtime risk. Only Caution is the attempt 
-// to use for Fallout 4 VR. I'd need to check if IVROverlay slots are identical. 
-// Ok, it's a rebel move but the smartest way to handle the legacy target
 // we call specific vtable slots by index — counted from IVROverlay_026.h.
 // On x64 Windows, all calling conventions use the Microsoft x64 ABI.
 // ============================================================================
@@ -217,6 +199,17 @@ static Ret VCall(void* iface, int slot, Args... args) {
 	void** vtable = *reinterpret_cast<void***>(iface);
 	using Fn = Ret(*)(void*, Args...);
 	return reinterpret_cast<Fn>(vtable[slot])(iface, args...);
+}
+
+// Checked overlay call — logs non-zero EVROverlayError returns.
+// Use this for all IVROverlay calls that return an error code.
+template<typename... Args>
+static openvr::EVROverlayError VCallOvl(void* iface, int slot, const char* funcName, Args... args) {
+	auto err = VCall<openvr::EVROverlayError>(iface, slot, args...);
+	if (err != openvr::VROverlayError_None) {
+		logger::warn("PrismaVR: {} failed (error {})", funcName, static_cast<int>(err));
+	}
+	return err;
 }
 
 // IVROverlay_026 vtable slot indices (counted from build/generated/interfaces/IVROverlay_026.h)
@@ -294,7 +287,7 @@ static VR_GetGenericInterface_t g_vrGetInterface = nullptr;
 
 // Raw interface pointers obtained via VR_GetGenericInterface.
 // Called through VCall<> with explicit vtable slot indices.
-// Works identically on SteamVR (If we figure something out in the future) and OpenComposite (reimplemented).
+// Works identically on SteamVR (native) and OpenComposite (reimplemented).
 static void* g_overlay = nullptr;  // IVROverlay_026
 static void* g_system = nullptr;   // IVRSystem_022
 
@@ -341,10 +334,6 @@ struct HitInfo {
 };
 static HitInfo g_hitInfo[2]; // 0=left, 1=right
 
-
-// I decided to put the lasers in Prisma UI I think this would be the right call for future integration
-// I could keep all the laser logic in OCU but if it is decided to expand this would be a nice have
-// From the end user perspective using OCU they wouldn't even be able to tell the difference.
 // Laser beam overlays (beams from controllers, dots rendered via CSS on the panel)
 static openvr::VROverlayHandle_t g_laserBeamHandle[2] = {0, 0};
 static ID3D11Texture2D* g_laserBeamTex = nullptr;
@@ -391,6 +380,9 @@ static constexpr int DEBUG_LOG_INTERVAL_FRAMES = 300;  // ~5 seconds at 60fps
 
 // CSS cursor dots injected into Prisma HTML views (one per hand, rendered ON the panel texture)
 static uint64_t g_lastHitViewId[2] = {0, 0};        // per-controller last-hit view for hiding
+static int g_lastCursorX[2] = {-1, -1};              // last injected cursor X (skip if unchanged)
+static int g_lastCursorY[2] = {-1, -1};              // last injected cursor Y (skip if unchanged)
+static bool g_cursorDotCreated[2] = {false, false};   // track if dot element exists in DOM
 
 // Control masking via Skyrim's ControlMap (global toggles)
 static bool g_movementMasked = false;
@@ -405,13 +397,12 @@ static std::atomic<bool> g_textInputFocused{false}; // true ONLY when an <input>
 static std::atomic<bool> g_interactiveDragActive{false}; // true when trigger-holding on a slider/range/scrollbar — suppresses panel grab
 
 // Active hand for mouse interaction: -1 = none (first click activates), 0 = left, 1 = right.
-// TAKE NOTE: Scaleform Mouse appearing in SkyrimVR leads to CTD
 // Only the active hand sends mouse move/click events to Ultralight.
 // Both hands still show cursor dots and can grab panels.
 // Switches when the OTHER hand clicks on a panel.
 static int g_mouseActiveHand = -1;
 
-// ----Aim pose data from OpenComposite (exposed via window property)-----
+// ── Aim pose data from OpenComposite (exposed via window property) ──
 // OC computes aim poses from OpenXR's /input/aim/pose — universally correct
 // for all controllers (Quest, Vive, Index, Pico, WMR, etc.) with zero calibration.
 struct OCAimPoseData {
@@ -474,7 +465,7 @@ static bool DetectVR()
 }
 
 // ============================================================================
-// Section 5b: Laser beam overlay creation, They will match OCU's 
+// Section 5b: Laser beam overlay creation
 // ============================================================================
 
 static void CreateLaserOverlays()
@@ -520,14 +511,14 @@ static void CreateLaserOverlays()
 			g_laserBeamHandle[i] = 0;
 			continue;
 		}
-		VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::SetOverlayWidthInMeters,
+		VCallOvl(g_overlay, OVL_SLOT::SetOverlayWidthInMeters, "SetOverlayWidthInMeters(laser)",
 			g_laserBeamHandle[i], LASER_WIDTH);
 		openvr::Texture_t bt; bt.handle = g_laserBeamTex;
 		bt.eType = openvr::TextureType_DirectX; bt.eColorSpace = openvr::ColorSpace_Auto;
-		VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::SetOverlayTexture,
+		VCallOvl(g_overlay, OVL_SLOT::SetOverlayTexture, "SetOverlayTexture(laser)",
 			g_laserBeamHandle[i], &bt);
 		// Render laser ON TOP of panel overlays (default sort order = 0)
-		VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::SetOverlaySortOrder,
+		VCallOvl(g_overlay, OVL_SLOT::SetOverlaySortOrder, "SetOverlaySortOrder(laser)",
 			g_laserBeamHandle[i], LASER_SORT_ORDER);
 		successCount++;
 	}
@@ -541,7 +532,7 @@ static void CreateLaserOverlays()
 }
 
 // ============================================================================
-// Section 6: Transform helpers- PAIN IN THE ASS!!
+// Section 6: Transform helpers
 // ============================================================================
 
 static void BuildOverlayTransform(const VROverlayState& state, openvr::HmdMatrix34_t& out)
@@ -560,7 +551,7 @@ static void BuildOverlayTransform(const VROverlayState& state, openvr::HmdMatrix
 	float ux = state.upX / ul, uy = state.upY / ul, uz = state.upZ / ul;
 
 	// Right = up x forward
-	float rx = uy * fz - uz * fy; 
+	float rx = uy * fz - uz * fy;
 	float ry = uz * fx - ux * fz;
 	float rz = ux * fy - uy * fx;
 
@@ -571,7 +562,7 @@ static void BuildOverlayTransform(const VROverlayState& state, openvr::HmdMatrix
 
 	// HmdMatrix34_t: row-major, columns = basis vectors
 	// Col 0 = right, Col 1 = up, Col 2 = forward, Col 3 = translation
-	out.m[0][0] = rx; out.m[0][1] = ux; out.m[0][2] = fx; out.m[0][3] = state.posX; //THESE WORK WITH META... I NEED OTHER SPECS!
+	out.m[0][0] = rx; out.m[0][1] = ux; out.m[0][2] = fx; out.m[0][3] = state.posX;
 	out.m[1][0] = ry; out.m[1][1] = uy; out.m[1][2] = fy; out.m[1][3] = state.posY;
 	out.m[2][0] = rz; out.m[2][1] = uz; out.m[2][2] = fz; out.m[2][3] = state.posZ;
 }
@@ -645,7 +636,7 @@ static void PositionNewOverlay(VROverlayState& state, int viewIndex)
 // Section 8: Overlay lifecycle
 // ============================================================================
 
-// CreateVROverlay - Creates an OpenVR overlay for a Prisma view and places it in 3D space.
+// CreateVROverlay — Creates an OpenVR overlay for a Prisma view and places it in 3D space.
 //
 // Each Prisma view gets one VR overlay with its D3D11 texture as the content.
 // New overlays spawn in front of the player in an arc pattern (first centered,
@@ -686,7 +677,7 @@ static void CreateVROverlay(uint64_t viewId, PrismaVR_Bridge::ViewInfo& viewInfo
 	}
 
 	// Configure overlay
-	VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::SetOverlayWidthInMeters,
+	VCallOvl(g_overlay, OVL_SLOT::SetOverlayWidthInMeters, "SetOverlayWidthInMeters",
 		state.handle, state.widthMeters);
 
 	// Set mouse scale to texture dimensions (needed for mouse event coordinate space)
@@ -694,18 +685,18 @@ static void CreateVROverlay(uint64_t viewId, PrismaVR_Bridge::ViewInfo& viewInfo
 		openvr::HmdVector2_t mouseScale;
 		mouseScale.v[0] = (float)state.texWidth;
 		mouseScale.v[1] = (float)state.texHeight;
-		VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::SetOverlayMouseScale,
+		VCallOvl(g_overlay, OVL_SLOT::SetOverlayMouseScale, "SetOverlayMouseScale",
 			state.handle, &mouseScale);
 	}
 
 	// Set input method to mouse so events get generated
-	VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::SetOverlayInputMethod,
+	VCallOvl(g_overlay, OVL_SLOT::SetOverlayInputMethod, "SetOverlayInputMethod",
 		state.handle, (int)openvr::VROverlayInputMethod_Mouse);
 
 	// Set transform
 	openvr::HmdMatrix34_t transform;
 	BuildOverlayTransform(state, transform);
-	VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::SetOverlayTransformAbsolute,
+	VCallOvl(g_overlay, OVL_SLOT::SetOverlayTransformAbsolute, "SetOverlayTransformAbsolute",
 		state.handle, (int)openvr::TrackingUniverseStanding, &transform);
 
 	// Set texture
@@ -715,12 +706,12 @@ static void CreateVROverlay(uint64_t viewId, PrismaVR_Bridge::ViewInfo& viewInfo
 		vrTex.handle = tex;
 		vrTex.eType = openvr::TextureType_DirectX;
 		vrTex.eColorSpace = openvr::ColorSpace_Auto;
-		VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::SetOverlayTexture,
+		VCallOvl(g_overlay, OVL_SLOT::SetOverlayTexture, "SetOverlayTexture",
 			state.handle, &vrTex);
 	}
 
 	// Show it
-	VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::ShowOverlay, state.handle);
+	VCallOvl(g_overlay, OVL_SLOT::ShowOverlay, "ShowOverlay", state.handle);
 
 	g_vrOverlays[viewId] = state;
 	logger::info("PrismaVR: Created VR overlay for view {} at ({:.2f}, {:.2f}, {:.2f})",
@@ -733,8 +724,8 @@ static void DestroyVROverlay(uint64_t viewId)
 	if (it == g_vrOverlays.end()) return;
 
 	if (it->second.handle) {
-		VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::HideOverlay, it->second.handle);
-		VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::DestroyOverlay, it->second.handle);
+		VCallOvl(g_overlay, OVL_SLOT::HideOverlay, "HideOverlay", it->second.handle);
+		VCallOvl(g_overlay, OVL_SLOT::DestroyOverlay, "DestroyOverlay", it->second.handle);
 	}
 
 	g_vrOverlays.erase(it);
@@ -781,7 +772,7 @@ static void SyncOverlays()
 				vrTex.handle = tex;
 				vrTex.eType = openvr::TextureType_DirectX;
 				vrTex.eColorSpace = openvr::ColorSpace_Auto;
-				VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::SetOverlayTexture,
+				VCallOvl(g_overlay, OVL_SLOT::SetOverlayTexture, "SetOverlayTexture",
 					it->second.handle, &vrTex);
 			}
 
@@ -1093,13 +1084,12 @@ static void ProcessInput()
 			if (ovl.texWidth > 0 && pixelX >= (int)ovl.texWidth) pixelX = (int)ovl.texWidth - 1;
 			if (ovl.texHeight > 0 && pixelY >= (int)ovl.texHeight) pixelY = (int)ovl.texHeight - 1;
 
-			// --- CSS cursor dot: one per hand, inject every frame (idempotent) ---
+			// --- CSS cursor dot: one per hand, created once per view ---
 			// One dot per hand (_pvrc0 = left, _pvrc1 = right), both warm white.
-			// The JS checks getElementById to prevent duplicates. We re-submit every
-			// frame so that if the DOM wasn't ready on the first attempt, the dot
-			// is created as soon as document.body exists.
+			// Only inject the creation JS if we haven't created the dot yet for this view.
+			// If the DOM wasn't ready (page navigation), g_cursorDotCreated resets on view switch.
 			std::string dotId = "_pvrc" + std::to_string(hand);
-			{
+			if (!g_cursorDotCreated[hand] || g_lastHitViewId[hand] != bestViewId) {
 				const char* bg = "background:rgba(255,250,240,0.95);box-shadow:0 0 8px 3px rgba(255,250,240,0.6),0 0 16px 6px rgba(255,200,150,0.3);";
 				PrismaVR_Bridge::RunJavaScript(bestViewPtr,
 					"(function(){"
@@ -1113,14 +1103,19 @@ static void ProcessInput()
 					"transform:translate(-50%,-50%);display:none;left:0;top:0;';"
 					"document.body.appendChild(d);"
 					"})()");
+				g_cursorDotCreated[hand] = true;
 			}
 
-			// Move this hand's dot to hit coordinates and show it
-			PrismaVR_Bridge::RunJavaScript(bestViewPtr,
-				"var c=document.getElementById('" + dotId + "');"
-				"if(c){c.style.left='" + std::to_string(pixelX) + "px';"
-				"c.style.top='" + std::to_string(pixelY) + "px';"
-				"c.style.display='block'}");
+			// Move this hand's dot to hit coordinates — only if position actually changed
+			if (pixelX != g_lastCursorX[hand] || pixelY != g_lastCursorY[hand]) {
+				PrismaVR_Bridge::RunJavaScript(bestViewPtr,
+					"var c=document.getElementById('" + dotId + "');"
+					"if(c){c.style.left='" + std::to_string(pixelX) + "px';"
+					"c.style.top='" + std::to_string(pixelY) + "px';"
+					"c.style.display='block'}");
+				g_lastCursorX[hand] = pixelX;
+				g_lastCursorY[hand] = pixelY;
+			}
 
 			// If we switched views, hide this hand's dot on the old one
 			if (g_lastHitViewId[hand] != 0 && g_lastHitViewId[hand] != bestViewId) {
@@ -1274,6 +1269,9 @@ static void ProcessInput()
 					}
 				}
 				g_lastHitViewId[hand] = 0;
+				g_lastCursorX[hand] = -1;
+				g_lastCursorY[hand] = -1;
+				g_cursorDotCreated[hand] = false;
 			}
 			hitState.hitting = false;
 		}
@@ -1312,8 +1310,8 @@ static float ControllerDistance(const ControllerInfo& a, const ControllerInfo& b
 //   While the primary hand holds grab, the second hand's trigger enters resize mode.
 //   Panel width scales proportionally to the change in distance between controllers
 //   (pinch-to-zoom). Panel position moves to the midpoint between both hands.
-//   Both thumbsticks can push/pull the panel depth during resize. (Should I clean up the lasers during this time?
-//   nah, I think it will be ok) 
+//   Both thumbsticks can push/pull the panel depth during resize.
+//
 // Single-hand grab:
 //   Panel follows the aiming ray at the original grab distance. The grabbing hand's
 //   thumbstick Y scrolls the panel content. The OTHER hand's thumbstick Y adjusts
@@ -1359,7 +1357,7 @@ static void ProcessGrabMoveResize()
 			if (ovl.widthMeters < MIN_OVERLAY_WIDTH) ovl.widthMeters = MIN_OVERLAY_WIDTH;
 			if (ovl.widthMeters > MAX_OVERLAY_WIDTH) ovl.widthMeters = MAX_OVERLAY_WIDTH;
 
-			VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::SetOverlayWidthInMeters,
+			VCallOvl(g_overlay, OVL_SLOT::SetOverlayWidthInMeters, "SetOverlayWidthInMeters(resize)",
 				ovl.handle, ovl.widthMeters);
 
 			// While resizing, overlay position = midpoint between controllers
@@ -1418,27 +1416,23 @@ static void ProcessGrabMoveResize()
 		}
 
 		// --- Grab release: primary trigger released ---
-		// Couple of ways to go here I think what I'm going to do is when exiting out of the menu
-		// It'll come back at its default size and state. Catch 22 with the end user
-		// If I leave it in place when it reopens users will complain, if I leave it like this users will complain.
 		if (!ctrl.triggerPressed) {
 			ovl.isGrabbed = false;
 			ovl.isResizing = false;
 			ovl.grabbedByController = -1;
-			ovl.worldLocked = true; // Stay in place after grab very important..
+			ovl.worldLocked = true; // Stay in place after grab
 		}
 
 		// Update overlay transform
 		openvr::HmdMatrix34_t transform;
 		BuildOverlayTransform(ovl, transform);
-		VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::SetOverlayTransformAbsolute,
+		VCallOvl(g_overlay, OVL_SLOT::SetOverlayTransformAbsolute, "SetOverlayTransformAbsolute(grab)",
 			ovl.handle, (int)openvr::TrackingUniverseStanding, &transform);
 	}
 }
 
 // ============================================================================
 // Section 12b: Face all world-locked overlays toward the player
-// Pretty self explanatory
 // ============================================================================
 
 static void FaceOverlaysToPlayer()
@@ -1462,7 +1456,7 @@ static void FaceOverlaysToPlayer()
 
 		openvr::HmdMatrix34_t transform;
 		BuildOverlayTransform(ovl, transform);
-		VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::SetOverlayTransformAbsolute,
+		VCallOvl(g_overlay, OVL_SLOT::SetOverlayTransformAbsolute, "SetOverlayTransformAbsolute(face)",
 			ovl.handle, (int)openvr::TrackingUniverseStanding, &transform);
 	}
 }
@@ -1497,7 +1491,7 @@ static void UpdateLasers()
 		// Show beam when laser is hitting a panel (including during grab)
 		if (!ctrl.valid || !hit.hitting) {
 			if (g_laserBeamHandle[hand])
-				VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::HideOverlay, g_laserBeamHandle[hand]);
+				VCallOvl(g_overlay, OVL_SLOT::HideOverlay, "HideOverlay(laser)", g_laserBeamHandle[hand]);
 			continue;
 		}
 
@@ -1542,11 +1536,11 @@ static void UpdateLasers()
 		bt.m[1][0] = xY; bt.m[1][1] = yY; bt.m[1][2] = zY; bt.m[1][3] = midY;
 		bt.m[2][0] = xZ; bt.m[2][1] = yZ; bt.m[2][2] = zZ; bt.m[2][3] = midZ;
 
-		VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::SetOverlayWidthInMeters,
+		VCallOvl(g_overlay, OVL_SLOT::SetOverlayWidthInMeters, "SetOverlayWidthInMeters(beam)",
 			g_laserBeamHandle[hand], beamWidth);
-		VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::SetOverlayTransformAbsolute,
+		VCallOvl(g_overlay, OVL_SLOT::SetOverlayTransformAbsolute, "SetOverlayTransformAbsolute(beam)",
 			g_laserBeamHandle[hand], (int)openvr::TrackingUniverseStanding, &bt);
-		VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::ShowOverlay,
+		VCallOvl(g_overlay, OVL_SLOT::ShowOverlay, "ShowOverlay(beam)",
 			g_laserBeamHandle[hand]);
 
 		// Dot is rendered as CSS element ON the panel (see ProcessInput)
@@ -1583,7 +1577,7 @@ static void UpdateHeadRelativeOverlays()
 		// Update the VR overlay transform
 		openvr::HmdMatrix34_t transform;
 		BuildOverlayTransform(ovl, transform);
-		VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::SetOverlayTransformAbsolute,
+		VCallOvl(g_overlay, OVL_SLOT::SetOverlayTransformAbsolute, "SetOverlayTransformAbsolute(head)",
 			ovl.handle, (int)openvr::TrackingUniverseStanding, &transform);
 	}
 }
@@ -1606,10 +1600,8 @@ static void UpdateHeadRelativeOverlays()
 // could leave behind dozens of world-locked panels across multiple locations.
 // These could register and stack up invisibly (user has long since moved on) and waste 
 // both VR overlay resources and per-frame texture submission calls.
-// The maximum distance feature that I put in place should mitigate many of these
-// However modders can become creative and find workarounds...and they WILL. 
-// And of these extremely creative and talented modders
-// Many WILL NOT THINK of cleanup calls and this could cause support tickets to Prisma
+//
+// Many modders WILL NOT THINK of cleanup calls and this will cause support tickets 
 // if left unhandled. Users will report "performance gets worse the longer I play" 
 // or "my overlays stopped working" Bad modding practices could erroneously be seen as
 // a Prisma UI issue if not properly handled. VR HAS to set such limits anyway. 
@@ -1805,7 +1797,7 @@ static void CheckTextInputFocusAsync(std::shared_ptr<PrismaUI::Core::PrismaView>
 					logger::info("PrismaVR: ShowKeyboardForOverlay — targetViewId={}, overlayHandle={}",
 						g_keyboardTargetViewId, targetHandle);
 					if (targetHandle) {
-						VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::ShowKeyboardForOverlay,
+						VCallOvl(g_overlay, OVL_SLOT::ShowKeyboardForOverlay, "ShowKeyboardForOverlay",
 							targetHandle,
 							(uint32_t)openvr::k_EGamepadTextInputModeNormal,
 							(uint32_t)openvr::k_EGamepadTextInputLineModeSingleLine,
@@ -2118,7 +2110,7 @@ namespace PrismaVR {
 			// Hide laser beams that may still be showing from the last frame
 			for (int i = 0; i < 2; i++) {
 				if (g_laserBeamHandle[i])
-					VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::HideOverlay, g_laserBeamHandle[i]);
+					VCallOvl(g_overlay, OVL_SLOT::HideOverlay, "HideOverlay(laser/cleanup)", g_laserBeamHandle[i]);
 			}
 			// No panels open — unmask movement if it was masked
 			if (g_movementMasked) { PrismaVR_Bridge::UnmaskMovement(); g_movementMasked = false; }
@@ -2160,7 +2152,7 @@ namespace PrismaVR {
 		// Debug: periodic status log every ~5 seconds
 		static int dbgFrame = 0;
 		if (++dbgFrame % DEBUG_LOG_INTERVAL_FRAMES == 0) {
-			logger::info("PrismaVR DBG: overlays={}, ctrl0={} ctrl1={}, hit0={} hit1={}, activeHand={}, moveMask={}, combatMask={}",
+			logger::debug("PrismaVR DBG: overlays={}, ctrl0={} ctrl1={}, hit0={} hit1={}, activeHand={}, moveMask={}, combatMask={}",
 				g_vrOverlays.size(),
 				g_controllers[0].valid, g_controllers[1].valid,
 				g_hitInfo[0].hitting, g_hitInfo[1].hitting,
@@ -2183,7 +2175,7 @@ namespace PrismaVR {
 		// Destroy laser beam overlays
 		for (int i = 0; i < 2; i++) {
 			if (g_laserBeamHandle[i]) {
-				VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::DestroyOverlay, g_laserBeamHandle[i]);
+				VCallOvl(g_overlay, OVL_SLOT::DestroyOverlay, "DestroyOverlay(laser/shutdown)", g_laserBeamHandle[i]);
 				g_laserBeamHandle[i] = 0;
 			}
 		}
@@ -2234,7 +2226,7 @@ namespace PrismaVR {
 
 		openvr::HmdMatrix34_t transform;
 		BuildOverlayTransform(it->second, transform);
-		VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::SetOverlayTransformAbsolute,
+		VCallOvl(g_overlay, OVL_SLOT::SetOverlayTransformAbsolute, "SetOverlayTransformAbsolute(API)",
 			it->second.handle, (int)openvr::TrackingUniverseStanding, &transform);
 	}
 
@@ -2247,7 +2239,7 @@ namespace PrismaVR {
 		if (it->second.widthMeters < API_MIN_OVERLAY_WIDTH) it->second.widthMeters = API_MIN_OVERLAY_WIDTH;
 		if (it->second.widthMeters > API_MAX_OVERLAY_WIDTH) it->second.widthMeters = API_MAX_OVERLAY_WIDTH;
 
-		VCall<openvr::EVROverlayError>(g_overlay, OVL_SLOT::SetOverlayWidthInMeters,
+		VCallOvl(g_overlay, OVL_SLOT::SetOverlayWidthInMeters, "SetOverlayWidthInMeters(API)",
 			it->second.handle, it->second.widthMeters);
 	}
 

@@ -1,4 +1,4 @@
-﻿#include "InputHandler.h"
+#include "InputHandler.h"
 
 #include <commctrl.h>
 
@@ -32,6 +32,7 @@ namespace PrismaUI::InputHandler {
     constexpr size_t MAX_CLIPBOARD_CHARS = 200000;      // 200K characters max
 
     bool g_mouseButtonStates[3] = {false, false, false};
+    wchar_t g_pendingHighSurrogate = 0;
 
     // WndProc subclass state
     static std::atomic<bool> g_wndProcInstalled = false;
@@ -225,6 +226,79 @@ namespace PrismaUI::InputHandler {
         }
 
         CloseClipboard();
+    }
+
+    bool IsHighSurrogate(wchar_t ch) { return ch >= 0xD800 && ch <= 0xDBFF; }
+
+    bool IsLowSurrogate(wchar_t ch) { return ch >= 0xDC00 && ch <= 0xDFFF; }
+
+    bool ShouldQueueChar(wchar_t ch) { return ch >= 0x20 || ch == '\t'; }
+
+    std::string ConvertUtf16ToUtf8(const wchar_t* text, int length) {
+        if (!text || length <= 0) {
+            return "";
+        }
+
+        int utf8Length = WideCharToMultiByte(CP_UTF8, 0, text, length, nullptr, 0, nullptr, nullptr);
+        if (utf8Length <= 0) {
+            return "";
+        }
+
+        std::string result;
+        try {
+            result.resize(utf8Length);
+            WideCharToMultiByte(CP_UTF8, 0, text, length, result.data(), utf8Length, nullptr, nullptr);
+        } catch (const std::exception& e) {
+            logger::error("Failed to allocate memory for committed text: {}", e.what());
+            return "";
+        }
+
+        return result;
+    }
+
+    void QueueCommittedCharEvent(const std::wstring& utf16Text, LPARAM lParam) {
+        if (utf16Text.empty()) {
+            return;
+        }
+
+        std::string utf8Text = ConvertUtf16ToUtf8(utf16Text.data(), static_cast<int>(utf16Text.size()));
+        if (utf8Text.empty()) {
+            logger::warn("Failed to convert committed text to UTF-8");
+            return;
+        }
+
+        ultralight::KeyEvent charEvent;
+        charEvent.type = ultralight::KeyEvent::kType_Char;
+        WinKeyHandler::GetUltralightModifiers(charEvent);
+
+        ultralight::String ulText = ultralight::Convert(utf8Text);
+        charEvent.text = ulText;
+        charEvent.unmodified_text = ulText;
+        charEvent.virtual_key_code = ultralight::KeyCodes::GK_UNKNOWN;
+        charEvent.native_key_code = 0;
+        charEvent.key_identifier = "";
+        charEvent.is_keypad = false;
+        charEvent.is_auto_repeat = (HIWORD(lParam) & KF_REPEAT) == KF_REPEAT;
+        charEvent.is_system_key = false;
+
+        std::lock_guard lock(g_eventQueueMutex);
+        g_eventQueue.emplace_back(charEvent);
+    }
+
+    std::wstring ConvertCodePointToUtf16(UINT codePoint) {
+        if (codePoint > 0x10FFFF) {
+            return L"";
+        }
+
+        if (codePoint <= 0xFFFF) {
+            return std::wstring(1, static_cast<wchar_t>(codePoint));
+        }
+
+        codePoint -= 0x10000;
+        wchar_t high = static_cast<wchar_t>(0xD800 + (codePoint >> 10));
+        wchar_t low = static_cast<wchar_t>(0xDC00 + (codePoint & 0x3FF));
+
+        return std::wstring{high, low};
     }
 
     class MouseEventListener : public RE::BSTEventSink<RE::InputEvent*> {
@@ -462,46 +536,6 @@ namespace PrismaUI::InputHandler {
                             g_eventQueue.emplace_back(keyDownEvent);
                         }
                         handledByUI = true;
-
-                        BYTE kbdState[256];
-                        GetKeyboardState(kbdState);
-                        HKL currentLayout = GetKeyboardLayout(GetWindowThreadProcessId(hwnd, NULL));
-
-                        wchar_t translatedChars[5] = {0};
-                        int charCount = ToUnicodeEx((UINT)wParam, ((lParam >> 16) & 0xFF), kbdState, translatedChars, 4,
-                                                    0, currentLayout);
-
-                        if (charCount > 0) {
-                            bool viewHasInputFieldFocus = ViewManager::ViewHasInputFocus(focusedViewIdCopy);
-                            if (viewHasInputFieldFocus) {
-                                for (int i = 0; i < charCount; ++i) {
-                                    wchar_t ch = translatedChars[i];
-                                    if (ch >= 0x20 || ch == '\t') {
-                                        ultralight::KeyEvent charEvent;
-                                        charEvent.type = ultralight::KeyEvent::kType_Char;
-                                        WinKeyHandler::GetUltralightModifiers(charEvent);
-
-                                        wchar_t single_char_str[2] = {ch, 0};
-                                        char utf8_buffer[8] = {0};
-                                        int utf8_len = WideCharToMultiByte(CP_UTF8, 0, single_char_str, -1, utf8_buffer,
-                                                                           sizeof(utf8_buffer), nullptr, nullptr);
-                                        std::string narrow_string =
-                                            (utf8_len > 0) ? std::string(utf8_buffer) : std::string();
-                                        ultralight::String ul_text = ultralight::Convert(narrow_string);
-
-                                        charEvent.text = ul_text;
-                                        charEvent.unmodified_text = ul_text;
-                                        charEvent.virtual_key_code = ultralight::KeyCodes::GK_UNKNOWN;
-                                        charEvent.key_identifier = "";
-                                        charEvent.is_auto_repeat = (HIWORD(lParam) & KF_REPEAT) == KF_REPEAT;
-                                        {
-                                            std::lock_guard lock(g_eventQueueMutex);
-                                            g_eventQueue.emplace_back(charEvent);
-                                        }
-                                    }
-                                }
-                            }
-                        }
                         break;
                     }
                     case WM_KEYUP: {
@@ -518,6 +552,45 @@ namespace PrismaUI::InputHandler {
                         bool viewHasInputFieldFocus = ViewManager::ViewHasInputFocus(focusedViewIdCopy);
                         if (viewHasInputFieldFocus) {
                             handledByUI = true;
+
+                            wchar_t ch = static_cast<wchar_t>(wParam);
+                            if (IsHighSurrogate(ch)) {
+                                g_pendingHighSurrogate = ch;
+                                break;
+                            }
+
+                            std::wstring committedText;
+                            if (IsLowSurrogate(ch) && g_pendingHighSurrogate != 0) {
+                                committedText.push_back(g_pendingHighSurrogate);
+                                committedText.push_back(ch);
+                                g_pendingHighSurrogate = 0;
+                            } else {
+                                g_pendingHighSurrogate = 0;
+                                if (ShouldQueueChar(ch)) {
+                                    committedText.push_back(ch);
+                                }
+                            }
+
+                            QueueCommittedCharEvent(committedText, lParam);
+                        } else {
+                            g_pendingHighSurrogate = 0;
+                        }
+                        break;
+                    }
+                    case WM_UNICHAR: {
+                        if (wParam == UNICODE_NOCHAR) {
+                            return TRUE;
+                        }
+
+                        bool viewHasInputFieldFocus = ViewManager::ViewHasInputFocus(focusedViewIdCopy);
+                        if (viewHasInputFieldFocus) {
+                            handledByUI = true;
+
+                            std::wstring committedText = ConvertCodePointToUtf16(static_cast<UINT>(wParam));
+                            if (!committedText.empty() && ShouldQueueChar(committedText[0])) {
+                                g_pendingHighSurrogate = 0;
+                                QueueCommittedCharEvent(committedText, lParam);
+                            }
                         }
                         break;
                     }

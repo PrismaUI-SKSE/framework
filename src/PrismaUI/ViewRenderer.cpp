@@ -231,10 +231,8 @@ namespace PrismaUI::ViewRenderer {
             return;
         }
 
-        auto cursor = RE::MenuCursor::GetSingleton();
-        if (!cursor) {
-            return;
-        }
+        float cursorX, cursorY;
+        PrismaUI::InputHandler::GetCursorPosition(cursorX, cursorY);
 
         ID3D11BlendState* backupBlendState = nullptr;
         FLOAT backupBlendFactor[4];
@@ -249,7 +247,7 @@ namespace PrismaUI::ViewRenderer {
 
         spriteBatch->Begin(DirectX::SpriteSortMode_Deferred, commonStates->AlphaBlend());
 
-        DirectX::SimpleMath::Vector2 position(cursor->cursorPosX, cursor->cursorPosY);
+        DirectX::SimpleMath::Vector2 position(cursorX, cursorY);
         spriteBatch->Draw(cursorTexture.Get(), position);
 
         spriteBatch->End();

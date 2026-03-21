@@ -45,6 +45,8 @@ namespace PrismaUI::InputHandler {
     bool InstallWndProcHook();
     void UninstallWndProcHook();
 
+    void GetCursorPosition(float& x, float& y);
+
     void ProcessEvents();
     void Shutdown();
 }

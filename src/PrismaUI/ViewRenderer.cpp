@@ -231,6 +231,13 @@ namespace PrismaUI::ViewRenderer {
             return;
         }
 
+        // Game Menu cursor
+        auto cursor = RE::MenuCursor::GetSingleton();
+        if (!cursor) {
+            return;
+        }
+
+        // Non-menu cursor
         float cursorX, cursorY;
         PrismaUI::InputHandler::GetCursorPosition(cursorX, cursorY);
 

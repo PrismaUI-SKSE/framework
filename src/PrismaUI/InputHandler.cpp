@@ -39,80 +39,6 @@ namespace PrismaUI::InputHandler {
     static std::mutex g_wndProcMutex;                        // Thread-safe installation
 
     static ImeHelper g_imeHelper;
-    static std::atomic<bool> g_isFocusedTextInputActive = false;
-
-    constexpr const char* IME_FOCUS_CALLBACK_NAME = "__prismaNativeImeFocusChanged";
-
-    std::string BuildImeFocusTrackingScript() {
-        const std::string callbackName = IME_FOCUS_CALLBACK_NAME;
-        return "(function(){"
-               "if(window.__prismaImeFocusTrackingInstalled){"
-               "if(typeof window.__prismaImeFocusNotify==='function'){window.__prismaImeFocusNotify(document.activeElement);}"
-               "return;"
-               "}"
-               "function isTextInputElement(el){"
-               "if(!el||el.disabled||el.readOnly)return false;"
-               "if(el.isContentEditable)return true;"
-               "var tag=(el.tagName||'').toUpperCase();"
-               "if(tag==='TEXTAREA')return true;"
-               "if(tag!=='INPUT')return false;"
-               "var type=((el.type||'text')+'').toLowerCase();"
-               "switch(type){"
-               "case '':case 'text':case 'search':case 'url':case 'tel':case 'password':case 'email':case 'number':"
-               "return true;"
-               "default:return false;"
-               "}"
-               "}"
-               "function notify(element){"
-               "var focused=isTextInputElement(element)?'1':'0';"
-               "if(typeof window['" + callbackName + "']==='function'){window['" + callbackName + "'](focused);}"
-               "}"
-               "window.__prismaImeFocusNotify=notify;"
-               "window.__prismaImeFocusTrackingInstalled=true;"
-               "document.addEventListener('focusin',function(event){notify(event.target);},true);"
-               "document.addEventListener('focusout',function(){setTimeout(function(){notify(document.activeElement);},0);},true);"
-               "notify(document.activeElement);"
-               "})();";
-    }
-
-    void InstallImeFocusTrackingForView(const Core::PrismaViewId& viewId) {
-        if (!g_ultralightThreadExecutor || !g_viewsMap || !g_viewsMapMutex || viewId == 0) {
-            return;
-        }
-
-        auto install = [viewId]() {
-            std::shared_ptr<Core::PrismaView> viewData = nullptr;
-            {
-                std::shared_lock lock(*g_viewsMapMutex);
-                auto it = g_viewsMap->find(viewId);
-                if (it != g_viewsMap->end()) {
-                    viewData = it->second;
-                }
-            }
-
-            if (!viewData || !viewData->ultralightView || !viewData->isLoadingFinished.load()) {
-                return;
-            }
-
-            Communication::BindJSCallbacks(viewId);
-
-            try {
-                ultralight::String script = BuildImeFocusTrackingScript().c_str();
-                viewData->ultralightView->EvaluateScript(script, nullptr, "");
-            } catch (const std::exception& e) {
-                logger::error("Failed to install IME focus tracking for View [{}]: {}", viewId, e.what());
-            } catch (...) {
-                logger::error("Failed to install IME focus tracking for View [{}]: unknown exception", viewId);
-            }
-        };
-
-        if (g_ultralightThreadExecutor->IsWorkerThread()) {
-            install();
-            return;
-        }
-
-        g_ultralightThreadExecutor->submit(install);
-    }
 
     // Clipboard helper functions
     std::string EscapeForJS(const std::string& text) {
@@ -538,30 +464,27 @@ namespace PrismaUI::InputHandler {
                     case WM_KEYDOWN: {
                         // Handle Ctrl+V (Paste)
                         if ((GetKeyState(VK_CONTROL) & 0x8000) && wParam == 'V') {
-                            const bool viewHasInputFieldFocus = g_isFocusedTextInputActive.load();
-                            if (viewHasInputFieldFocus) {
-                                try {
-                                    std::string clipboardText = GetClipboardText();
-                                    if (!clipboardText.empty()) {
-                                        logger::debug("Ctrl+V: Pasting {} characters from clipboard",
-                                                      clipboardText.length());
+                            try {
+                                std::string clipboardText = GetClipboardText();
+                                if (!clipboardText.empty()) {
+                                    logger::debug("Ctrl+V: Pasting {} characters from clipboard",
+                                                  clipboardText.length());
 
-                                        // Escape text for JavaScript string
-                                        std::string escapedText = EscapeForJS(clipboardText);
+                                    // Escape text for JavaScript string
+                                    std::string escapedText = EscapeForJS(clipboardText);
 
-                                        if (escapedText.empty() && !clipboardText.empty()) {
-                                            logger::warn("Failed to escape clipboard text, paste cancelled");
-                                        } else if (!escapedText.empty()) {
-                                            // Use JavaScript execCommand to insert text properly (handles UTF-8)
-                                            std::string script =
-                                                "document.execCommand('insertText', false, '" + escapedText + "')";
+                                    if (escapedText.empty() && !clipboardText.empty()) {
+                                        logger::warn("Failed to escape clipboard text, paste cancelled");
+                                    } else if (!escapedText.empty()) {
+                                        // Use JavaScript execCommand to insert text properly (handles UTF-8)
+                                        std::string script =
+                                            "document.execCommand('insertText', false, '" + escapedText + "')";
 
-                                            PrismaUI::Communication::Invoke(focusedViewIdCopy, script.c_str());
-                                        }
+                                        PrismaUI::Communication::Invoke(focusedViewIdCopy, script.c_str());
                                     }
-                                } catch (const std::exception& e) {
-                                    logger::error("Exception during paste operation: {}", e.what());
                                 }
+                            } catch (const std::exception& e) {
+                                logger::error("Exception during paste operation: {}", e.what());
                             }
                             handledByUI = true;
                             break;
@@ -635,32 +558,27 @@ namespace PrismaUI::InputHandler {
                         break;
                     }
                     case WM_CHAR: {
-                        const bool viewHasInputFieldFocus = g_isFocusedTextInputActive.load();
-                        if (viewHasInputFieldFocus) {
-                            handledByUI = true;
+                        handledByUI = true;
 
-                            wchar_t ch = static_cast<wchar_t>(wParam);
-                            if (IsHighSurrogate(ch)) {
-                                g_pendingHighSurrogate = ch;
-                                break;
-                            }
+                        wchar_t ch = static_cast<wchar_t>(wParam);
+                        if (IsHighSurrogate(ch)) {
+                            g_pendingHighSurrogate = ch;
+                            break;
+                        }
 
-                            std::wstring committedText;
-                            if (IsLowSurrogate(ch) && g_pendingHighSurrogate != 0) {
-                                committedText.push_back(g_pendingHighSurrogate);
-                                committedText.push_back(ch);
-                                g_pendingHighSurrogate = 0;
-                            } else {
-                                g_pendingHighSurrogate = 0;
-                                if (ShouldQueueChar(ch)) {
-                                    committedText.push_back(ch);
-                                }
-                            }
-
-                            QueueCommittedCharEvent(committedText, lParam);
+                        std::wstring committedText;
+                        if (IsLowSurrogate(ch) && g_pendingHighSurrogate != 0) {
+                            committedText.push_back(g_pendingHighSurrogate);
+                            committedText.push_back(ch);
+                            g_pendingHighSurrogate = 0;
                         } else {
                             g_pendingHighSurrogate = 0;
+                            if (ShouldQueueChar(ch)) {
+                                committedText.push_back(ch);
+                            }
                         }
+
+                        QueueCommittedCharEvent(committedText, lParam);
                         break;
                     }
                     case WM_UNICHAR: {
@@ -668,15 +586,12 @@ namespace PrismaUI::InputHandler {
                             return TRUE;
                         }
 
-                        const bool viewHasInputFieldFocus = g_isFocusedTextInputActive.load();
-                        if (viewHasInputFieldFocus) {
-                            handledByUI = true;
+                        handledByUI = true;
 
-                            std::wstring committedText = ConvertCodePointToUtf16(static_cast<UINT>(wParam));
-                            if (!committedText.empty() && ShouldQueueChar(committedText[0])) {
-                                g_pendingHighSurrogate = 0;
-                                QueueCommittedCharEvent(committedText, lParam);
-                            }
+                        std::wstring committedText = ConvertCodePointToUtf16(static_cast<UINT>(wParam));
+                        if (!committedText.empty() && ShouldQueueChar(committedText[0])) {
+                            g_pendingHighSurrogate = 0;
+                            QueueCommittedCharEvent(committedText, lParam);
                         }
                         break;
                     }
@@ -711,7 +626,6 @@ namespace PrismaUI::InputHandler {
         g_viewsMap = viewsMap;
         g_viewsMapMutex = viewsMapMutex;
         g_isAnyInputCaptureActive = false;
-        g_isFocusedTextInputActive = false;
         {
             std::lock_guard lock(g_focusedViewIdMutex);
             g_currentlyFocusedViewId = 0;
@@ -725,8 +639,7 @@ namespace PrismaUI::InputHandler {
             [](const std::string& s) { return EscapeForJS(s); },
             [](const std::wstring& ws, LPARAM lp) { QueueCommittedCharEvent(ws, lp); },
             [](const wchar_t* p, int len) { return ConvertUtf16ToUtf8(p, len); });
-        g_imeHelper.SetContext({g_hWnd, g_viewsMap, g_viewsMapMutex, &g_focusedViewIdMutex,
-                                &g_currentlyFocusedViewId, &g_isAnyInputCaptureActive, &g_isFocusedTextInputActive});
+        g_imeHelper.SetContext({g_hWnd, g_viewsMap, g_viewsMapMutex});
         g_imeHelper.SetExecutor(g_ultralightThreadExecutor);
         g_imeHelper.Initialize(g_hWnd);
 
@@ -792,7 +705,6 @@ namespace PrismaUI::InputHandler {
             logger::warn("EnableInputCapture called with empty viewId.");
             return;
         }
-        bool firstTimeActivation = false;
         {
             std::lock_guard lock(g_focusedViewIdMutex);
             if (g_currentlyFocusedViewId != viewId) {
@@ -802,38 +714,10 @@ namespace PrismaUI::InputHandler {
         }
 
         if (!g_isAnyInputCaptureActive.exchange(true)) {
-            firstTimeActivation = true;
             logger::debug("PrismaUI Input Capture System Enabled for View [{}].", viewId);
         }
 
-        g_isFocusedTextInputActive.store(false);
-        g_imeHelper.SetAssociation(false);
-
-        Communication::RegisterJSListener(viewId, IME_FOCUS_CALLBACK_NAME, [viewId](std::string focused) {
-            Core::PrismaViewId currentFocusedViewId = 0;
-            {
-                std::lock_guard lock(g_focusedViewIdMutex);
-                currentFocusedViewId = g_currentlyFocusedViewId;
-            }
-
-            if (currentFocusedViewId != viewId) {
-                return;
-            }
-
-            const bool isTextInputFocused = focused == "1";
-            const bool isCaptureActive = g_isAnyInputCaptureActive.load();
-            g_isFocusedTextInputActive.store(isTextInputFocused);
-            g_imeHelper.SetAssociation(isCaptureActive && isTextInputFocused);
-
-            if (!isTextInputFocused && g_ultralightThreadExecutor) {
-                g_ultralightThreadExecutor->submit([viewId]() {
-                    g_imeHelper.ClearStateInJS(viewId);
-                });
-            } else if (!isTextInputFocused) {
-                g_imeHelper.ClearStateInJS(viewId);
-            }
-        });
-        InstallImeFocusTrackingForView(viewId);
+        g_imeHelper.SetAssociation(true);
 
         g_mouseButtonStates[0] = g_mouseButtonStates[1] = g_mouseButtonStates[2] = false;
     }
@@ -854,7 +738,6 @@ namespace PrismaUI::InputHandler {
 
         if (disableSystem) {
             if (g_isAnyInputCaptureActive.exchange(false)) {
-                g_isFocusedTextInputActive.store(false);
                 g_imeHelper.SetAssociation(false);
                 logger::debug("PrismaUI Input Capture System Disabled (was active for View [{}]).",
                               currentFocusedBeforeDisable);
@@ -898,7 +781,6 @@ namespace PrismaUI::InputHandler {
             return;
         }
 
-        g_isFocusedTextInputActive.store(false);
         g_imeHelper.SetAssociation(false);
         g_imeHelper.ClearStateInJS(viewId);
     }
@@ -1047,7 +929,6 @@ namespace PrismaUI::InputHandler {
         g_ultralightThreadExecutor = nullptr;
         g_viewsMap = nullptr;
         g_viewsMapMutex = nullptr;
-        g_isFocusedTextInputActive = false;
         logger::info("PrismaUI::InputHandler Shutdown.");
     }
 }

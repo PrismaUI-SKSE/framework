@@ -2,6 +2,7 @@
 
 #include "Communication.h"
 #include "Core.h"
+#include "PrismaUI_API.h"
 
 namespace PrismaUI::Listeners {
     using namespace Core;
@@ -75,6 +76,23 @@ namespace PrismaUI::Listeners {
 
     void MyViewListener::OnAddConsoleMessage(View* /*caller*/, const ConsoleMessage& message) {
         // logger::info("View [{}]: JSConsole: {}", viewId_, message.message().utf8().data());
+        std::shared_lock lock(viewsMutex);
+        auto it = views.find(viewId_);
+        if (it != views.end() && it->second && it->second->consoleMessageCallback) {
+            PRISMA_UI_API::ConsoleMessageLevel level = PRISMA_UI_API::ConsoleMessageLevel::Log;
+            switch (message.level()) {
+                case kMessageLevel_Warning: level = PRISMA_UI_API::ConsoleMessageLevel::Warning; break;
+                case kMessageLevel_Error:   level = PRISMA_UI_API::ConsoleMessageLevel::Error; break;
+                case kMessageLevel_Debug:   level = PRISMA_UI_API::ConsoleMessageLevel::Debug; break;
+                case kMessageLevel_Info:    level = PRISMA_UI_API::ConsoleMessageLevel::Info; break;
+                default: break;
+            }
+            auto msg = std::string(message.message().utf8().data());
+            auto cb = it->second->consoleMessageCallback;
+            auto id = viewId_;
+            lock.unlock();
+            cb(id, level, msg);
+        }
     }
 
     RefPtr<View> MyViewListener::OnCreateInspectorView(View* /*caller*/, bool is_local, const String& inspectedURL) {

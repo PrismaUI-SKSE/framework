@@ -1,13 +1,13 @@
-﻿#pragma once
+#pragma once
 
 #include "PrismaUI_API.h"
 
 class PluginAPI
 {
-	using InterfaceVersion1 = PRISMA_UI_API::IVPrismaUI1;
+	using LatestInterface = PRISMA_UI_API::IVPrismaUI2;
 
 public:
-	class PrismaUIInterface : public InterfaceVersion1
+	class PrismaUIInterface : public LatestInterface
 	{
 	private:
 		PrismaUIInterface() noexcept {};
@@ -20,7 +20,7 @@ public:
 			return std::addressof(singleton);
 		}
 
-		// InterfaceVersion1
+		// IVPrismaUI1 (order needs to match PrismaUI_API.h exactly for correct vtable layout)
 
 		virtual PrismaView CreateView(const char* htmlPath, PRISMA_UI_API::OnDomReadyCallback onDomReadyCallback = nullptr) noexcept override;
 		virtual void Invoke(PrismaView view, const char* script, PRISMA_UI_API::JSCallback callback = nullptr) noexcept override;
@@ -38,13 +38,15 @@ public:
 		virtual void Destroy(PrismaView view) noexcept override;
 		virtual void SetOrder(PrismaView view, int order) noexcept override;
 		virtual int GetOrder(PrismaView view) noexcept override;
-		virtual bool HasAnyActiveFocus() noexcept override;
-
-		// Inspector methods
 		virtual void CreateInspectorView(PrismaView view) noexcept override;
 		virtual void SetInspectorVisibility(PrismaView view, bool visible) noexcept override;
 		virtual bool IsInspectorVisible(PrismaView view) noexcept override;
 		virtual void SetInspectorBounds(PrismaView view, float topLeftX, float topLeftY, unsigned int width, unsigned int height) noexcept override;
+		virtual bool HasAnyActiveFocus() noexcept override;
+
+		// IVPrismaUI2
+
+		virtual void RegisterConsoleCallback(PrismaView view, PRISMA_UI_API::ConsoleMessageCallback callback) noexcept override;
 
 	private:
 		unsigned long apiTID = 0;

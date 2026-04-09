@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "Utils/WinKeyHandler/WinKeyHandler.h"
 
@@ -37,6 +37,7 @@ namespace PrismaUI::InputHandler {
 
     void EnableInputCapture(const Core::PrismaViewId& viewId);
     void DisableInputCapture(const Core::PrismaViewId& viewId);
+    void ClearImeState(const Core::PrismaViewId& viewId);
 
     bool IsInputCaptureActiveForView(const Core::PrismaViewId& viewId);
 

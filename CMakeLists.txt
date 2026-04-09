@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 4.1)
+cmake_minimum_required(VERSION 3.21)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,7 +18,7 @@ set(CMAKE_JOB_POOL_COMPILE compile)
 set(CMAKE_JOB_POOL_LINK link)
 set(CMAKE_INSTALL_MESSAGE LAZY)
 
-project(PrismaUI VERSION 1.3.1 LANGUAGES CXX)
+project(PrismaUI VERSION 1.4.1 LANGUAGES CXX)
 
 # Set build root for external builds
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
@@ -73,6 +73,7 @@ target_link_libraries(${PROJECT_NAME}
     UltralightCore
     WebCore
     comctl32  # Required for SetWindowSubclass/RemoveWindowSubclass
+    imm32     # Required for IME (Input Method Editor) support
 )
 
 # Delay-load Ultralight DLLs so they can be loaded from custom path at runtime

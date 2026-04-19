@@ -515,6 +515,19 @@ namespace PrismaUI::InputHandler {
 
     LRESULT CALLBACK SubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass,
                                   DWORD_PTR /*dwRefData*/) {
+        // VR: PrismaVR owns all input — laser for mouse, PrismaVR_KBSubclassProc for keyboard.
+        // Upstream's SubclassProc (IME, keyboard switch, focus tracking) has no role in VR.
+        // Pass every message straight through to the next handler in the subclass chain.
+        if (PrismaVR::IsVRActive()) {
+            if (uMsg == WM_NCDESTROY) {
+                RemoveWindowSubclass(hwnd, SubclassProc, uIdSubclass);
+                if (uIdSubclass == SUBCLASS_ID) {
+                    g_wndProcInstalled.store(false);
+                }
+            }
+            return DefSubclassProc(hwnd, uMsg, wParam, lParam);
+        }
+
         LRESULT imeControlResult = 0;
         if (g_imeHelper.HandleControlMessage(hwnd, uMsg, wParam, lParam, &imeControlResult)) {
             return imeControlResult;

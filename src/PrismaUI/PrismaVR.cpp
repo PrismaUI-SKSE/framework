@@ -1820,6 +1820,11 @@ static LRESULT CALLBACK PrismaVR_KBSubclassProc(
 	                    && g_keyboardTargetViewId != 0
 	                    && g_textInputFocused.load();
 
+	if (uMsg == WM_OC_CHAR && !canIntercept) {
+		logger::warn("PrismaVR: WM_OC_CHAR DROPPED — canIntercept=false (vrActive={}, overlays={}, targetId={}, textFocused={})",
+			g_vrActive, !g_vrOverlays.empty(), g_keyboardTargetViewId, g_textInputFocused.load());
+	}
+
 	if (canIntercept) {
 		// --- Standard Windows keyboard messages (physical keyboard, system VR keyboard) ---
 		if (uMsg == WM_KEYDOWN || uMsg == WM_SYSKEYDOWN) {
@@ -1887,9 +1892,11 @@ static LRESULT CALLBACK PrismaVR_KBSubclassProc(
 		if (uMsg == WM_OC_CHAR) {
 			wchar_t ch = static_cast<wchar_t>(wParam);
 			LPARAM mode = lParam; // 0 = printable char, 1 = control key
+			logger::info("PrismaVR: WM_OC_CHAR received — ch={} mode={} targetViewId={}", (int)ch, (int)mode, g_keyboardTargetViewId);
 
 			auto targetView = FindKeyboardTargetView();
 			if (targetView) {
+				logger::info("PrismaVR: WM_OC_CHAR — targetView found, dispatching FireKeyEvent");
 				if (mode == 0 && (ch >= 0x20 || ch == L'\t')) {
 					// Chromium/Ultralight requires: RawKeyDown → Char → KeyUp
 					// for text to appear in <input> fields.
@@ -2229,5 +2236,85 @@ namespace PrismaVR {
 
 		it->second.worldLocked = locked;
 	}
+
+// ============================================================================
+// C ABI export for OpenComposite VR keyboard integration
+// ----------------------------------------------------------------------------
+// OpenComposite's VR keyboard needs to deliver typed characters into Prisma UI
+// text inputs WITHOUT routing through Windows messages. Why direct delivery:
+//   1. Guarantees Skyrim never sees the keystroke → no game hotkeys triggered
+//      (physical keyboard path has I=inventory, Tab=menu, etc. as constant risk)
+//   2. Bypasses all WndProc subclass chain contention (Dekana's IME refactor,
+//      other mods, Skyrim's own WndProc) — no ordering dependencies
+//   3. Does not touch VR input paths at all — controllers/overlays untouched
+//
+// OpenComposite calls this via GetProcAddress(GetModuleHandle("PrismaUI.dll"),
+// "PrismaVR_DeliverChar"). No link-time dependency; runtime lookup only.
+//
+// The Ultralight KeyEvent construction follows Prisma UI's canonical flatscreen
+// InputHandler recipe: RawKeyDown → Char → KeyUp, with text/unmodified_text
+// populated as UTF-8, virtual_key_code = GK_UNKNOWN, key_identifier empty.
+// Ultralight silently drops characters if these fields are not set correctly.
+// ============================================================================
+extern "C" __declspec(dllexport) void PrismaVR_DeliverChar(wchar_t ch)
+{
+	// Gate: only deliver when VR is active, a Prisma overlay exists, a view
+	// has been laser-targeted, and a text input field has DOM focus. If any
+	// condition is false, silently drop — OC will skip the call in those cases.
+	if (!g_vrActive) return;
+	if (g_vrOverlays.empty()) return;
+	if (g_keyboardTargetViewId == 0) return;
+	if (!g_textInputFocused.load()) return;
+
+	auto targetView = FindKeyboardTargetView();
+	if (!targetView) return;
+
+	// Only accept printable chars + tab. Backspace / Enter / control keys
+	// should come through a different mechanism — OC still posts those via
+	// WM_OC_CHAR with mode=1 for Scaleform-aware handling.
+	if (ch < 0x20 && ch != L'\t') return;
+
+	// Build UTF-8 representation (Ultralight requires UTF-8 in text fields)
+	wchar_t str[2] = { ch, 0 };
+	char utf8[8] = { 0 };
+	WideCharToMultiByte(CP_UTF8, 0, str, -1, utf8, sizeof(utf8), nullptr, nullptr);
+	ultralight::String ul_text(utf8);
+
+	// 1. RawKeyDown — Ultralight requires this before it will accept a Char event
+	ultralight::KeyEvent keyDown;
+	keyDown.type = ultralight::KeyEvent::kType_RawKeyDown;
+	keyDown.virtual_key_code = ultralight::KeyCodes::GK_UNKNOWN;
+	keyDown.native_key_code = 0;
+	keyDown.modifiers = 0;
+	keyDown.is_auto_repeat = false;
+	keyDown.text = ul_text;
+	keyDown.unmodified_text = ul_text;
+	keyDown.key_identifier = "";
+	PrismaVR_Bridge::FireKeyEvent(targetView, keyDown);
+
+	// 2. Char — this is what actually inserts text into <input>/<textarea>
+	ultralight::KeyEvent charEv;
+	charEv.type = ultralight::KeyEvent::kType_Char;
+	charEv.virtual_key_code = ultralight::KeyCodes::GK_UNKNOWN;
+	charEv.native_key_code = 0;
+	charEv.modifiers = 0;
+	charEv.is_auto_repeat = false;
+	charEv.text = ul_text;
+	charEv.unmodified_text = ul_text;
+	charEv.key_identifier = "";
+	PrismaVR_Bridge::FireKeyEvent(targetView, charEv);
+
+	// 3. KeyUp — clean release so next keystroke starts fresh
+	ultralight::KeyEvent keyUp;
+	keyUp.type = ultralight::KeyEvent::kType_KeyUp;
+	keyUp.virtual_key_code = ultralight::KeyCodes::GK_UNKNOWN;
+	keyUp.native_key_code = 0;
+	keyUp.modifiers = 0;
+	keyUp.is_auto_repeat = false;
+	keyUp.text = ul_text;
+	keyUp.unmodified_text = ul_text;
+	keyUp.key_identifier = "";
+	PrismaVR_Bridge::FireKeyEvent(targetView, keyUp);
+}
 
 } // namespace PrismaVR

@@ -404,8 +404,23 @@ namespace PrismaUI::Core {
                     view_config.enable_javascript = true;
                     view_config.enable_compositor = false;
 
+                    // VR: use a fixed high-resolution viewport for HTML rendering instead
+                    // of the game's current screen size. In VR, the "screen size" reflects
+                    // the mirror window / backbuffer dimensions which are unrelated to how
+                    // a 3D floating panel should be rendered. Without this override, panel
+                    // texture resolution tracks mirror window size — shrink the mirror and
+                    // panels become blurry/squeezed in VR. Fixed 1920x1080 gives consistent
+                    // crisp rendering regardless of mirror state. Physical quad size is
+                    // independent of this (controlled by SetOverlayWidthInMeters in PrismaVR).
+                    uint32_t viewW = screenSize.width;
+                    uint32_t viewH = screenSize.height;
+                    if (PrismaVR::IsVRActive()) {
+                        viewW = 1920;
+                        viewH = 1080;
+                    }
+
                     viewData->ultralightView =
-                        localRenderer->CreateView(screenSize.width, screenSize.height, view_config, nullptr);
+                        localRenderer->CreateView(viewW, viewH, view_config, nullptr);
 
                     if (viewData->ultralightView) {
                         viewData->loadListener = std::make_unique<Listeners::MyLoadListener>(viewData->id);

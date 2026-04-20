@@ -1,6 +1,12 @@
-// PrismaVR.cpp — Universal VR Bridge for Prisma UI
+// PrismaVR.cpp — VR Bridge for Prisma UI
 // Translates 2D Prisma views into 3D VR overlays with full interaction.
-// Works on both OpenComposite Unleashed and SteamVR runtimes.
+//
+// Supported runtime: OpenComposite Unleashed (production).
+// SteamVR native: partial support, WORK IN PROGRESS, NOT RECOMMENDED FOR USE.
+//   Known issues: controller laser misaligned, keyboard API unreliable.
+//   SteamVR code paths remain in-tree for future work — search for "SteamVR
+//   native" / "WORK IN PROGRESS" comments below. End users should install
+//   OpenComposite Unleashed.
 
 #include "PrismaVR.h"
 #include "PrismaVR_Bridge.h"
@@ -1785,9 +1791,24 @@ static void CheckTextInputFocusAsync(std::shared_ptr<PrismaUI::Core::PrismaView>
 			} else {
 				logger::warn("PrismaVR: g_gameHwnd is NULL — cannot signal OC for VR keyboard!");
 			}
-			// SteamVR native keyboard: ShowKeyboardForOverlay opens SteamVR's own
-			// virtual keyboard attached to our overlay. On OC this hits a STUBBED
-			// implementation (harmless log) — the window property above handles it.
+			// ================================================================
+			// SteamVR native keyboard path — WORK IN PROGRESS, NOT PRODUCTION-READY
+			// ----------------------------------------------------------------
+			// This calls SteamVR's ShowKeyboardForOverlay to open the native
+			// SteamVR keyboard attached to our overlay. On OpenComposite this
+			// hits a STUBBED implementation (harmless log) — the OC_PRISMA_TEXT
+			// window property path above is what actually opens the OC keyboard.
+			//
+			// Known issues on SteamVR native (not OC):
+			//   * Controller laser ray direction is misaligned
+			//   * SteamVR keyboard API (ShowKeyboardForOverlay + overlay event
+			//     polling for VREvent_KeyboardCharInput) has unresolved reliability
+			//     issues; text input is unreliable
+			//
+			// VR users should install OpenComposite Unleashed for a supported
+			// experience. The SteamVR code remains in-tree for future work but
+			// is NOT recommended for end users in its current state.
+			// ================================================================
 			if (g_overlay) {
 				if (focused) {
 					openvr::VROverlayHandle_t targetHandle = 0;
@@ -1954,20 +1975,30 @@ static LRESULT CALLBACK PrismaVR_KBSubclassProc(
 					keyUp.is_auto_repeat = false;
 					PrismaVR_Bridge::FireKeyEvent(targetView, keyUp);
 				} else if (mode == 1) {
+					// Control key (Backspace, Arrow, Delete, Enter, Tab, etc.).
+					// Populate key_identifier — required for Chromium to route
+					// navigation keys correctly. Without it, Backspace and arrow
+					// keys do nothing in <input> fields.
+					int vkCode = static_cast<int>(ch);
+					ultralight::String keyId;
+					ultralight::GetKeyIdentifierFromVirtualKeyCode(vkCode, keyId);
+
 					ultralight::KeyEvent keyDown;
 					keyDown.type = ultralight::KeyEvent::kType_RawKeyDown;
-					keyDown.virtual_key_code = static_cast<int>(ch);
-					keyDown.native_key_code = static_cast<int>(ch);
+					keyDown.virtual_key_code = vkCode;
+					keyDown.native_key_code = vkCode;
 					keyDown.modifiers = 0;
 					keyDown.is_auto_repeat = false;
+					keyDown.key_identifier = keyId;
 					PrismaVR_Bridge::FireKeyEvent(targetView, keyDown);
 
 					ultralight::KeyEvent keyUp;
 					keyUp.type = ultralight::KeyEvent::kType_KeyUp;
-					keyUp.virtual_key_code = static_cast<int>(ch);
-					keyUp.native_key_code = static_cast<int>(ch);
+					keyUp.virtual_key_code = vkCode;
+					keyUp.native_key_code = vkCode;
 					keyUp.modifiers = 0;
 					keyUp.is_auto_repeat = false;
+					keyUp.key_identifier = keyId;
 					PrismaVR_Bridge::FireKeyEvent(targetView, keyUp);
 				}
 				return 0;
@@ -1983,10 +2014,19 @@ static LRESULT CALLBACK PrismaVR_KBSubclassProc(
 }
 
 // ============================================================================
-// Section 14d: SteamVR keyboard event polling
-// When ShowKeyboardForOverlay is active, SteamVR sends character events
-// through the overlay event queue. We poll and inject them into Ultralight.
-// On OC this does nothing — OC sends chars via WM_OC_CHAR (handled above).
+// Section 14d: SteamVR keyboard event polling — WORK IN PROGRESS
+// ----------------------------------------------------------------------------
+// NOT PRODUCTION-READY. See SteamVR WIP comment block in the text-focus-change
+// callback above for rationale. This function polls the overlay event queue for
+// VREvent_KeyboardCharInput / VREvent_KeyboardClosed events that SteamVR emits
+// when ShowKeyboardForOverlay is active. Text input reliability is poor on
+// SteamVR native; VR users should use OpenComposite Unleashed instead.
+//
+// On OpenComposite this function does nothing — OC never emits these events
+// and instead delivers characters via WM_OC_CHAR (handled in
+// PrismaVR_KBSubclassProc) or direct-delivery via PrismaVR_DeliverChar /
+// PrismaVR_DeliverVKey (new in this version). Those paths are the supported
+// keyboard integration.
 // ============================================================================
 
 static void PollSteamVRKeyboardEvents() {
@@ -2335,6 +2375,60 @@ extern "C" __declspec(dllexport) void PrismaVR_DeliverChar(wchar_t ch)
 	keyUp.text = ul_text;
 	keyUp.unmodified_text = ul_text;
 	keyUp.key_identifier = "";
+	PrismaVR_Bridge::FireKeyEvent(targetView, keyUp);
+}
+
+// Direct delivery for control/navigation keys (Backspace, Arrow keys, Delete,
+// Home, End, Enter, Tab, Escape). Same architecture as PrismaVR_DeliverChar
+// but for non-printable keys that need proper Ultralight key_identifier strings
+// for Chromium/Ultralight to recognize them as navigation actions instead of
+// character input.
+//
+// Ultralight's virtual_key_code values (GK_*) match Windows VK_* codes directly
+// (GK_BACK=0x08, GK_LEFT=0x25, etc.) so we pass the VK through unchanged. The
+// key_identifier is populated via Ultralight's own GetKeyIdentifierFromVirtualKeyCode
+// helper — this is the string Chromium's input handler uses to route the event.
+//
+// No Char event is fired (control keys don't produce characters). Just
+// RawKeyDown + KeyUp with proper identification.
+//
+// OC calls this via GetProcAddress for mode==1 (control key) PostCharToGame
+// invocations when OC_PRISMA_TEXT is set. Fall back to legacy WM_OC_CHAR
+// PostMessage path if the export is missing (older OC builds).
+extern "C" __declspec(dllexport) void PrismaVR_DeliverVKey(int vkCode)
+{
+	if (!g_vrActive) return;
+	if (g_vrOverlays.empty()) return;
+	if (g_keyboardTargetViewId == 0) return;
+	if (!g_textInputFocused.load()) return;
+
+	auto targetView = FindKeyboardTargetView();
+	if (!targetView) return;
+
+	// Populate the key_identifier string Chromium needs to route navigation keys.
+	// Ultralight ships this helper in KeyEvent.h — it maps VK codes to the
+	// WebKit-legacy identifier strings ("Left", "Right", "U+0008", etc.).
+	ultralight::String keyId;
+	ultralight::GetKeyIdentifierFromVirtualKeyCode(vkCode, keyId);
+
+	// 1. RawKeyDown
+	ultralight::KeyEvent keyDown;
+	keyDown.type = ultralight::KeyEvent::kType_RawKeyDown;
+	keyDown.virtual_key_code = vkCode;
+	keyDown.native_key_code = vkCode;
+	keyDown.modifiers = 0;
+	keyDown.is_auto_repeat = false;
+	keyDown.key_identifier = keyId;
+	PrismaVR_Bridge::FireKeyEvent(targetView, keyDown);
+
+	// 2. KeyUp
+	ultralight::KeyEvent keyUp;
+	keyUp.type = ultralight::KeyEvent::kType_KeyUp;
+	keyUp.virtual_key_code = vkCode;
+	keyUp.native_key_code = vkCode;
+	keyUp.modifiers = 0;
+	keyUp.is_auto_repeat = false;
+	keyUp.key_identifier = keyId;
 	PrismaVR_Bridge::FireKeyEvent(targetView, keyUp);
 }
 

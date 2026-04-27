@@ -49,7 +49,7 @@ public:
             if (stop_) {
                 throw std::runtime_error("Executor is stopping");
             }
-            tasks_.push_back({priority, [task_ptr]() { (*task_ptr)(); }});
+            tasks_.push_back({priority, next_seq_++, [task_ptr]() { (*task_ptr)(); }});
             std::push_heap(tasks_.begin(), tasks_.end(), TaskCompare());
         }
         condition_.notify_one();
@@ -68,13 +68,18 @@ public:
 private:
     struct Task {
         Priority priority;
+        std::uint64_t seq;
         std::function<void()> func;
     };
 
     struct TaskCompare {
         bool operator()(const Task& a, const Task& b) const {
-            // Lower priority value = higher priority (inverted for max heap)
-            return static_cast<int>(a.priority) > static_cast<int>(b.priority);
+            // Lower priority value = higher priority (inverted for max heap).
+            // For equal priorities, lower seq runs first → stable FIFO within a priority.
+            if (a.priority != b.priority) {
+                return static_cast<int>(a.priority) > static_cast<int>(b.priority);
+            }
+            return a.seq > b.seq;
         }
     };
 
@@ -83,13 +88,14 @@ private:
     std::thread worker_thread_;
     std::atomic<std::thread::id> worker_thread_id_;
     std::vector<Task> tasks_;  // Using vector as heap for priority queue
+    std::uint64_t next_seq_;   // Monotonic submission counter; tiebreaker for equal priorities (guarded by queue_mutex_)
     std::mutex queue_mutex_;
     std::condition_variable condition_;
     bool stop_;
     std::function<void(const std::exception_ptr&)> exception_handler_;
 };
 
-inline SingleThreadExecutor::SingleThreadExecutor() : stop_(false), worker_thread_id_(), exception_handler_(nullptr) {
+inline SingleThreadExecutor::SingleThreadExecutor() : worker_thread_id_(), next_seq_(0), stop_(false), exception_handler_(nullptr) {
     worker_thread_ = std::thread(&SingleThreadExecutor::run, this);
 }
 

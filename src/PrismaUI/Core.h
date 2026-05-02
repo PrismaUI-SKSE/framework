@@ -60,7 +60,7 @@ namespace PrismaUI::Core {
         std::unique_ptr<Listeners::MyLoadListener> loadListener;
         std::unique_ptr<Listeners::MyViewListener> viewListener;
         std::atomic<bool> isLoadingFinished = false;
-        std::function<void(const PrismaViewId&)> domReadyCallback;
+        std::move_only_function<void(const PrismaViewId&)> domReadyCallback;
         std::function<void(PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> consoleMessageCallback;
         int scrollingPixelSize = 28;
         std::atomic<bool> isPaused = false;

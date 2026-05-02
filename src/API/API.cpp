@@ -5,20 +5,11 @@
 
 PrismaView PluginAPI::PrismaUIInterface::CreateView(const char* htmlPath, PRISMA_UI_API::OnDomReadyCallback onDomReadyCallback) noexcept
 {
-    if (!htmlPath) {
-        return 0;
-    }
+    auto callback = onDomReadyCallback
+        ? std::make_optional(onDomReadyCallback)
+        : std::nullopt;
 
-    std::function<void(PrismaUI::Core::PrismaViewId)> domReadyWrapper = nullptr;
-    if (onDomReadyCallback) {
-        domReadyWrapper = [onDomReadyCallback](PrismaUI::Core::PrismaViewId viewId) {
-            SKSE::GetTaskInterface()->AddTask([callback = onDomReadyCallback, id = viewId]() {
-                callback(id);
-            });
-        };
-    }
-
-    return PrismaUI::ViewManager::Create(htmlPath, domReadyWrapper);
+    return CreateViewInternal(htmlPath, callback);
 }
 
 void PluginAPI::PrismaUIInterface::Invoke(PrismaView view, const char* script, PRISMA_UI_API::JSCallback callback) noexcept
@@ -239,4 +230,24 @@ void PluginAPI::PrismaUIInterface::RegisterConsoleCallback(PrismaView view, PRIS
 	} else {
 		PrismaUI::ViewManager::RegisterConsoleCallback(view, nullptr);
 	}
+}
+
+PrismaView PluginAPI::PrismaUIInterface::CreateViewWithState(
+    const char* htmlPath, PRISMA_UI_API::OnDomReadyCallbackWithState onDomReadyCallback, void* state) noexcept
+{
+    auto callback = onDomReadyCallback
+        ? std::make_optional([onDomReadyCallback, state](auto id) { onDomReadyCallback(id, state); })
+        : std::nullopt;
+
+    return CreateViewInternal(htmlPath, callback);
+}
+
+void PluginAPI::PrismaUIInterface::InvokeWithState(PrismaView view, const char* script,
+    PRISMA_UI_API::JSCallbackWithState callback, void* state) noexcept
+{
+}
+
+void PluginAPI::PrismaUIInterface::RegisterJSListenerWithState(PrismaView view, const char* functionName,
+    PRISMA_UI_API::JSListenerCallbackWithState callback, void* state) noexcept
+{
 }

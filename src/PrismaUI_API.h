@@ -20,11 +20,14 @@ namespace PRISMA_UI_API {
     constexpr const auto PrismaUIPluginName = "PrismaUI";
 
     // Available PrismaUI interface versions
-    enum class InterfaceVersion : uint8_t { V1, V2 };
+    enum class InterfaceVersion : uint8_t { V1, V2, V3 };
 
     typedef void (*OnDomReadyCallback)(PrismaView view);
+    typedef void (*OnDomReadyCallbackWithState)(PrismaView view, void* state);
     typedef void (*JSCallback)(const char* result);
+    typedef void (*JSCallbackWithState)(const char* result, void* state);
     typedef void (*JSListenerCallback)(const char* argument);
+    typedef void (*JSListenerCallbackWithState)(const char* argument, void* state);
 
     // JavaScript console message severity level for use with RegisterConsoleCallback().
     enum class ConsoleMessageLevel : uint8_t { Log = 0, Warning, Error, Debug, Info };
@@ -116,6 +119,23 @@ namespace PRISMA_UI_API {
         virtual void RegisterConsoleCallback(PrismaView view, ConsoleMessageCallback callback) noexcept = 0;
     };
 
+    // PrismaUI modder interface v3 (extends v2)
+    class IVPrismaUI3 : public IVPrismaUI2 {
+    protected:
+        ~IVPrismaUI3() = default;
+
+    public:
+        virtual PrismaView CreateViewWithState(
+            const char* htmlPath, OnDomReadyCallbackWithState onDomReadyCallback = nullptr,
+            void* state = nullptr) noexcept = 0;
+
+        virtual void InvokeWithState(PrismaView view, const char* script, JSCallbackWithState callback = nullptr,
+            void* state = nullptr) noexcept = 0;
+
+        virtual void RegisterJSListenerWithState(PrismaView view, const char* functionName,
+            JSListenerCallbackWithState callback, void* state = nullptr) noexcept = 0;
+    };
+
     // Maps interface types to InterfaceVersion enum values.
     // compile-time constraint -- only request interface versions that actually exist.
     template <typename T>
@@ -129,6 +149,11 @@ namespace PRISMA_UI_API {
     template <>
     struct InterfaceVersionMap<IVPrismaUI2> {
         static constexpr InterfaceVersion version = InterfaceVersion::V2;
+    };
+
+    template <>
+    struct InterfaceVersionMap<IVPrismaUI3> {
+        static constexpr InterfaceVersion version = InterfaceVersion::V3;
     };
 
     typedef void* (*RequestPluginAPIFunc)(InterfaceVersion interfaceVersion);

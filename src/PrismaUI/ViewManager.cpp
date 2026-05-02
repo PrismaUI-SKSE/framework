@@ -9,7 +9,7 @@
 namespace PrismaUI::ViewManager {
     using namespace Core;
 
-    Core::PrismaViewId Create(const std::string& htmlPath, std::function<void(Core::PrismaViewId)> onDomReadyCallback) {
+    Core::PrismaViewId Create(const std::string& htmlPath, std::move_only_function<void(Core::PrismaViewId)> onDomReadyCallback) {
         bool expected_init = false;
         if (coreInitialized.compare_exchange_strong(expected_init, true)) {
             Core::InitializeCoreSystem();
@@ -39,7 +39,7 @@ namespace PrismaUI::ViewManager {
         viewData->htmlPathToLoad = fileUrl;
         viewData->originalUrl = fileUrl;  // Store for recovery after exceptions
         viewData->isHidden = false;
-        viewData->domReadyCallback = onDomReadyCallback;
+        viewData->domReadyCallback = std::move(onDomReadyCallback);
 
         {
             std::unique_lock lock(viewsMutex);

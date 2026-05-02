@@ -126,7 +126,7 @@ namespace PrismaUI::Core {
     extern std::map<PrismaViewId, std::shared_ptr<PrismaView>> views;
     extern std::shared_mutex viewsMutex;
 
-    using SimpleJSCallback = std::function<void(std::string)>;
+    using SimpleJSCallback = std::function<void(const std::string&)>;
 
     struct JSCallbackData {
         PrismaViewId viewId;

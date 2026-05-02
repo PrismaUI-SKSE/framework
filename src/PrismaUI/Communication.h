@@ -11,7 +11,7 @@
 
 namespace PrismaUI::Core {
     typedef uint64_t PrismaViewId;
-    using SimpleJSCallback = std::function<void(std::string)>;
+    using SimpleJSCallback = std::function<void(const std::string&)>;
 }
 
 namespace PrismaUI::Communication {

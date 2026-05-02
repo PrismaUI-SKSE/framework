@@ -121,21 +121,31 @@ namespace PRISMA_UI_API {
     };
 
     // PrismaUI modder interface v3 (extends v2)
+    // Adds state-aware callback variants. PrismaUI stores and passes callbackState back unchanged;
+    // ownership and lifetime of callbackState remain the caller's responsibility.
     class IVPrismaUI3 : public IVPrismaUI2 {
     protected:
         ~IVPrismaUI3() = default;
 
     public:
+        // Create view and receive callbackState in the DOM-ready callback.
+        // callbackState may be nullptr.
         virtual PrismaView CreateViewV2(
             const char* htmlPath, OnDomReadyCallbackWithState onDomReadyCallback = nullptr,
             void* callbackState = nullptr) noexcept = 0;
 
+        // Send JS code to UI and receive callbackState in the result callback.
+        // callbackState may be nullptr.
         virtual void InvokeV2(PrismaView view, const char* script, JSCallbackWithState callback = nullptr,
             void* callbackState = nullptr) noexcept = 0;
 
+        // Register a JS listener and receive callbackState each time JavaScript calls it.
+        // callbackState may be nullptr.
         virtual void RegisterJSListenerV2(PrismaView view, const char* functionName,
             JSListenerCallbackWithState callback, void* callbackState = nullptr) noexcept = 0;
 
+        // Register a callback to receive JavaScript console messages with callbackState.
+        // callbackState may be nullptr.
         virtual void RegisterConsoleCallbackV2(PrismaView view, ConsoleMessageCallbackWithState callback,
             void* callbackState = nullptr) noexcept = 0;
     };
@@ -187,6 +197,7 @@ namespace PRISMA_UI_API {
     /// Usage:
     ///   auto* m_prismaUI   = PRISMA_UI_API::RequestPluginAPI<PRISMA_UI_API::IVPrismaUI1>();
     ///   auto* m_prismaUIv2 = PRISMA_UI_API::RequestPluginAPI<PRISMA_UI_API::IVPrismaUI2>();
+    ///   auto* m_prismaUIv3 = PRISMA_UI_API::RequestPluginAPI<PRISMA_UI_API::IVPrismaUI3>();
     template <typename T>
     [[nodiscard]] inline T* RequestPluginAPI() {
         return static_cast<T*>(RequestPluginAPI(InterfaceVersionMap<T>::version));

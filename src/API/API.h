@@ -63,24 +63,12 @@ public:
             PRISMA_UI_API::JSListenerCallbackWithState callback, void* state) noexcept override;
 
     private:
-        template <std::invocable<PrismaUI::Core::PrismaViewId> TCallback>
-        PrismaView CreateViewInternal(const char* htmlPath, std::optional<TCallback> onDomReadyCallback)
-        {
-            if (!htmlPath) {
-                return 0;
-            }
-
-            std::move_only_function<void(PrismaUI::Core::PrismaViewId)> domReadyWrapper = nullptr;
-            if (onDomReadyCallback.has_value()) {
-                domReadyWrapper = [callback = std::move(onDomReadyCallback.value())](PrismaUI::Core::PrismaViewId viewId) {
-                    SKSE::GetTaskInterface()->AddTask([callback = std::move(callback), id = viewId] {
-                        std::invoke(callback, id);
-                    });
-                };
-            }
-
-            return PrismaUI::ViewManager::Create(htmlPath, std::move(domReadyWrapper));
-        }
+        static PrismaView CreateViewInternal(
+            const char* htmlPath, std::function<void(PrismaUI::Core::PrismaViewId)> onDomReadyCallback) noexcept;
+        static void InvokeInternal(
+            PrismaView view, const char* script, std::function<void(const char*)> callback) noexcept;
+        static void RegisterJSListenerInternal(PrismaView view, const char* functionName,
+            std::function<void(const char*)> callback) noexcept;
 
         unsigned long apiTID = 0;
     };

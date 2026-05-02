@@ -48,6 +48,7 @@ namespace PrismaUI::ViewManager {
     bool HasAnyActiveFocus();
 
     // Console message callback registration
-    void RegisterConsoleCallback(const Core::PrismaViewId& viewId,
-                                 std::function<void(Core::PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> callback);
+    void RegisterConsoleCallback(
+        const Core::PrismaViewId& viewId,
+        std::move_only_function<void(Core::PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> callback);
 }

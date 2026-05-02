@@ -220,6 +220,21 @@ void PluginAPI::PrismaUIInterface::RegisterJSListenerV2(PrismaView view, const c
     RegisterJSListenerInternal(view, functionName, [callback, callbackState](auto argument) { callback(argument, callbackState); });
 }
 
+void PluginAPI::PrismaUIInterface::RegisterConsoleCallbackV2(
+    PrismaView view, PRISMA_UI_API::ConsoleMessageCallbackWithState callback, void* callbackState) noexcept
+{
+    if (!view || !callback) {
+        return;
+    }
+
+    auto wrappedCallback = [callback, callbackState](PrismaUI::Core::PrismaViewId id, PRISMA_UI_API::ConsoleMessageLevel level, const std::string& msg) {
+        SKSE::GetTaskInterface()->AddTask([callback, id, level, msg, callbackState] {
+            callback(id, level, msg.c_str(), callbackState);
+        });
+    };
+    PrismaUI::ViewManager::RegisterConsoleCallback(view, wrappedCallback);
+}
+
 PrismaView PluginAPI::PrismaUIInterface::CreateViewInternal(
     const char* htmlPath, std::function<void(PrismaUI::Core::PrismaViewId)> onDomReadyCallback) noexcept
 {

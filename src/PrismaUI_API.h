@@ -34,6 +34,7 @@ namespace PRISMA_UI_API {
 
     // Console message callback.
     typedef void (*ConsoleMessageCallback)(PrismaView view, ConsoleMessageLevel level, const char* message);
+    typedef void (*ConsoleMessageCallbackWithState)(PrismaView view, ConsoleMessageLevel level, const char* message, void* state);
 
     // PrismaUI modder interface v1
     class IVPrismaUI1 {
@@ -134,6 +135,9 @@ namespace PRISMA_UI_API {
 
         virtual void RegisterJSListenerV2(PrismaView view, const char* functionName,
             JSListenerCallbackWithState callback, void* callbackState = nullptr) noexcept = 0;
+
+        virtual void RegisterConsoleCallbackV2(PrismaView view, ConsoleMessageCallbackWithState callback,
+            void* callbackState = nullptr) noexcept = 0;
     };
 
     // Maps interface types to InterfaceVersion enum values.

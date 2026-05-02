@@ -61,6 +61,8 @@ public:
             void* callbackState) noexcept override;
         void RegisterJSListenerV2(PrismaView view, const char* functionName,
             PRISMA_UI_API::JSListenerCallbackWithState callback, void* callbackState) noexcept override;
+        void RegisterConsoleCallbackV2(PrismaView view, PRISMA_UI_API::ConsoleMessageCallbackWithState callback,
+            void* callbackState) noexcept override;
 
     private:
         static PrismaView CreateViewInternal(

@@ -125,15 +125,15 @@ namespace PRISMA_UI_API {
         ~IVPrismaUI3() = default;
 
     public:
-        virtual PrismaView CreateViewWithState(
+        virtual PrismaView CreateViewV2(
             const char* htmlPath, OnDomReadyCallbackWithState onDomReadyCallback = nullptr,
-            void* state = nullptr) noexcept = 0;
+            void* callbackState = nullptr) noexcept = 0;
 
-        virtual void InvokeWithState(PrismaView view, const char* script, JSCallbackWithState callback = nullptr,
-            void* state = nullptr) noexcept = 0;
+        virtual void InvokeV2(PrismaView view, const char* script, JSCallbackWithState callback = nullptr,
+            void* callbackState = nullptr) noexcept = 0;
 
-        virtual void RegisterJSListenerWithState(PrismaView view, const char* functionName,
-            JSListenerCallbackWithState callback, void* state = nullptr) noexcept = 0;
+        virtual void RegisterJSListenerV2(PrismaView view, const char* functionName,
+            JSListenerCallbackWithState callback, void* callbackState = nullptr) noexcept = 0;
     };
 
     // Maps interface types to InterfaceVersion enum values.

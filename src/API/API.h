@@ -55,12 +55,12 @@ public:
 
         // IVPrismaUI3
 
-        PrismaView CreateViewWithState(
-            const char* htmlPath, PRISMA_UI_API::OnDomReadyCallbackWithState onDomReadyCallback, void* state) noexcept override;
-        void InvokeWithState(PrismaView view, const char* script, PRISMA_UI_API::JSCallbackWithState callback,
-            void* state) noexcept override;
-        void RegisterJSListenerWithState(PrismaView view, const char* functionName,
-            PRISMA_UI_API::JSListenerCallbackWithState callback, void* state) noexcept override;
+        PrismaView CreateViewV2(
+            const char* htmlPath, PRISMA_UI_API::OnDomReadyCallbackWithState onDomReadyCallback, void* callbackState) noexcept override;
+        void InvokeV2(PrismaView view, const char* script, PRISMA_UI_API::JSCallbackWithState callback,
+            void* callbackState) noexcept override;
+        void RegisterJSListenerV2(PrismaView view, const char* functionName,
+            PRISMA_UI_API::JSListenerCallbackWithState callback, void* callbackState) noexcept override;
 
     private:
         static PrismaView CreateViewInternal(

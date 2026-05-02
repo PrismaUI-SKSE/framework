@@ -190,34 +190,34 @@ void PluginAPI::PrismaUIInterface::RegisterConsoleCallback(PrismaView view, PRIS
 	}
 }
 
-PrismaView PluginAPI::PrismaUIInterface::CreateViewWithState(
-    const char* htmlPath, PRISMA_UI_API::OnDomReadyCallbackWithState onDomReadyCallback, void* state) noexcept
+PrismaView PluginAPI::PrismaUIInterface::CreateViewV2(
+    const char* htmlPath, PRISMA_UI_API::OnDomReadyCallbackWithState onDomReadyCallback, void* callbackState) noexcept
 {
     auto callback = onDomReadyCallback
-        ? std::function<void(PrismaUI::Core::PrismaViewId)>([onDomReadyCallback, state](auto id) { onDomReadyCallback(id, state); })
+        ? std::function<void(PrismaUI::Core::PrismaViewId)>([onDomReadyCallback, callbackState](auto id) { onDomReadyCallback(id, callbackState); })
         : nullptr;
 
     return CreateViewInternal(htmlPath, callback);
 }
 
-void PluginAPI::PrismaUIInterface::InvokeWithState(PrismaView view, const char* script,
-    PRISMA_UI_API::JSCallbackWithState callback, void* state) noexcept
+void PluginAPI::PrismaUIInterface::InvokeV2(PrismaView view, const char* script,
+    PRISMA_UI_API::JSCallbackWithState callback, void* callbackState) noexcept
 {
     auto callbackFunc = callback
-        ? std::function<void(const char*)>([callback, state](auto id) { callback(id, state); })
+        ? std::function<void(const char*)>([callback, callbackState](auto id) { callback(id, callbackState); })
         : nullptr;
 
     InvokeInternal(view, script, callbackFunc);
 }
 
-void PluginAPI::PrismaUIInterface::RegisterJSListenerWithState(PrismaView view, const char* functionName,
-    PRISMA_UI_API::JSListenerCallbackWithState callback, void* state) noexcept
+void PluginAPI::PrismaUIInterface::RegisterJSListenerV2(PrismaView view, const char* functionName,
+    PRISMA_UI_API::JSListenerCallbackWithState callback, void* callbackState) noexcept
 {
     if (!callback) {
         return;
     }
 
-    RegisterJSListenerInternal(view, functionName, [callback, state](auto argument) { callback(argument, state); });
+    RegisterJSListenerInternal(view, functionName, [callback, callbackState](auto argument) { callback(argument, callbackState); });
 }
 
 PrismaView PluginAPI::PrismaUIInterface::CreateViewInternal(

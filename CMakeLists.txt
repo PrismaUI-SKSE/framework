@@ -114,7 +114,7 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 
 # Post-build: Create distribution folder structure
 set(DIST_ROOT "${CMAKE_SOURCE_DIR}/dist")
-set(DIST_VERSION_DIR "${DIST_ROOT}/PrismaUI_${PROJECT_VERSION}")
+set(DIST_VERSION_DIR "${DIST_ROOT}/PrismaUI_${PROJECT_VERSION}$<$<CONFIG:Debug>:_Debug>")
 set(DIST_PRISMAUI_DIR "${DIST_VERSION_DIR}/PrismaUI")
 set(DIST_SKSE_PLUGINS_DIR "${DIST_VERSION_DIR}/SKSE/plugins")
 
@@ -139,6 +139,6 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         "$<$<BOOL:$<TARGET_PDB_FILE:${PROJECT_NAME}>>:$<TARGET_PDB_FILE:${PROJECT_NAME}>>"
         "${DIST_SKSE_PLUGINS_DIR}/"
     
-    COMMAND "${CMAKE_COMMAND}" -E echo "Creating distribution folder: dist/PrismaUI_${PROJECT_VERSION}"
+    COMMAND "${CMAKE_COMMAND}" -E echo "Creating distribution folder: ${DIST_VERSION_DIR}"
 )
 

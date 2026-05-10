@@ -1,5 +1,6 @@
 #include "InputHandler.h"
 
+#include <algorithm>
 #include <commctrl.h>
 
 #include "Communication.h"
@@ -32,6 +33,10 @@ namespace PrismaUI::InputHandler {
 
     bool g_mouseButtonStates[3] = {false, false, false};
     wchar_t g_pendingHighSurrogate = 0;
+
+    // Native cursor: drives Ultralight and RE::MenuCursor while capture is active
+    static std::atomic<float> g_nativeCursorX{0.0f};
+    static std::atomic<float> g_nativeCursorY{0.0f};
 
     // WndProc subclass state
     static std::atomic<bool> g_wndProcInstalled = false;
@@ -302,6 +307,45 @@ namespace PrismaUI::InputHandler {
         return std::wstring{high, low};
     }
 
+    static void SetNativeCursorPosition(float x, float y) {
+        float screenW = static_cast<float>(Core::screenSize.width);
+        float screenH = static_cast<float>(Core::screenSize.height);
+        x = std::clamp(x, 0.0f, screenW > 0 ? screenW - 1.0f : 0.0f);
+        y = std::clamp(y, 0.0f, screenH > 0 ? screenH - 1.0f : 0.0f);
+        g_nativeCursorX.store(x, std::memory_order_relaxed);
+        g_nativeCursorY.store(y, std::memory_order_relaxed);
+
+        if (auto* menuCursor = RE::MenuCursor::GetSingleton()) {
+            menuCursor->cursorPosX = x;
+            menuCursor->cursorPosY = y;
+        }
+    }
+
+    // Align native + Ultralight coordinates to the game menu cursor when capture starts
+    static void SyncNativeCursorFromMenuCursor() {
+        auto* menuCursor = RE::MenuCursor::GetSingleton();
+        if (!menuCursor) {
+            return;
+        }
+
+        SetNativeCursorPosition(menuCursor->cursorPosX, menuCursor->cursorPosY);
+
+        ultralight::MouseEvent ev;
+        ev.type = ultralight::MouseEvent::kType_MouseMoved;
+        ev.x = static_cast<int>(g_nativeCursorX.load(std::memory_order_relaxed));
+        ev.y = static_cast<int>(g_nativeCursorY.load(std::memory_order_relaxed));
+        ev.button = ultralight::MouseEvent::kButton_None;
+
+        std::lock_guard lock(g_eventQueueMutex);
+        g_eventQueue.emplace_back(ev);
+    }
+
+    static void AccumulateCursorDelta(float deltaX, float deltaY) {
+        float curX = g_nativeCursorX.load(std::memory_order_relaxed) + deltaX;
+        float curY = g_nativeCursorY.load(std::memory_order_relaxed) + deltaY;
+        SetNativeCursorPosition(curX, curY);
+    }
+
     class MouseEventListener : public RE::BSTEventSink<RE::InputEvent*> {
     public:
         static MouseEventListener* GetSingleton() {
@@ -316,20 +360,22 @@ namespace PrismaUI::InputHandler {
                 return RE::BSEventNotifyControl::kContinue;
             }
 
-            auto cursor = RE::MenuCursor::GetSingleton();
-            if (!cursor) {
-                return RE::BSEventNotifyControl::kContinue;
-            }
-
             for (auto event = *a_event; event; event = event->next) {
                 switch (event->GetEventType()) {
                     case RE::INPUT_EVENT_TYPE::kMouseMove: {
                         auto mouseMoveEvent = event->AsMouseMoveEvent();
                         if (mouseMoveEvent) {
+                            AccumulateCursorDelta(
+                                static_cast<float>(mouseMoveEvent->mouseInputX),
+                                static_cast<float>(mouseMoveEvent->mouseInputY));
+
+                            float curX = g_nativeCursorX.load(std::memory_order_relaxed);
+                            float curY = g_nativeCursorY.load(std::memory_order_relaxed);
+
                             ultralight::MouseEvent ev;
                             ev.type = ultralight::MouseEvent::kType_MouseMoved;
-                            ev.x = static_cast<int>(cursor->cursorPosX);
-                            ev.y = static_cast<int>(cursor->cursorPosY);
+                            ev.x = static_cast<int>(curX);
+                            ev.y = static_cast<int>(curY);
                             ev.button = ultralight::MouseEvent::kButton_None;
 
                             std::lock_guard lock(g_eventQueueMutex);
@@ -345,6 +391,9 @@ namespace PrismaUI::InputHandler {
                         const auto idCode = buttonEvent->GetIDCode();
                         bool isPressed = buttonEvent->IsPressed();
                         bool isUp = buttonEvent->IsUp();
+
+                        int cursorX = static_cast<int>(g_nativeCursorX.load(std::memory_order_relaxed));
+                        int cursorY = static_cast<int>(g_nativeCursorY.load(std::memory_order_relaxed));
 
                         if (idCode <= 2) {
                             ultralight::MouseEvent::Button button = ultralight::MouseEvent::kButton_None;
@@ -365,8 +414,8 @@ namespace PrismaUI::InputHandler {
 
                                 ultralight::MouseEvent ev;
                                 ev.type = ultralight::MouseEvent::kType_MouseDown;
-                                ev.x = static_cast<int>(cursor->cursorPosX);
-                                ev.y = static_cast<int>(cursor->cursorPosY);
+                                ev.x = cursorX;
+                                ev.y = cursorY;
                                 ev.button = button;
 
                                 std::lock_guard lock(g_eventQueueMutex);
@@ -376,8 +425,8 @@ namespace PrismaUI::InputHandler {
 
                                 ultralight::MouseEvent ev;
                                 ev.type = ultralight::MouseEvent::kType_MouseUp;
-                                ev.x = static_cast<int>(cursor->cursorPosX);
-                                ev.y = static_cast<int>(cursor->cursorPosY);
+                                ev.x = cursorX;
+                                ev.y = cursorY;
                                 ev.button = button;
 
                                 std::lock_guard lock(g_eventQueueMutex);
@@ -390,8 +439,8 @@ namespace PrismaUI::InputHandler {
                                 ScrollEventWithPosition scrollWithPos;
                                 scrollWithPos.event.type = ultralight::ScrollEvent::kType_ScrollByPixel;
                                 scrollWithPos.event.delta_x = 0;
-                                scrollWithPos.mouseX = static_cast<int>(cursor->cursorPosX);
-                                scrollWithPos.mouseY = static_cast<int>(cursor->cursorPosY);
+                                scrollWithPos.mouseX = cursorX;
+                                scrollWithPos.mouseY = cursorY;
 
                                 int scrollPixelSize = 28;
 
@@ -632,6 +681,8 @@ namespace PrismaUI::InputHandler {
         }
 
         g_mouseButtonStates[0] = g_mouseButtonStates[1] = g_mouseButtonStates[2] = false;
+        g_nativeCursorX.store(0.0f, std::memory_order_relaxed);
+        g_nativeCursorY.store(0.0f, std::memory_order_relaxed);
 
         logger::info("PrismaUI::InputHandler Initialized with HWND: {}", (void*)g_hWnd);
 
@@ -720,6 +771,8 @@ namespace PrismaUI::InputHandler {
         g_imeHelper.SetAssociation(true);
 
         g_mouseButtonStates[0] = g_mouseButtonStates[1] = g_mouseButtonStates[2] = false;
+
+        SyncNativeCursorFromMenuCursor();
     }
 
     void DisableInputCapture(const Core::PrismaViewId& viewIdToUnfocus) {

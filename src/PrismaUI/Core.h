@@ -83,9 +83,11 @@ namespace PrismaUI::Core {
         uint32_t inspectorTextureHeight = 0;
         float inspectorPosX = 0.0f;
         float inspectorPosY = 0.0f;
-        uint32_t inspectorDisplayWidth = 0;
-        uint32_t inspectorDisplayHeight = 0;
+        uint32_t inspectorDisplayWidth = 800;
+        uint32_t inspectorDisplayHeight = 600;
         float inspectorOpacity = 1.0f;
+        int inspectorSavedOrder = 0;
+        std::atomic<bool> inspectorOrderRaised{false};
 
         // Primary view rendering data
         ID3D11Texture2D* texture = nullptr;

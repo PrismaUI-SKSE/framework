@@ -336,8 +336,9 @@ namespace PrismaUI::ViewRenderer {
             RECT inspectorSourceRect = {0, 0, (long)viewData->inspectorTextureWidth,
                                         (long)viewData->inspectorTextureHeight};
 
+            DirectX::XMVECTORF32 inspTint = {1.0f, 1.0f, 1.0f, viewData->inspectorOpacity};
             spriteBatch->Draw(viewData->inspectorTextureView, inspectorPos, &inspectorSourceRect,
-                              DirectX::Colors::White, 0.f, DirectX::SimpleMath::Vector2::Zero, 1.0f,
+                              inspTint, 0.f, DirectX::SimpleMath::Vector2::Zero, 1.0f,
                               DirectX::SpriteEffects_None, 0.f);
         }
     }

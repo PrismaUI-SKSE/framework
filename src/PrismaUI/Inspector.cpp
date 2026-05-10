@@ -96,6 +96,29 @@ namespace PrismaUI::Inspector {
 
     // ========== Inspector Lifecycle ==========
 
+    static void RaiseViewOrderForInspector(PrismaView* viewData) {
+        if (!viewData || viewData->inspectorOrderRaised.load()) return;
+        int maxOrder = viewData->order;
+        {
+            std::shared_lock lock(viewsMutex);
+            for (const auto& pair : views) {
+                if (pair.second) maxOrder = std::max(maxOrder, pair.second->order);
+            }
+        }
+        viewData->inspectorSavedOrder = viewData->order;
+        viewData->order = maxOrder + 1;
+        viewData->inspectorOrderRaised.store(true);
+        logger::debug("Inspector: raised view [{}] order to {} (was {})", viewData->id, viewData->order,
+                      viewData->inspectorSavedOrder);
+    }
+
+    static void RestoreViewOrderForInspector(PrismaView* viewData) {
+        if (!viewData || !viewData->inspectorOrderRaised.load()) return;
+        viewData->order = viewData->inspectorSavedOrder;
+        viewData->inspectorOrderRaised.store(false);
+        logger::debug("Inspector: restored view [{}] order to {}", viewData->id, viewData->order);
+    }
+
     void CreateInspectorView(const PrismaViewId& viewId) {
         if (!AreInspectorAssetsAvailable()) {
             logger::warn(
@@ -133,6 +156,9 @@ namespace PrismaUI::Inspector {
             auto createInspector = [view = viewData]() {
                 if (view->ultralightView) {
                     view->ultralightView->CreateLocalInspectorView();
+                    if (view->inspectorView && view->inspectorDisplayWidth > 0 && view->inspectorDisplayHeight > 0) {
+                        view->inspectorView->Resize(view->inspectorDisplayWidth, view->inspectorDisplayHeight);
+                    }
                 }
             };
 
@@ -175,6 +201,12 @@ namespace PrismaUI::Inspector {
 
         viewData->inspectorVisible.store(visible);
         viewData->inspectorPointerHover.store(false);
+        if (visible) {
+            viewData->inspectorOpacity = 1.0f;
+            RaiseViewOrderForInspector(viewData.get());
+        } else {
+            RestoreViewOrderForInspector(viewData.get());
+        }
 
         if (visible && viewData->inspectorView) {
             // Focus the inspector view when made visible
@@ -192,6 +224,24 @@ namespace PrismaUI::Inspector {
             } else {
                 auto future =
                     ultralightThread.submit_with_priority(SingleThreadExecutor::Priority::MEDIUM, focusInspector);
+                future.wait();
+            }
+        } else if (!visible && viewData->inspectorView) {
+            // Return focus to the main view when inspector is hidden
+            auto unfocusInspector = [view = viewData]() {
+                if (view->inspectorView && view->inspectorView->HasFocus()) {
+                    view->inspectorView->Unfocus();
+                }
+                if (view->ultralightView && !view->ultralightView->HasFocus()) {
+                    view->ultralightView->Focus();
+                }
+            };
+
+            if (ultralightThread.IsWorkerThread()) {
+                unfocusInspector();
+            } else {
+                auto future =
+                    ultralightThread.submit_with_priority(SingleThreadExecutor::Priority::MEDIUM, unfocusInspector);
                 future.wait();
             }
         }

@@ -1,5 +1,6 @@
 #include "InputHandler.h"
 
+#include <algorithm>
 #include <commctrl.h>
 
 #include "Communication.h"
@@ -26,12 +27,27 @@ namespace PrismaUI::InputHandler {
 
     const int SCROLL_LINES_PER_WHEEL_DELTA = 1;
 
+    constexpr int INSPECTOR_TITLE_BAR_HEIGHT = 24;
+    constexpr int INSPECTOR_RESIZE_BORDER = 8;
+    constexpr uint32_t INSPECTOR_MIN_WIDTH = 200;
+    constexpr uint32_t INSPECTOR_MIN_HEIGHT = 150;
+
     // Clipboard safety limits
     constexpr size_t MAX_CLIPBOARD_SIZE = 1024 * 1024;  // 1MB max
     constexpr size_t MAX_CLIPBOARD_CHARS = 200000;      // 200K characters max
 
     bool g_mouseButtonStates[3] = {false, false, false};
     wchar_t g_pendingHighSurrogate = 0;
+
+    enum class InspectorDragMode : uint8_t {
+        None, Moving,
+        ResizingN, ResizingS, ResizingE, ResizingW,
+        ResizingNE, ResizingNW, ResizingSE, ResizingSW
+    };
+    static InspectorDragMode g_inspectorDragMode = InspectorDragMode::None;
+    static int g_dragStartMouseX = 0, g_dragStartMouseY = 0;
+    static float g_dragStartInspX = 0.0f, g_dragStartInspY = 0.0f;
+    static uint32_t g_dragStartInspW = 0, g_dragStartInspH = 0;
 
     // WndProc subclass state
     static std::atomic<bool> g_wndProcInstalled = false;
@@ -705,11 +721,68 @@ namespace PrismaUI::InputHandler {
             logger::warn("EnableInputCapture called with empty viewId.");
             return;
         }
+        bool firstTimeActivation = false;
+        Core::PrismaViewId previouslyFocusedViewId = 0;
         {
             std::lock_guard lock(g_focusedViewIdMutex);
             if (g_currentlyFocusedViewId != viewId) {
+                previouslyFocusedViewId = g_currentlyFocusedViewId;
                 g_currentlyFocusedViewId = viewId;
                 logger::debug("PrismaUI Input Capture focused on View [{}].", viewId);
+            }
+        }
+
+        // Relinquish inspector focus/z-order from the previously focused view
+        if (previouslyFocusedViewId != 0 && g_viewsMap && g_viewsMapMutex) {
+            std::shared_ptr<Core::PrismaView> prevViewData = nullptr;
+            {
+                std::shared_lock lock(*g_viewsMapMutex);
+                auto it = g_viewsMap->find(previouslyFocusedViewId);
+                if (it != g_viewsMap->end()) prevViewData = it->second;
+            }
+            if (prevViewData && prevViewData->inspectorVisible.load()) {
+                if (prevViewData->inspectorOrderRaised.load()) {
+                    prevViewData->order = prevViewData->inspectorSavedOrder;
+                    prevViewData->inspectorOrderRaised.store(false);
+                }
+                prevViewData->inspectorOpacity = 0.85f;
+                if (g_ultralightThreadExecutor) {
+                    g_ultralightThreadExecutor->submit([prev = prevViewData]() {
+                        if (prev->inspectorView && prev->inspectorView->HasFocus()) {
+                            prev->inspectorView->Unfocus();
+                        }
+                        if (prev->ultralightView && !prev->ultralightView->HasFocus()) {
+                            prev->ultralightView->Focus();
+                        }
+                    });
+                }
+            }
+        }
+
+        // Relinquish inspector focus/z-order from the previously focused view
+        if (previouslyFocusedViewId != 0 && g_viewsMap && g_viewsMapMutex) {
+            std::shared_ptr<Core::PrismaView> prevViewData = nullptr;
+            {
+                std::shared_lock lock(*g_viewsMapMutex);
+                auto it = g_viewsMap->find(previouslyFocusedViewId);
+                if (it != g_viewsMap->end()) prevViewData = it->second;
+            }
+            if (prevViewData && prevViewData->inspectorVisible.load()) {
+                if (prevViewData->inspectorOrderRaised.load()) {
+                    prevViewData->order = prevViewData->inspectorSavedOrder;
+                    prevViewData->inspectorOrderRaised.store(false);
+                }
+                prevViewData->inspectorOpacity = 0.85f;
+                if (g_ultralightThreadExecutor) {
+                    g_ultralightThreadExecutor->submit([prev = prevViewData]() {
+                        if (prev->inspectorView && prev->inspectorView->HasFocus()) {
+                            prev->inspectorView->Unfocus();
+                        }
+                        if (prev->ultralightView && !prev->ultralightView->HasFocus()) {
+                            prev->ultralightView->Focus();
+                        }
+                    });
+                }
             }
         }
 
@@ -764,6 +837,19 @@ namespace PrismaUI::InputHandler {
                             resetEvent.button = ultralight::MouseEvent::kButton_None;
 
                             targetViewData->ultralightView->FireMouseEvent(resetEvent);
+
+                            // Relinquish inspector focus/z-order
+                            if (targetViewData->inspectorOrderRaised.load()) {
+                                targetViewData->order = targetViewData->inspectorSavedOrder;
+                                targetViewData->inspectorOrderRaised.store(false);
+                            }
+                            targetViewData->inspectorOpacity = 0.85f;
+                            if (targetViewData->inspectorView && targetViewData->inspectorView->HasFocus()) {
+                                targetViewData->inspectorView->Unfocus();
+                            }
+                            if (!targetViewData->ultralightView->HasFocus()) {
+                                targetViewData->ultralightView->Focus();
+                            }
                         }
                     });
                 }
@@ -795,6 +881,29 @@ namespace PrismaUI::InputHandler {
         }
         if (viewId == 0) return g_isAnyInputCaptureActive.load();
         return g_isAnyInputCaptureActive.load() && (currentFocused == viewId);
+    }
+
+    enum class InspectorHitRegion : uint8_t {
+        None, TitleBar, Interior,
+        EdgeN, EdgeS, EdgeE, EdgeW,
+        CornerNE, CornerNW, CornerSE, CornerSW
+    };
+
+    static InspectorHitRegion GetInspectorHitRegion(float mx, float my, float x, float y, float w, float h) {
+        if (mx < x || mx >= x + w || my < y || my >= y + h) return InspectorHitRegion::None;
+        const float lx = mx - x, ly = my - y;
+        const float B = static_cast<float>(INSPECTOR_RESIZE_BORDER);
+        const bool nL = lx < B, nR = lx >= w - B, nT = ly < B, nB = ly >= h - B;
+        if (nT && nL) return InspectorHitRegion::CornerNW;
+        if (nT && nR) return InspectorHitRegion::CornerNE;
+        if (nB && nL) return InspectorHitRegion::CornerSW;
+        if (nB && nR) return InspectorHitRegion::CornerSE;
+        if (nT) return InspectorHitRegion::EdgeN;
+        if (nB) return InspectorHitRegion::EdgeS;
+        if (nL) return InspectorHitRegion::EdgeW;
+        if (nR) return InspectorHitRegion::EdgeE;
+        if (ly < static_cast<float>(INSPECTOR_TITLE_BAR_HEIGHT)) return InspectorHitRegion::TitleBar;
+        return InspectorHitRegion::Interior;
     }
 
     void ProcessEvents() {
@@ -840,33 +949,171 @@ namespace PrismaUI::InputHandler {
                         [ulView, inspectorView, &targetViewData](const auto& arg) {
                             using T = std::decay_t<decltype(arg)>;
                             if constexpr (std::is_same_v<T, ultralight::MouseEvent>) {
-                                // Check if mouse is over inspector bounds when inspector is visible
-                                bool mouseOverInspector = false;
-                                if (inspectorView && targetViewData->inspectorVisible.load()) {
-                                    const float inspX = targetViewData->inspectorPosX;
-                                    const float inspY = targetViewData->inspectorPosY;
-                                    const float inspW = static_cast<float>(targetViewData->inspectorDisplayWidth);
-                                    const float inspH = static_cast<float>(targetViewData->inspectorDisplayHeight);
+                                const float inspX = targetViewData->inspectorPosX;
+                                const float inspY = targetViewData->inspectorPosY;
+                                const float inspW = static_cast<float>(targetViewData->inspectorDisplayWidth);
+                                const float inspH = static_cast<float>(targetViewData->inspectorDisplayHeight);
+                                const float mouseX = static_cast<float>(arg.x);
+                                const float mouseY = static_cast<float>(arg.y);
+                                const bool inspectorReady =
+                                    inspectorView && targetViewData->inspectorVisible.load() && inspW > 0 && inspH > 0;
 
-                                    const float mouseX = static_cast<float>(arg.x);
-                                    const float mouseY = static_cast<float>(arg.y);
+                                // Handle active drag (move / resize)
+                                if (g_inspectorDragMode != InspectorDragMode::None) {
+                                    if (arg.type == ultralight::MouseEvent::kType_MouseMoved) {
+                                        const int dx = arg.x - g_dragStartMouseX;
+                                        const int dy = arg.y - g_dragStartMouseY;
+                                        float newX = g_dragStartInspX, newY = g_dragStartInspY;
+                                        uint32_t newW = g_dragStartInspW, newH = g_dragStartInspH;
 
-                                    if (mouseX >= inspX && mouseX < (inspX + inspW) && mouseY >= inspY &&
-                                        mouseY < (inspY + inspH)) {
-                                        mouseOverInspector = true;
-                                        targetViewData->inspectorPointerHover.store(true);
-                                    } else {
-                                        targetViewData->inspectorPointerHover.store(false);
+                                        auto clampW = [](int v) {
+                                            return std::max(INSPECTOR_MIN_WIDTH, static_cast<uint32_t>(std::max(0, v)));
+                                        };
+                                        auto clampH = [](int v) {
+                                            return std::max(INSPECTOR_MIN_HEIGHT, static_cast<uint32_t>(std::max(0, v)));
+                                        };
+
+                                        switch (g_inspectorDragMode) {
+                                            case InspectorDragMode::Moving:
+                                                newX += static_cast<float>(dx);
+                                                newY += static_cast<float>(dy);
+                                                break;
+                                            case InspectorDragMode::ResizingE:
+                                                newW = clampW(static_cast<int>(g_dragStartInspW) + dx);
+                                                break;
+                                            case InspectorDragMode::ResizingW: {
+                                                uint32_t w = clampW(static_cast<int>(g_dragStartInspW) - dx);
+                                                newX += static_cast<float>(static_cast<int>(g_dragStartInspW) - static_cast<int>(w));
+                                                newW = w;
+                                                break;
+                                            }
+                                            case InspectorDragMode::ResizingS:
+                                                newH = clampH(static_cast<int>(g_dragStartInspH) + dy);
+                                                break;
+                                            case InspectorDragMode::ResizingN: {
+                                                uint32_t h = clampH(static_cast<int>(g_dragStartInspH) - dy);
+                                                newY += static_cast<float>(static_cast<int>(g_dragStartInspH) - static_cast<int>(h));
+                                                newH = h;
+                                                break;
+                                            }
+                                            case InspectorDragMode::ResizingSE:
+                                                newW = clampW(static_cast<int>(g_dragStartInspW) + dx);
+                                                newH = clampH(static_cast<int>(g_dragStartInspH) + dy);
+                                                break;
+                                            case InspectorDragMode::ResizingSW: {
+                                                uint32_t w = clampW(static_cast<int>(g_dragStartInspW) - dx);
+                                                newX += static_cast<float>(static_cast<int>(g_dragStartInspW) - static_cast<int>(w));
+                                                newW = w;
+                                                newH = clampH(static_cast<int>(g_dragStartInspH) + dy);
+                                                break;
+                                            }
+                                            case InspectorDragMode::ResizingNE: {
+                                                uint32_t h = clampH(static_cast<int>(g_dragStartInspH) - dy);
+                                                newY += static_cast<float>(static_cast<int>(g_dragStartInspH) - static_cast<int>(h));
+                                                newH = h;
+                                                newW = clampW(static_cast<int>(g_dragStartInspW) + dx);
+                                                break;
+                                            }
+                                            case InspectorDragMode::ResizingNW: {
+                                                uint32_t w = clampW(static_cast<int>(g_dragStartInspW) - dx);
+                                                newX += static_cast<float>(static_cast<int>(g_dragStartInspW) - static_cast<int>(w));
+                                                newW = w;
+                                                uint32_t h = clampH(static_cast<int>(g_dragStartInspH) - dy);
+                                                newY += static_cast<float>(static_cast<int>(g_dragStartInspH) - static_cast<int>(h));
+                                                newH = h;
+                                                break;
+                                            }
+                                            default: break;
+                                        }
+
+                                        const float scrW = static_cast<float>(Core::screenSize.width ? Core::screenSize.width : 800);
+                                        const float scrH = static_cast<float>(Core::screenSize.height ? Core::screenSize.height : 600);
+                                        newX = std::clamp(newX, 0.0f, std::max(0.0f, scrW - static_cast<float>(newW)));
+                                        newY = std::clamp(newY, 0.0f, std::max(0.0f, scrH - static_cast<float>(newH)));
+
+                                        targetViewData->inspectorPosX = newX;
+                                        targetViewData->inspectorPosY = newY;
+                                        if (newW != targetViewData->inspectorDisplayWidth ||
+                                            newH != targetViewData->inspectorDisplayHeight) {
+                                            targetViewData->inspectorDisplayWidth = newW;
+                                            targetViewData->inspectorDisplayHeight = newH;
+                                            if (inspectorView) inspectorView->Resize(newW, newH);
+                                        }
+                                    } else if (arg.type == ultralight::MouseEvent::kType_MouseUp) {
+                                        g_inspectorDragMode = InspectorDragMode::None;
                                     }
+                                    return;
                                 }
 
-                                if (mouseOverInspector) {
-                                    // Translate mouse coordinates to inspector view
-                                    ultralight::MouseEvent inspectorEvent = arg;
-                                    inspectorEvent.x = arg.x - static_cast<int>(targetViewData->inspectorPosX);
-                                    inspectorEvent.y = arg.y - static_cast<int>(targetViewData->inspectorPosY);
-                                    inspectorView->FireMouseEvent(inspectorEvent);
+                                // Determine hit region
+                                const InspectorHitRegion hitRegion =
+                                    inspectorReady
+                                        ? GetInspectorHitRegion(mouseX, mouseY, inspX, inspY, inspW, inspH)
+                                        : InspectorHitRegion::None;
+
+                                if (hitRegion != InspectorHitRegion::None) {
+                                    targetViewData->inspectorPointerHover.store(true);
+
+                                    if (arg.type == ultralight::MouseEvent::kType_MouseDown &&
+                                        arg.button == ultralight::MouseEvent::kButton_Left) {
+                                        // Focus inspector and re-raise to top of z-order
+                                        if (inspectorView) inspectorView->Focus();
+                                        if (ulView->HasFocus()) ulView->Unfocus();
+                                        targetViewData->inspectorOpacity = 1.0f;
+
+                                        if (!targetViewData->inspectorOrderRaised.load()) {
+                                            int maxOrder = targetViewData->order;
+                                            {
+                                                std::shared_lock lock(*g_viewsMapMutex);
+                                                for (const auto& pair : *g_viewsMap) {
+                                                    if (pair.second) maxOrder = std::max(maxOrder, pair.second->order);
+                                                }
+                                            }
+                                            targetViewData->inspectorSavedOrder = targetViewData->order;
+                                            targetViewData->order = maxOrder + 1;
+                                            targetViewData->inspectorOrderRaised.store(true);
+                                        }
+
+                                        InspectorDragMode mode = InspectorDragMode::None;
+                                        switch (hitRegion) {
+                                            case InspectorHitRegion::TitleBar:  mode = InspectorDragMode::Moving;     break;
+                                            case InspectorHitRegion::EdgeN:     mode = InspectorDragMode::ResizingN;  break;
+                                            case InspectorHitRegion::EdgeS:     mode = InspectorDragMode::ResizingS;  break;
+                                            case InspectorHitRegion::EdgeE:     mode = InspectorDragMode::ResizingE;  break;
+                                            case InspectorHitRegion::EdgeW:     mode = InspectorDragMode::ResizingW;  break;
+                                            case InspectorHitRegion::CornerNE:  mode = InspectorDragMode::ResizingNE; break;
+                                            case InspectorHitRegion::CornerNW:  mode = InspectorDragMode::ResizingNW; break;
+                                            case InspectorHitRegion::CornerSE:  mode = InspectorDragMode::ResizingSE; break;
+                                            case InspectorHitRegion::CornerSW:  mode = InspectorDragMode::ResizingSW; break;
+                                            default: break;
+                                        }
+                                        if (mode != InspectorDragMode::None) {
+                                            g_inspectorDragMode = mode;
+                                            g_dragStartMouseX = arg.x; g_dragStartMouseY = arg.y;
+                                            g_dragStartInspX = inspX;  g_dragStartInspY = inspY;
+                                            g_dragStartInspW = static_cast<uint32_t>(inspW);
+                                            g_dragStartInspH = static_cast<uint32_t>(inspH);
+                                            return;
+                                        }
+                                    }
+
+                                    // Forward to inspector with translated coordinates
+                                    ultralight::MouseEvent ev = arg;
+                                    ev.x = arg.x - static_cast<int>(inspX);
+                                    ev.y = arg.y - static_cast<int>(inspY);
+                                    inspectorView->FireMouseEvent(ev);
                                 } else {
+                                    targetViewData->inspectorPointerHover.store(false);
+                                    if (arg.type == ultralight::MouseEvent::kType_MouseDown) {
+                                        // Click outside inspector — restore z-order and unfocus
+                                        if (inspectorView && inspectorView->HasFocus()) inspectorView->Unfocus();
+                                        if (!ulView->HasFocus()) ulView->Focus();
+                                        targetViewData->inspectorOpacity = 0.85f;
+                                        if (targetViewData->inspectorOrderRaised.load()) {
+                                            targetViewData->order = targetViewData->inspectorSavedOrder;
+                                            targetViewData->inspectorOrderRaised.store(false);
+                                        }
+                                    }
                                     ulView->FireMouseEvent(arg);
                                 }
                             } else if constexpr (std::is_same_v<T, ScrollEventWithPosition>) {
@@ -910,6 +1157,7 @@ namespace PrismaUI::InputHandler {
 
     void Shutdown() {
         DisableInputCapture(0);
+        g_inspectorDragMode = InspectorDragMode::None;
         {
             std::lock_guard lock(g_eventQueueMutex);
             g_eventQueue.clear();

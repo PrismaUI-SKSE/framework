@@ -34,11 +34,25 @@ file(GLOB_RECURSE SOURCES
     "src/*.h"
 )
 
+set(PRISMAUI_CEF_SUBPROCESS_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/PrismaCefApp.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/PrismaCefApp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/SubprocessMain.cpp"
+)
+
+list(REMOVE_ITEM SOURCES ${PRISMAUI_CEF_SUBPROCESS_SOURCES})
+
 # Create source groups for IDE
 source_group(
     TREE "${CMAKE_CURRENT_SOURCE_DIR}/src"
     PREFIX "Source Files"
     FILES ${SOURCES}
+)
+
+source_group(
+    TREE "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    PREFIX "CEF Subprocess"
+    FILES ${PRISMAUI_CEF_SUBPROCESS_SOURCES}
 )
 
 # Add the plugin using CommonLibSSE function
@@ -51,6 +65,25 @@ add_commonlibsse_plugin(${PROJECT_NAME}
     VERSION ${PROJECT_VERSION}
     SOURCES ${SOURCES}
 )
+
+add_executable(PrismaUICefSubprocess WIN32
+    ${PRISMAUI_CEF_SUBPROCESS_SOURCES}
+)
+
+target_include_directories(PrismaUICefSubprocess
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+
+target_link_libraries(PrismaUICefSubprocess
+    PRIVATE
+    libcef_dll_wrapper
+    libcef_lib
+    ${CEF_STANDARD_LIBS}
+)
+
+prismaui_configure_cef_executable(PrismaUICefSubprocess)
+add_dependencies(${PROJECT_NAME} PrismaUICefSubprocess)
 
 # Include directories
 target_include_directories(${PROJECT_NAME}
@@ -112,6 +145,9 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E echo "Copying Ultralight DLLs to output directory"
 )
 
+# Post-build: Copy CEF runtime files to output directory (for development)
+prismaui_copy_cef_runtime(PrismaUICefSubprocess "$<TARGET_FILE_DIR:PrismaUICefSubprocess>")
+
 # Post-build: Create distribution folder structure
 set(DIST_ROOT "${CMAKE_SOURCE_DIR}/dist")
 set(DIST_VERSION_DIR "${DIST_ROOT}/PrismaUI_${PROJECT_VERSION}$<$<CONFIG:Debug>:_Debug>")
@@ -138,7 +174,18 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E $<IF:$<BOOL:$<TARGET_PDB_FILE:${PROJECT_NAME}>>,copy,true>
         "$<$<BOOL:$<TARGET_PDB_FILE:${PROJECT_NAME}>>:$<TARGET_PDB_FILE:${PROJECT_NAME}>>"
         "${DIST_SKSE_PLUGINS_DIR}/"
+
+    # Copy CEF subprocess executable to PrismaUI/libs
+    COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:PrismaUICefSubprocess>" "${DIST_PRISMAUI_DIR}/libs/"
+
+    # Copy CEF subprocess PDB to PrismaUI/libs (if exists)
+    COMMAND ${CMAKE_COMMAND} -E $<IF:$<BOOL:$<TARGET_PDB_FILE:PrismaUICefSubprocess>>,copy,true>
+        "$<$<BOOL:$<TARGET_PDB_FILE:PrismaUICefSubprocess>>:$<TARGET_PDB_FILE:PrismaUICefSubprocess>>"
+        "${DIST_PRISMAUI_DIR}/libs/"
     
     COMMAND "${CMAKE_COMMAND}" -E echo "Creating distribution folder: ${DIST_VERSION_DIR}"
 )
+
+# Post-build: Copy CEF runtime files to distribution libs folder
+prismaui_copy_cef_runtime(${PROJECT_NAME} "${DIST_PRISMAUI_DIR}/libs")
 

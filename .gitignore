@@ -17,4 +17,6 @@ compile_commands.json
 /release/
 /dist/
 external/ultralight-free-sdk-1.4.1-dev-win-x64.7z
+external/cef_binary*.tar.bz2
+external/cef_binary*/
 Build_Config_Local.ps1

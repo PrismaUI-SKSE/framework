@@ -34,13 +34,17 @@ file(GLOB_RECURSE SOURCES
     "src/*.h"
 )
 
-set(PRISMAUI_CEF_SUBPROCESS_SOURCES
+set(PRISMAUI_CEF_SHARED_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/PrismaCefApp.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/PrismaCefApp.cpp"
+)
+
+set(PRISMAUI_CEF_SUBPROCESS_SOURCES
+    ${PRISMAUI_CEF_SHARED_SOURCES}
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/SubprocessMain.cpp"
 )
 
-list(REMOVE_ITEM SOURCES ${PRISMAUI_CEF_SUBPROCESS_SOURCES})
+list(REMOVE_ITEM SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/SubprocessMain.cpp")
 
 # Create source groups for IDE
 source_group(
@@ -64,6 +68,13 @@ add_commonlibsse_plugin(${PROJECT_NAME}
     MINIMUM_SKSE_VERSION "2.0.1.04"
     VERSION ${PROJECT_VERSION}
     SOURCES ${SOURCES}
+)
+
+set_source_files_properties(
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/PrismaCefApp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/CefRuntime.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/CefOsrClient.cpp"
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 
 add_executable(PrismaUICefSubprocess WIN32
@@ -90,6 +101,8 @@ target_include_directories(${PROJECT_NAME}
     PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
     "${ULTRALIGHT_INCLUDE_DIR}"
+    "${CEF_ROOT}"
+    "${CEF_ROOT}/include"
 )
 
 # Link directories for Ultralight
@@ -106,6 +119,9 @@ target_link_libraries(${PROJECT_NAME}
     UltralightCore
     WebCore
     comctl32  # Required for SetWindowSubclass/RemoveWindowSubclass
+    libcef_dll_wrapper
+    libcef_lib
+    ${CEF_STANDARD_LIBS}
     imm32     # Required for IME (Input Method Editor) support
 )
 
@@ -116,6 +132,7 @@ target_link_options(${PROJECT_NAME}
     "/DELAYLOAD:WebCore.dll"
     "/DELAYLOAD:Ultralight.dll"
     "/DELAYLOAD:AppCore.dll"
+    "/DELAYLOAD:libcef.dll"
 )
 
 # Required for delay loading

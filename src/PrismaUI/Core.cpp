@@ -2,6 +2,7 @@
 
 #include <eh.h>  // For _set_se_translator
 
+#include "Cef/CefRuntime.h"
 #include "Communication.h"
 #include "InputHandler.h"
 #include "Inspector.h"
@@ -246,6 +247,11 @@ namespace PrismaUI::Core {
                     cursorTexture.Reset();
                 }
             }
+
+            if (hWnd && d3dDevice && d3dContext && screenSize.width != 0 && screenSize.height != 0) {
+                Cef::CefRuntime::GetSingleton().Initialize(hWnd, d3dDevice, d3dContext, screenSize.width,
+                                                           screenSize.height);
+            }
         } else {
             logger::error("Cannot initialize DirectXTK: D3D device or context is null.");
             commonStates.reset();
@@ -258,10 +264,24 @@ namespace PrismaUI::Core {
 
         if (!coreInitialized || rendererInitFailed) return;
 
-        if (!d3dDevice || !d3dContext || !spriteBatch || !commonStates || !hWnd || screenSize.width == 0) {
+        if (!d3dDevice || !d3dContext || !spriteBatch || !commonStates || !hWnd || screenSize.width == 0 ||
+            screenSize.height == 0) {
             InitGraphics();
-            if (!d3dDevice || !d3dContext || !spriteBatch || !commonStates || !hWnd || screenSize.width == 0) return;
+            if (!d3dDevice || !d3dContext || !spriteBatch || !commonStates || !hWnd || screenSize.width == 0 ||
+                screenSize.height == 0)
+                return;
         }
+
+        if (auto* renderManager = RE::BSGraphics::Renderer::GetSingleton()) {
+            const auto currentScreenSize = renderManager->GetScreenSize();
+            if (currentScreenSize.width != 0 && currentScreenSize.height != 0 &&
+                (currentScreenSize.width != screenSize.width || currentScreenSize.height != screenSize.height)) {
+                screenSize = currentScreenSize;
+                Cef::CefRuntime::GetSingleton().Resize(screenSize.width, screenSize.height);
+            }
+        }
+
+        Cef::CefRuntime::GetSingleton().BeginFrame();
 
         std::vector<PrismaViewId> viewsWithPendingRelease;
         {
@@ -512,6 +532,8 @@ namespace PrismaUI::Core {
             }
         }
 
+
+        Cef::CefRuntime::GetSingleton().Shutdown();
         cursorTexture.Reset();
         spriteBatch.reset();
         commonStates.reset();

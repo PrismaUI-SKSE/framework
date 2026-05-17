@@ -1,7 +1,20 @@
 #include "Cef/PrismaCefApp.h"
 
+#include "include/cef_command_line.h"
+
 namespace PrismaUI::Cef
 {
+    void PrismaCefApp::OnBeforeCommandLineProcessing(const CefString&, CefRefPtr<CefCommandLine> command_line)
+    {
+        if (!command_line) {
+            return;
+        }
+
+        command_line->AppendSwitch("disable-smooth-scrolling");
+        command_line->AppendSwitch("allow-file-access-from-files");
+        command_line->AppendSwitch("allow-universal-access-from-files");
+    }
+
     CefRefPtr<CefApp> CreatePrismaCefApp()
     {
         return new PrismaCefApp();

@@ -13,9 +13,20 @@
             background: transparent;
             overflow: hidden;
         }
+        .cef-shell-marker {
+            position: fixed;
+            top: 80px;
+            left: 80px;
+            z-index: 999999;
+            padding: 24px 32px;
+            color: white;
+            background: rgba(220, 32, 32, 0.9);
+            font: 48px Arial, sans-serif;
+        }
     </style>
 </head>
 <body>
+    <div class="cef-shell-marker">CEF shell rendering</div>
     <script>
         console.info("PrismaUI CEF lifecycle shell loaded");
     </script>

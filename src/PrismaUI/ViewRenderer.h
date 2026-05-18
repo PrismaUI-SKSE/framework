@@ -21,6 +21,7 @@ namespace PrismaUI::ViewRenderer {
     void RenderSingleView(std::shared_ptr<Core::PrismaView> viewData);
     void CopyBitmapToBuffer(std::shared_ptr<Core::PrismaView> viewData);
     void DrawViews();
+    bool DrawCefOverlay();
     void UpdateSingleTextureFromBuffer(std::shared_ptr<Core::PrismaView> viewData);
     void CopyPixelsToTexture(Core::PrismaView* viewData, void* pixels, uint32_t width, uint32_t height,
                              uint32_t stride);

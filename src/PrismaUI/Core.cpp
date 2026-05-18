@@ -202,7 +202,7 @@ namespace PrismaUI::Core {
                 //   * Some systems: SetWindowSubclass works cross-thread (Windows 10+)
                 //   * Other systems: SetWindowSubclass fails unless called from main thread
                 // Solution: Try direct installation first (faster), fallback to main thread if it fails
-                
+
                 logger::info("Attempting to install WndProc hook from render thread...");
                 if (InstallWndProcHook()) {
                     logger::info("WndProc hook installed successfully from render thread.");
@@ -282,6 +282,7 @@ namespace PrismaUI::Core {
         }
 
         Cef::CefRuntime::GetSingleton().BeginFrame();
+        Cef::CefRuntime::GetSingleton().UpdateOverlayTexture(d3dDevice, d3dContext);
 
         std::vector<PrismaViewId> viewsWithPendingRelease;
         {
@@ -533,6 +534,7 @@ namespace PrismaUI::Core {
         }
 
 
+        Cef::CefRuntime::GetSingleton().ReleaseRenderResources();
         Cef::CefRuntime::GetSingleton().Shutdown();
         cursorTexture.Reset();
         spriteBatch.reset();

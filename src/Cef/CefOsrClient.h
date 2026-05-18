@@ -1,11 +1,13 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
 
+#include <vector>
 #include "include/cef_client.h"
 #include "include/cef_display_handler.h"
 #include "include/cef_life_span_handler.h"
@@ -31,7 +33,9 @@ namespace PrismaUI::Cef
         bool HasBrowser() const;
         void SetSize(uint32_t width, uint32_t height);
         void SendExternalBeginFrame();
+        void InvalidateView();
         void CloseBrowser();
+        bool ConsumeCpuFrame(std::vector<std::byte>& pixels, uint32_t& width, uint32_t& height, uint32_t& stride);
         void ResetCloseSignal();
         bool WaitForClose(std::chrono::milliseconds timeout);
 
@@ -66,6 +70,13 @@ namespace PrismaUI::Cef
         std::atomic<uint64_t> beginFrameCount_ = 0;
         std::atomic<uint64_t> paintCount_ = 0;
         std::atomic<uint64_t> acceleratedPaintCount_ = 0;
+        std::atomic<bool> cpuFrameReady_ = false;
+        std::atomic<bool> cpuFallbackLogged_ = false;
+        std::vector<std::byte> cpuPixelBuffer_;
+        uint32_t cpuFrameWidth_ = 0;
+        uint32_t cpuFrameHeight_ = 0;
+        uint32_t cpuFrameStride_ = 0;
+        std::mutex cpuFrameMutex_;
 
         CefRefPtr<CefBrowser> browser_;
         std::mutex closeMutex_;

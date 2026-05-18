@@ -1,6 +1,7 @@
 ﻿#include "ViewRenderer.h"
 
 #include "Core.h"
+#include "Cef/CefRuntime.h"
 #include "InputHandler.h"
 #include "Inspector.h"
 
@@ -263,8 +264,56 @@ namespace PrismaUI::ViewRenderer {
         if (backupRasterizerState) backupRasterizerState->Release();
     }
 
+    bool DrawCefOverlay() {
+        if (!spriteBatch || !commonStates) return false;
+
+        auto& cefRuntime = Cef::CefRuntime::GetSingleton();
+        ID3D11ShaderResourceView* overlaySrv = cefRuntime.GetOverlaySrv();
+        const uint32_t overlayWidth = cefRuntime.GetOverlayWidth();
+        const uint32_t overlayHeight = cefRuntime.GetOverlayHeight();
+        if (!overlaySrv || overlayWidth == 0 || overlayHeight == 0) {
+            return false;
+        }
+
+        try {
+            ID3D11BlendState* backupBlendState = nullptr;
+            FLOAT backupBlendFactor[4];
+            UINT backupSampleMask = 0;
+            ID3D11DepthStencilState* backupDepthStencilState = nullptr;
+            UINT backupStencilRef = 0;
+            ID3D11RasterizerState* backupRasterizerState = nullptr;
+            d3dContext->OMGetBlendState(&backupBlendState, backupBlendFactor, &backupSampleMask);
+            d3dContext->OMGetDepthStencilState(&backupDepthStencilState, &backupStencilRef);
+            d3dContext->RSGetState(&backupRasterizerState);
+
+            spriteBatch->Begin(DirectX::SpriteSortMode_Deferred, commonStates->AlphaBlend());
+
+            DirectX::SimpleMath::Vector2 position(0.0f, 0.0f);
+            RECT sourceRect = {0, 0, static_cast<long>(overlayWidth), static_cast<long>(overlayHeight)};
+            spriteBatch->Draw(overlaySrv, position, &sourceRect, DirectX::Colors::White, 0.f,
+                              DirectX::SimpleMath::Vector2::Zero, 1.0f, DirectX::SpriteEffects_None, 0.f);
+
+            spriteBatch->End();
+
+            d3dContext->OMSetBlendState(backupBlendState, backupBlendFactor, backupSampleMask);
+            d3dContext->OMSetDepthStencilState(backupDepthStencilState, backupStencilRef);
+            d3dContext->RSSetState(backupRasterizerState);
+            if (backupBlendState) backupBlendState->Release();
+            if (backupDepthStencilState) backupDepthStencilState->Release();
+            if (backupRasterizerState) backupRasterizerState->Release();
+            return true;
+        } catch (const std::exception& e) {
+            logger::error("Error drawing CEF overlay texture: {}", e.what());
+        } catch (...) {
+            logger::error("Unknown error drawing CEF overlay texture.");
+        }
+        return false;
+    }
+
+
     void DrawViews() {
         if (!spriteBatch || !commonStates) return;
+        if (DrawCefOverlay()) return;
 
         std::vector<std::shared_ptr<Core::PrismaView>> viewsToDraw;
         {

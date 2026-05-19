@@ -38,6 +38,8 @@ namespace PrismaUI::Cef
         bool ConsumeCpuFrame(std::vector<std::byte>& pixels, uint32_t& width, uint32_t& height, uint32_t& stride);
         void ResetCloseSignal();
         bool WaitForClose(std::chrono::milliseconds timeout);
+        CefRefPtr<CefBrowser> GetBrowserOnUiThread() const;
+        CefRefPtr<CefFrame> GetFrameByNameOnUiThread(const CefString& name) const;
 
         void OnAfterCreated(CefRefPtr<CefBrowser> browser) override;
         bool DoClose(CefRefPtr<CefBrowser> browser) override;

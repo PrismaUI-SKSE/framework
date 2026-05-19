@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
+#include <string_view>
 
 namespace PrismaUI::Cef
 {
@@ -27,6 +29,26 @@ namespace PrismaUI::Cef
         bool IsInitialized() const;
         bool HasBrowser() const;
         void PostToCefUi(std::function<void()> task);
+        bool CreateShellView(uint64_t viewId, std::string_view urlOrPath, int order, bool hidden);
+        bool DestroyShellView(uint64_t viewId);
+        bool SetShellViewHidden(uint64_t viewId, bool hidden);
+        bool SetShellViewOrder(uint64_t viewId, int order);
+        bool FocusShellView(uint64_t viewId);
+        bool BlurShellView(uint64_t viewId);
+        bool TryGetShellFrameName(uint64_t viewId, std::string& outName) const;
+        bool IsShellReady() const;
+
+        void NotifyShellLoadStart(const std::string& frameIdentifier, const std::string& url);
+        void NotifyShellLoadEnd(int httpStatusCode, const std::string& frameIdentifier, const std::string& url);
+        void NotifyShellLoadError(int errorCode, const std::string& errorText, const std::string& failedUrl,
+                                  const std::string& frameIdentifier, const std::string& url);
+        void NotifyShellFrameLoadStart(const std::string& frameName, const std::string& frameIdentifier,
+                                       const std::string& url);
+        void NotifyShellFrameLoadEnd(const std::string& frameName, const std::string& frameIdentifier,
+                                     const std::string& url, int httpStatusCode);
+        void NotifyShellFrameLoadError(const std::string& frameName, const std::string& frameIdentifier,
+                                       const std::string& url, int errorCode, const std::string& errorText,
+                                       const std::string& failedUrl);
 
     private:
         CefRuntime();
@@ -34,6 +56,10 @@ namespace PrismaUI::Cef
 
         CefRuntime(const CefRuntime&) = delete;
         CefRuntime& operator=(const CefRuntime&) = delete;
+
+        bool RunShellCommand(const std::string& command, const std::string& description,
+                             const std::string& iframeName = {});
+        void ReplayShellViews();
 
         struct Impl;
         std::unique_ptr<Impl> impl_;

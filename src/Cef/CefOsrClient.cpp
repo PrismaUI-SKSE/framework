@@ -150,6 +150,18 @@ namespace PrismaUI::Cef
         return closeCv_.wait_for(lock, timeout, [this]() { return closeComplete_; });
     }
 
+    CefRefPtr<CefBrowser> CefOsrClient::GetBrowserOnUiThread() const
+    {
+        CEF_REQUIRE_UI_THREAD();
+        return browser_;
+    }
+
+    CefRefPtr<CefFrame> CefOsrClient::GetFrameByNameOnUiThread(const CefString& name) const
+    {
+        CEF_REQUIRE_UI_THREAD();
+        return browser_ ? browser_->GetFrameByName(name) : nullptr;
+    }
+
     void CefOsrClient::OnAfterCreated(CefRefPtr<CefBrowser> browser)
     {
         CEF_REQUIRE_UI_THREAD();
@@ -295,34 +307,72 @@ namespace PrismaUI::Cef
     void CefOsrClient::OnLoadStart(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                                    TransitionType transitionType)
     {
-        if (!frame || !frame->IsMain()) {
+        if (!frame) {
             return;
         }
 
-        logger::info("CEF shell load started for browser [{}], transition type {}.",
-                     browser ? browser->GetIdentifier() : -1, static_cast<int>(transitionType));
+        const std::string frameIdentifier = frame->GetIdentifier().ToString();
+        const std::string url = frame->GetURL().ToString();
+        if (frame->IsMain()) {
+            logger::info("CEF shell load started for browser [{}], transition type {}, frame id '{}', url '{}'.",
+                         browser ? browser->GetIdentifier() : -1, static_cast<int>(transitionType), frameIdentifier, url);
+            CefRuntime::GetSingleton().NotifyShellLoadStart(frameIdentifier, url);
+            return;
+        }
+
+        const std::string frameName = frame->GetName().ToString();
+        logger::info("CEF iframe load started: browser [{}], frame '{}', id '{}', url '{}'.",
+                     browser ? browser->GetIdentifier() : -1, frameName, frameIdentifier, url);
+        CefRuntime::GetSingleton().NotifyShellFrameLoadStart(frameName, frameIdentifier, url);
     }
 
     void CefOsrClient::OnLoadEnd(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int httpStatusCode)
     {
-        if (!frame || !frame->IsMain()) {
+        if (!frame) {
             return;
         }
 
-        logger::info("CEF shell load finished for browser [{}] with HTTP status {}.",
-                     browser ? browser->GetIdentifier() : -1, httpStatusCode);
+        const std::string frameIdentifier = frame->GetIdentifier().ToString();
+        const std::string url = frame->GetURL().ToString();
+        if (frame->IsMain()) {
+            logger::info("CEF shell load finished for browser [{}] with HTTP status {}, frame id '{}', url '{}'.",
+                         browser ? browser->GetIdentifier() : -1, httpStatusCode, frameIdentifier, url);
+            CefRuntime::GetSingleton().NotifyShellLoadEnd(httpStatusCode, frameIdentifier, url);
+            return;
+        }
+
+        const std::string frameName = frame->GetName().ToString();
+        logger::info("CEF iframe load finished: browser [{}], frame '{}', id '{}', status {}, url '{}'.",
+                     browser ? browser->GetIdentifier() : -1, frameName, frameIdentifier, httpStatusCode, url);
+        CefRuntime::GetSingleton().NotifyShellFrameLoadEnd(frameName, frameIdentifier, url, httpStatusCode);
     }
 
     void CefOsrClient::OnLoadError(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, ErrorCode errorCode,
                                    const CefString& errorText, const CefString& failedUrl)
     {
-        if (!frame || !frame->IsMain()) {
+        if (!frame) {
             return;
         }
 
-        logger::error("CEF shell load failed for browser [{}]: code={}, error='{}', url='{}'",
-                      browser ? browser->GetIdentifier() : -1, static_cast<int>(errorCode), errorText.ToString(),
-                      failedUrl.ToString());
+        const std::string frameIdentifier = frame->GetIdentifier().ToString();
+        const std::string url = frame->GetURL().ToString();
+        const std::string error = errorText.ToString();
+        const std::string failed = failedUrl.ToString();
+        if (frame->IsMain()) {
+            logger::error("CEF shell load failed for browser [{}]: code={}, error='{}', failedUrl='{}', frame id '{}', url='{}'",
+                          browser ? browser->GetIdentifier() : -1, static_cast<int>(errorCode), error, failed,
+                          frameIdentifier, url);
+            CefRuntime::GetSingleton().NotifyShellLoadError(static_cast<int>(errorCode), error, failed, frameIdentifier,
+                                                            url);
+            return;
+        }
+
+        const std::string frameName = frame->GetName().ToString();
+        logger::error("CEF iframe load failed: browser [{}], frame '{}', id '{}', code={}, error='{}', failedUrl='{}', url='{}'",
+                      browser ? browser->GetIdentifier() : -1, frameName, frameIdentifier, static_cast<int>(errorCode),
+                      error, failed, url);
+        CefRuntime::GetSingleton().NotifyShellFrameLoadError(frameName, frameIdentifier, url, static_cast<int>(errorCode),
+                                                             error, failed);
     }
 
     bool CefOsrClient::OnConsoleMessage(CefRefPtr<CefBrowser> browser, cef_log_severity_t level,

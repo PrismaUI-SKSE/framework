@@ -22,6 +22,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <type_traits>
 #include <vector>
 
 #include "Cef/CefOsrClient.h"
@@ -924,6 +925,22 @@ namespace PrismaUI::Cef
         }
 
         logger::info("CEF shell focus view: id={}, iframe='{}'.", viewId, iframeName);
+        CefRefPtr<CefOsrClient> client;
+        {
+            std::lock_guard lock(impl_->stateMutex);
+            client = impl_->client;
+        }
+        if (client && client->HasBrowser()) {
+            PostToCefUi([client, viewId]() {
+                CefRefPtr<CefBrowser> browser = client->GetBrowserOnUiThread();
+                CefRefPtr<CefBrowserHost> host = browser ? browser->GetHost() : nullptr;
+                if (host) {
+                    host->SetFocus(true);
+                } else {
+                    logger::warn("CEF shell focus could not focus browser host for View [{}].", viewId);
+                }
+            });
+        }
         const std::string command = "window.__prismaShell.focusView(" + JsonEscape(std::to_string(viewId)) + ");";
         return RunShellCommand(command, "focusView " + iframeName, iframeName) ||
                (IsInitialized() && HasBrowser() && !IsShellReady());
@@ -1160,6 +1177,165 @@ namespace PrismaUI::Cef
         if (!CefPostTask(TID_UI, new FunctionTask(std::move(task)))) {
             logger::error("Failed to post task to CEF UI thread.");
         }
+    }
+
+    namespace {
+        cef_key_event_type_t ToCefKeyType(CefInputKeyType type)
+        {
+            switch (type) {
+                case CefInputKeyType::RawKeyDown:
+                    return KEYEVENT_RAWKEYDOWN;
+                case CefInputKeyType::KeyUp:
+                    return KEYEVENT_KEYUP;
+                case CefInputKeyType::Char:
+                    return KEYEVENT_CHAR;
+                default:
+                    return KEYEVENT_RAWKEYDOWN;
+            }
+        }
+
+        cef_mouse_button_type_t ToCefMouseButton(CefInputMouseButton button)
+        {
+            switch (button) {
+                case CefInputMouseButton::Left:
+                    return MBT_LEFT;
+                case CefInputMouseButton::Middle:
+                    return MBT_MIDDLE;
+                case CefInputMouseButton::Right:
+                    return MBT_RIGHT;
+                default:
+                    return MBT_LEFT;
+            }
+        }
+    }
+
+    void CefRuntime::DispatchInputEvents(uint64_t viewId, std::vector<CefInputEvent> events)
+    {
+        if (events.empty()) {
+            logger::debug("CEF input dispatch ignored empty batch for View [{}].", viewId);
+            return;
+        }
+
+        if (!impl_->initialized.load(std::memory_order_acquire)) {
+            logger::warn("CEF input dispatch dropped {} event(s) for View [{}]: runtime unavailable.",
+                         events.size(), viewId);
+            return;
+        }
+
+        CefRefPtr<CefOsrClient> client;
+        {
+            std::lock_guard lock(impl_->stateMutex);
+            client = impl_->client;
+        }
+
+        if (!client || !client->HasBrowser()) {
+            logger::warn("CEF input dispatch dropped {} event(s) for View [{}]: browser unavailable.",
+                         events.size(), viewId);
+            return;
+        }
+
+        PostToCefUi([this, client, viewId, events = std::move(events)]() mutable {
+            std::string iframeName;
+            {
+                std::lock_guard lock(impl_->shellMutex);
+                const auto it = impl_->shellViews.find(viewId);
+                if (it == impl_->shellViews.end()) {
+                    logger::warn("CEF input dispatch dropped {} event(s) for View [{}]: missing shell view.",
+                                 events.size(), viewId);
+                    return;
+                }
+                if (it->second.hidden) {
+                    logger::debug("CEF input dispatch dropped {} event(s) for hidden View [{}].",
+                                  events.size(), viewId);
+                    return;
+                }
+                if (!impl_->shellReady) {
+                    logger::debug("CEF input dispatch dropped {} event(s) for View [{}]: shell not ready.",
+                                  events.size(), viewId);
+                    return;
+                }
+                iframeName = it->second.iframeName;
+            }
+
+            CefRefPtr<CefBrowser> browser = client->GetBrowserOnUiThread();
+            if (!browser) {
+                logger::warn("CEF input dispatch dropped {} event(s) for View [{}]: browser disappeared.",
+                             events.size(), viewId);
+                return;
+            }
+
+            CefString frameName;
+            frameName.FromString(iframeName);
+            if (!client->GetFrameByNameOnUiThread(frameName)) {
+                logger::warn("CEF input dispatch dropped {} event(s) for View [{}]: iframe '{}' is missing.",
+                             events.size(), viewId, iframeName);
+                return;
+            }
+
+            CefRefPtr<CefBrowserHost> host = browser->GetHost();
+            if (!host) {
+                logger::warn("CEF input dispatch dropped {} event(s) for View [{}]: browser host unavailable.",
+                             events.size(), viewId);
+                return;
+            }
+
+            host->SetFocus(true);
+
+            if (CefRefPtr<CefFrame> mainFrame = browser->GetMainFrame()) {
+                const std::string command =
+                    "window.__prismaShell.focusView(" + JsonEscape(std::to_string(viewId)) + ");";
+                CefString sourceUrl;
+                sourceUrl.FromASCII("prismaui://input-focus");
+                CefString script;
+                script.FromString(command);
+                mainFrame->ExecuteJavaScript(script, sourceUrl, 0);
+            } else {
+                logger::warn("CEF input dispatch for View [{}] could not refresh iframe focus: main frame missing.",
+                             viewId);
+            }
+
+            logger::debug("CEF input dispatch sending {} event(s) to View [{}].", events.size(), viewId);
+            for (const auto& event : events) {
+                std::visit(
+                    [host, viewId](const auto& value) {
+                        using T = std::decay_t<decltype(value)>;
+                        if constexpr (std::is_same_v<T, CefInputMouseMove>) {
+                            CefMouseEvent mouseEvent;
+                            mouseEvent.x = value.x;
+                            mouseEvent.y = value.y;
+                            mouseEvent.modifiers = value.modifiers;
+                            host->SendMouseMoveEvent(mouseEvent, value.mouseLeave);
+                        } else if constexpr (std::is_same_v<T, CefInputMouseClick>) {
+                            CefMouseEvent mouseEvent;
+                            mouseEvent.x = value.x;
+                            mouseEvent.y = value.y;
+                            mouseEvent.modifiers = value.modifiers;
+                            host->SendMouseClickEvent(mouseEvent, ToCefMouseButton(value.button),
+                                                       value.mouseUp, value.clickCount);
+                        } else if constexpr (std::is_same_v<T, CefInputMouseWheel>) {
+                            CefMouseEvent mouseEvent;
+                            mouseEvent.x = value.x;
+                            mouseEvent.y = value.y;
+                            mouseEvent.modifiers = value.modifiers;
+                            host->SendMouseWheelEvent(mouseEvent, value.deltaX, value.deltaY);
+                        } else if constexpr (std::is_same_v<T, CefInputKey>) {
+                            CefKeyEvent keyEvent;
+                            keyEvent.type = ToCefKeyType(value.type);
+                            keyEvent.modifiers = value.modifiers;
+                            keyEvent.windows_key_code = value.windowsKeyCode;
+                            keyEvent.native_key_code = value.nativeKeyCode;
+                            keyEvent.character = value.character;
+                            keyEvent.unmodified_character = value.unmodifiedCharacter;
+                            keyEvent.is_system_key = value.isSystemKey ? 1 : 0;
+                            keyEvent.focus_on_editable_field = value.focusOnEditableField ? 1 : 0;
+                            host->SendKeyEvent(keyEvent);
+                        } else {
+                            logger::warn("CEF input dispatch for View [{}] encountered unsupported event.", viewId);
+                        }
+                    },
+                    event);
+            }
+        });
     }
 
     // ============== Step 7 JS bridge ==============

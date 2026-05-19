@@ -111,30 +111,6 @@ void ImeHelper::DispatchScriptToView(Core::PrismaViewId viewId, const std::strin
         return;
     }
 
-    if (m_executor && m_executor->IsWorkerThread() && m_ctx.viewsMap && m_ctx.viewsMapMutex) {
-        std::shared_ptr<Core::PrismaView> viewData = nullptr;
-        {
-            std::shared_lock lock(*m_ctx.viewsMapMutex);
-            auto it = m_ctx.viewsMap->find(viewId);
-            if (it != m_ctx.viewsMap->end()) {
-                viewData = it->second;
-            }
-        }
-
-        if (!viewData || !viewData->ultralightView) {
-            return;
-        }
-
-        try {
-            viewData->ultralightView->EvaluateScript(ultralight::String(script.c_str()), nullptr, "");
-        } catch (const std::exception& e) {
-            logger::error("IME: Failed to dispatch state to View [{}]: {}", viewId, e.what());
-        } catch (...) {
-            logger::error("IME: Failed to dispatch state to View [{}]: unknown exception", viewId);
-        }
-        return;
-    }
-
     Communication::Invoke(viewId, script.c_str());
 }
 

@@ -58,9 +58,9 @@ namespace PrismaUI::Cef {
             return msg;
         }
 
-        // JS source that wraps console.* and installs the DOMContentLoaded
-        // dispatcher. Relies on a previously-installed global `__prismaNative`.
-        const char* kBootstrapScript = R"JS((function() {
+        // JS source that wraps console.*, installs the DOMContentLoaded dispatcher,
+        // and tracks iframe-local text-input focus for the native IME bridge.
+        const std::string kBootstrapScript = std::string(R"JS((function() {
   var native = window.__prismaNative;
   if (!native) return;
   try {
@@ -112,13 +112,56 @@ namespace PrismaUI::Cef {
   } catch (_) {}
 
   try {
+    function isTextInputElement(el) {
+      if (!el || el.disabled || el.readOnly) return false;
+      if (el.isContentEditable) return true;
+      var tag = (el.tagName || '').toUpperCase();
+      if (tag === 'TEXTAREA') return true;
+      if (tag !== 'INPUT') return false;
+      var type = ((el.type || 'text') + '').toLowerCase();
+      switch (type) {
+        case '':
+        case 'text':
+        case 'search':
+        case 'url':
+        case 'tel':
+        case 'password':
+        case 'email':
+        case 'number':
+          return true;
+        default:
+          return false;
+      }
+    }
+    function notifyImeFocus(element) {
+      try {
+        native.fireListener(')JS") + Messages::kImeFocusListener + R"JS(', isTextInputElement(element) ? '1' : '0');
+      } catch (_) {}
+    }
+    window.__prismaImeFocusNotify = notifyImeFocus;
+    document.addEventListener('focusin', function(event) { notifyImeFocus(event.target); }, true);
+    document.addEventListener('focusout', function() {
+      setTimeout(function() { notifyImeFocus(document.activeElement); }, 0);
+    }, true);
+    notifyImeFocus(document.activeElement);
+  } catch (_) {}
+
+  try {
+    function fireReady() {
+      try { native.fireDomReady(); } catch (_) {}
+      try {
+        if (typeof window.__prismaImeFocusNotify === 'function') {
+          window.__prismaImeFocusNotify(document.activeElement);
+        }
+      } catch (_) {}
+    }
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', function once() {
         document.removeEventListener('DOMContentLoaded', once);
-        try { native.fireDomReady(); } catch (_) {}
+        fireReady();
       });
     } else {
-      try { native.fireDomReady(); } catch (_) {}
+      fireReady();
     }
   } catch (_) {}
 })();)JS";
@@ -277,7 +320,7 @@ namespace PrismaUI::Cef {
         // Run the bootstrap script: console wrappers + DOM-ready dispatch.
         CefRefPtr<CefV8Value> retval;
         CefRefPtr<CefV8Exception> exception;
-        if (!context->Eval(CefString(kBootstrapScript),
+        if (!context->Eval(CefString(kBootstrapScript.c_str()),
                            CefString("prismaui://bootstrap"), 0, retval, exception)) {
             if (exception) {
                 LOG(ERROR) << "PrismaCefRenderApp: bootstrap failed for view " << viewId << ": "

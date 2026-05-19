@@ -9,9 +9,65 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <variant>
 
 namespace PrismaUI::Cef
 {
+    enum class CefInputMouseButton : uint8_t
+    {
+        Left,
+        Middle,
+        Right
+    };
+
+    enum class CefInputKeyType : uint8_t
+    {
+        RawKeyDown,
+        KeyUp,
+        Char
+    };
+
+    struct CefInputMouseMove
+    {
+        int x = 0;
+        int y = 0;
+        uint32_t modifiers = 0;
+        bool mouseLeave = false;
+    };
+
+    struct CefInputMouseClick
+    {
+        int x = 0;
+        int y = 0;
+        uint32_t modifiers = 0;
+        CefInputMouseButton button = CefInputMouseButton::Left;
+        bool mouseUp = false;
+        int clickCount = 1;
+    };
+
+    struct CefInputMouseWheel
+    {
+        int x = 0;
+        int y = 0;
+        uint32_t modifiers = 0;
+        int deltaX = 0;
+        int deltaY = 0;
+    };
+
+    struct CefInputKey
+    {
+        CefInputKeyType type = CefInputKeyType::RawKeyDown;
+        uint32_t modifiers = 0;
+        int windowsKeyCode = 0;
+        int nativeKeyCode = 0;
+        char16_t character = 0;
+        char16_t unmodifiedCharacter = 0;
+        bool isSystemKey = false;
+        bool focusOnEditableField = false;
+    };
+
+    using CefInputEvent = std::variant<CefInputMouseMove, CefInputMouseClick, CefInputMouseWheel, CefInputKey>;
+
     class CefRuntime final
     {
     public:
@@ -38,6 +94,11 @@ namespace PrismaUI::Cef
         bool BlurShellView(uint64_t viewId);
         bool TryGetShellFrameName(uint64_t viewId, std::string& outName) const;
         bool IsShellReady() const;
+
+        // Dispatch a batch of native input events to the focused CEF OSR shell iframe.
+        // The events are copied into a single CEF UI-thread task; callers must not call
+        // CefBrowserHost input APIs directly from game, window, or render callbacks.
+        void DispatchInputEvents(uint64_t viewId, std::vector<CefInputEvent> events);
 
         void NotifyShellLoadStart(const std::string& frameIdentifier, const std::string& url);
         void NotifyShellLoadEnd(int httpStatusCode, const std::string& frameIdentifier, const std::string& url);

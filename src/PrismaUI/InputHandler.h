@@ -1,16 +1,10 @@
 #pragma once
 
-#include "Utils/WinKeyHandler/WinKeyHandler.h"
-
-#pragma warning(push)
-#pragma warning(disable : 4100)
-#include <Ultralight/Ultralight.h>
-#pragma warning(pop)
+#include <Windows.h>
 
 #include <map>
 #include <memory>
 #include <shared_mutex>
-#include <variant>
 
 class SingleThreadExecutor;
 
@@ -20,17 +14,6 @@ namespace PrismaUI::Core {
 }
 
 namespace PrismaUI::InputHandler {
-    using namespace ultralight;
-
-    // Wrapper for scroll events that includes mouse position for proper routing
-    struct ScrollEventWithPosition {
-        ScrollEvent event;
-        int mouseX;
-        int mouseY;
-    };
-
-    using InputEvent = std::variant<MouseEvent, ScrollEventWithPosition, KeyEvent>;
-
     void Initialize(HWND gameHwnd, SingleThreadExecutor* coreExecutor,
                     std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* viewsMap,
                     std::shared_mutex* viewsMapMutex);

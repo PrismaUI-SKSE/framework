@@ -16,6 +16,7 @@ namespace PrismaUI::Cef::Messages {
     inline constexpr const char* kListenerInvoke = "prisma.listenerInvoke";
     inline constexpr const char* kConsoleMessage = "prisma.consoleMessage";
     inline constexpr const char* kDomReady = "prisma.domReady";
+    inline constexpr const char* kImeFocusListener = "__prismaNativeImeFocusChanged";
 
     // Iframe frame-name prefix used to correlate process messages back to a
     // PrismaUI view id ("prisma-view-<id>").

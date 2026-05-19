@@ -51,8 +51,9 @@ public:
     // Associate/unassociate IME context with window. Must run on main thread for ImmAssociateContext.
     void SetAssociation(bool enabled);
 
-    // Update IME state based on focused view and text input focus. Call from ultralight thread
-    // or via executor.
+    // Update IME state based on focused view and text input focus. The executor,
+    // when present, only serializes state refresh work; CEF browser APIs are not
+    // called from it.
     void UpdateStateForFocusedView(Core::PrismaViewId viewId);
 
     // Send current IME composition/candidate state to JS, or clear it.

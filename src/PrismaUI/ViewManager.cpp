@@ -155,6 +155,9 @@ namespace PrismaUI::ViewManager {
             } else {
                 logger::info("Create: View [{}] iframe={} dispatched to CEF shell.", newViewId, view->iframeName);
             }
+            if (view->isFocused.load()) {
+                Cef::CefRuntime::GetSingleton().FocusShellView(newViewId);
+            }
         });
 
         return newViewId;
@@ -176,6 +179,9 @@ namespace PrismaUI::ViewManager {
             }
             viewData->isHidden.store(false);
             Cef::CefRuntime::GetSingleton().SetShellViewHidden(viewId, false);
+            if (viewData->isFocused.load()) {
+                Cef::CefRuntime::GetSingleton().FocusShellView(viewId);
+            }
             logger::info("Show: View [{}] (iframe={}) marked visible.", viewId, viewData->iframeName);
         });
     }
@@ -422,6 +428,9 @@ namespace PrismaUI::ViewManager {
         }
 
         Cef::CefRuntime::GetSingleton().SetShellViewOrder(viewId, order);
+        if (viewData->isFocused.load()) {
+            Cef::CefRuntime::GetSingleton().FocusShellView(viewId);
+        }
         logger::info("SetOrder: View [{}] (iframe={}) order set to {}.", viewId, viewData->iframeName, order);
     }
 

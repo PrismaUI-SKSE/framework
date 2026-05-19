@@ -1,4 +1,4 @@
-﻿#include "API.h"
+#include "API.h"
 #include "Utils/Encoding.h"
 #include "PrismaUI/ViewManager.h"
 #include "PrismaUI/Communication.h"
@@ -273,8 +273,6 @@ void PluginAPI::PrismaUIInterface::InvokeInternal(PrismaView view, const char* s
         }
     }
 
-    ultralight::String _script(processedScript.c_str());
-
     std::move_only_function<void(std::string)> callbackWrapper = nullptr;
 
     if (callback) {
@@ -285,7 +283,7 @@ void PluginAPI::PrismaUIInterface::InvokeInternal(PrismaView view, const char* s
         };
     }
 
-    return PrismaUI::Communication::Invoke(view, _script, std::move(callbackWrapper));
+    return PrismaUI::Communication::Invoke(view, std::move(processedScript), std::move(callbackWrapper));
 }
 
 void PluginAPI::PrismaUIInterface::RegisterJSListenerInternal(PrismaView view, const char* functionName,

@@ -94,8 +94,6 @@ namespace PrismaUI::InputHandler {
                 return;
             }
 
-            Communication::BindJSCallbacks(viewId);
-
             try {
                 ultralight::String script = BuildImeFocusTrackingScript().c_str();
                 viewData->ultralightView->EvaluateScript(script, nullptr, "");

@@ -26,10 +26,14 @@
 
 #include "Cef/CefOsrClient.h"
 #include "Cef/PrismaCefApp.h"
+#include "Cef/ProcessMessageNames.h"
+#include "PrismaUI/Communication.h"
 #include "Utils/DllLoader.h"
 #include "include/cef_app.h"
 #include "include/cef_browser.h"
+#include "include/cef_process_message.h"
 #include "include/cef_task.h"
+#include "include/cef_values.h"
 
 namespace
 {
@@ -273,6 +277,16 @@ namespace PrismaUI::Cef
         bool multithreadProtectionUnavailableLogged = false;
         bool missingD3DLogged = false;
         bool firstAcceleratedCopyLogged = false;
+
+        // ---- Step 7 JS bridge state ----
+        struct InvokeEntry
+        {
+            uint64_t viewId = 0;
+            std::function<void(std::string)> callback;
+        };
+        std::mutex invokeMutex;
+        std::atomic<uint64_t> nextRequestId = 1;
+        std::map<uint64_t, InvokeEntry> pendingInvokes;
     };
 
     CefRuntime::CefRuntime() : impl_(std::make_unique<Impl>()) {}
@@ -1146,5 +1160,290 @@ namespace PrismaUI::Cef
         if (!CefPostTask(TID_UI, new FunctionTask(std::move(task)))) {
             logger::error("Failed to post task to CEF UI thread.");
         }
+    }
+
+    // ============== Step 7 JS bridge ==============
+
+    namespace {
+        CefRefPtr<CefProcessMessage> MakeStringListMessage(const char* name,
+                                                          std::initializer_list<std::string> args)
+        {
+            CefRefPtr<CefProcessMessage> msg = CefProcessMessage::Create(name);
+            CefRefPtr<CefListValue> list = msg->GetArgumentList();
+            list->SetSize(args.size());
+            size_t i = 0;
+            for (const auto& a : args) {
+                list->SetString(i++, a);
+            }
+            return msg;
+        }
+
+        // Find the iframe frame on the CEF UI thread. Returns nullptr if the iframe
+        // does not (yet) exist — caller is responsible for logging.
+        CefRefPtr<CefFrame> FindIframeFrame(CefRefPtr<CefOsrClient> client, uint64_t viewId)
+        {
+            if (!client) return nullptr;
+            const std::string iframeName = "prisma-view-" + std::to_string(viewId);
+            CefString frameName;
+            frameName.FromString(iframeName);
+            return client->GetFrameByNameOnUiThread(frameName);
+        }
+    }
+
+    void CefRuntime::InvokeScript(uint64_t viewId, std::string script,
+                                  std::function<void(std::string)> callback)
+    {
+        if (!impl_->initialized.load(std::memory_order_acquire)) {
+            logger::warn("InvokeScript: CEF not initialized; firing empty callback for view [{}].", viewId);
+            if (callback) callback(std::string());
+            return;
+        }
+
+        const uint64_t requestId = impl_->nextRequestId.fetch_add(1, std::memory_order_relaxed);
+
+        if (callback) {
+            std::lock_guard lock(impl_->invokeMutex);
+            Impl::InvokeEntry entry;
+            entry.viewId = viewId;
+            entry.callback = std::move(callback);
+            impl_->pendingInvokes.emplace(requestId, std::move(entry));
+        }
+
+        CefRefPtr<CefOsrClient> client;
+        {
+            std::lock_guard lock(impl_->stateMutex);
+            client = impl_->client;
+        }
+
+        const std::string requestIdStr = std::to_string(requestId);
+        const std::string scriptCopy = std::move(script);
+
+        PostToCefUi([this, client, viewId, requestIdStr, scriptCopy]() {
+            CefRefPtr<CefFrame> frame = FindIframeFrame(client, viewId);
+            if (!frame) {
+                logger::warn("InvokeScript: iframe for view [{}] not yet attached; failing request {}.",
+                             viewId, requestIdStr);
+                // Fire the queued callback with an empty string and remove the entry.
+                Impl::InvokeEntry drained;
+                bool have = false;
+                {
+                    std::lock_guard lock(impl_->invokeMutex);
+                    auto it = impl_->pendingInvokes.find(std::stoull(requestIdStr));
+                    if (it != impl_->pendingInvokes.end()) {
+                        drained = std::move(it->second);
+                        impl_->pendingInvokes.erase(it);
+                        have = true;
+                    }
+                }
+                if (have && drained.callback) drained.callback(std::string());
+                return;
+            }
+            logger::debug("InvokeScript: dispatching request {} to view [{}].", requestIdStr, viewId);
+            frame->SendProcessMessage(PID_RENDERER,
+                                      MakeStringListMessage(Messages::kInvokeRequest,
+                                                            {requestIdStr, scriptCopy}));
+        });
+    }
+
+    void CefRuntime::InteropCallInView(uint64_t viewId, std::string functionName, std::string argument)
+    {
+        if (!impl_->initialized.load(std::memory_order_acquire)) {
+            logger::warn("InteropCall: CEF not initialized; ignoring call to '{}' on view [{}].",
+                         functionName, viewId);
+            return;
+        }
+
+        CefRefPtr<CefOsrClient> client;
+        {
+            std::lock_guard lock(impl_->stateMutex);
+            client = impl_->client;
+        }
+
+        PostToCefUi([client, viewId, fn = std::move(functionName), arg = std::move(argument)]() {
+            CefRefPtr<CefFrame> frame = FindIframeFrame(client, viewId);
+            if (!frame) {
+                logger::warn("InteropCall: iframe for view [{}] is not attached; dropping call to '{}'.",
+                             viewId, fn);
+                return;
+            }
+            frame->SendProcessMessage(PID_RENDERER,
+                                      MakeStringListMessage(Messages::kInteropCall, {fn, arg}));
+        });
+    }
+
+    void CefRuntime::RegisterListener(uint64_t viewId, std::string name,
+                                      std::function<void(const std::string&)> /*callback*/)
+    {
+        // The callback itself lives in Core::jsCallbacks; this method only forwards
+        // the "install trampoline" message to the renderer so the iframe exposes a
+        // window[name] = function(arg) bridge. Caller (Communication::RegisterJSListener)
+        // is responsible for storing the callback first.
+        if (!impl_->initialized.load(std::memory_order_acquire)) {
+            logger::warn("RegisterListener: CEF not initialized; '{}' for view [{}] will be installed lazily.",
+                         name, viewId);
+            return;
+        }
+
+        CefRefPtr<CefOsrClient> client;
+        {
+            std::lock_guard lock(impl_->stateMutex);
+            client = impl_->client;
+        }
+
+        const std::string viewIdStr = std::to_string(viewId);
+        const std::string nameCopy = std::move(name);
+
+        PostToCefUi([client, viewId, viewIdStr, nameCopy]() {
+            CefRefPtr<CefFrame> frame = FindIframeFrame(client, viewId);
+            if (!frame) {
+                // No frame yet — renderer will queue installs at OnContextCreated once
+                // the iframe lands. We still try once here; if the frame appears later
+                // the listener is re-registered when the iframe re-creates its context.
+                logger::info("RegisterListener: iframe for view [{}] not yet attached; '{}' will install at next context.",
+                             viewId, nameCopy);
+                return;
+            }
+            logger::info("RegisterListener: installing '{}' for view [{}].", nameCopy, viewId);
+            frame->SendProcessMessage(PID_RENDERER,
+                                      MakeStringListMessage(Messages::kInstallListener,
+                                                            {viewIdStr, nameCopy}));
+        });
+    }
+
+    void CefRuntime::CancelInvokesForView(uint64_t viewId)
+    {
+        std::vector<Impl::InvokeEntry> drained;
+        {
+            std::lock_guard lock(impl_->invokeMutex);
+            for (auto it = impl_->pendingInvokes.begin(); it != impl_->pendingInvokes.end();) {
+                if (it->second.viewId == viewId) {
+                    drained.push_back(std::move(it->second));
+                    it = impl_->pendingInvokes.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+        if (!drained.empty()) {
+            logger::info("CancelInvokesForView: draining {} pending Invoke callback(s) for view [{}].",
+                         drained.size(), viewId);
+        }
+        for (auto& entry : drained) {
+            if (entry.callback) entry.callback(std::string());
+        }
+    }
+
+    bool CefRuntime::OnRendererMessage(const std::string& frameName, const std::string& messageName,
+                                       const std::vector<std::string>& payload)
+    {
+        // Pull viewId out of either the frame name ("prisma-view-<id>") or the
+        // first payload column, depending on which message kind we're handling.
+        auto parseViewIdFromFrame = [&]() -> uint64_t {
+            constexpr std::string_view kPrefix = "prisma-view-";
+            if (frameName.size() <= kPrefix.size() || frameName.compare(0, kPrefix.size(), kPrefix) != 0) {
+                return 0;
+            }
+            uint64_t value = 0;
+            for (size_t i = kPrefix.size(); i < frameName.size(); ++i) {
+                const char c = frameName[i];
+                if (c < '0' || c > '9') return 0;
+                value = value * 10U + static_cast<uint64_t>(c - '0');
+            }
+            return value;
+        };
+
+        if (messageName == Messages::kInvokeResult) {
+            if (payload.size() < 3) {
+                logger::error("OnRendererMessage: malformed invokeResult payload (size {}).", payload.size());
+                return true;
+            }
+            uint64_t requestId = 0;
+            try { requestId = std::stoull(payload[0]); }
+            catch (...) {
+                logger::error("OnRendererMessage: invokeResult bad requestId '{}'.", payload[0]);
+                return true;
+            }
+            Impl::InvokeEntry entry;
+            bool have = false;
+            {
+                std::lock_guard lock(impl_->invokeMutex);
+                auto it = impl_->pendingInvokes.find(requestId);
+                if (it != impl_->pendingInvokes.end()) {
+                    entry = std::move(it->second);
+                    impl_->pendingInvokes.erase(it);
+                    have = true;
+                }
+            }
+            if (!have) {
+                logger::warn("OnRendererMessage: invokeResult for unknown requestId {}.", requestId);
+                return true;
+            }
+            if (entry.callback) {
+                entry.callback(payload[2]);
+            }
+            return true;
+        }
+
+        if (messageName == Messages::kListenerInvoke) {
+            if (payload.size() < 3) {
+                logger::error("OnRendererMessage: malformed listenerInvoke payload (size {}).", payload.size());
+                return true;
+            }
+            uint64_t viewId = 0;
+            try { viewId = std::stoull(payload[0]); }
+            catch (...) {
+                logger::error("OnRendererMessage: listenerInvoke bad viewId '{}'.", payload[0]);
+                return true;
+            }
+            if (parseViewIdFromFrame() != viewId) {
+                logger::warn("OnRendererMessage: listenerInvoke viewId {} disagrees with frame '{}' — refusing.",
+                             viewId, frameName);
+                return true;
+            }
+            Communication::DispatchListenerInvoke(viewId, payload[1], payload[2]);
+            return true;
+        }
+
+        if (messageName == Messages::kConsoleMessage) {
+            if (payload.size() < 3) {
+                logger::error("OnRendererMessage: malformed consoleMessage payload (size {}).", payload.size());
+                return true;
+            }
+            uint64_t viewId = 0;
+            try { viewId = std::stoull(payload[0]); }
+            catch (...) {
+                logger::error("OnRendererMessage: consoleMessage bad viewId '{}'.", payload[0]);
+                return true;
+            }
+            if (parseViewIdFromFrame() != viewId) {
+                logger::warn("OnRendererMessage: consoleMessage viewId {} disagrees with frame '{}' — refusing.",
+                             viewId, frameName);
+                return true;
+            }
+            Communication::DispatchConsoleMessage(viewId, payload[1], payload[2]);
+            return true;
+        }
+
+        if (messageName == Messages::kDomReady) {
+            if (payload.size() < 1) {
+                logger::error("OnRendererMessage: malformed domReady payload (size {}).", payload.size());
+                return true;
+            }
+            uint64_t viewId = 0;
+            try { viewId = std::stoull(payload[0]); }
+            catch (...) {
+                logger::error("OnRendererMessage: domReady bad viewId '{}'.", payload[0]);
+                return true;
+            }
+            if (parseViewIdFromFrame() != viewId) {
+                logger::warn("OnRendererMessage: domReady viewId {} disagrees with frame '{}' — refusing.",
+                             viewId, frameName);
+                return true;
+            }
+            Communication::DispatchDomReady(viewId);
+            return true;
+        }
+
+        return false;
     }
 }

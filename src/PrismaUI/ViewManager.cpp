@@ -3,7 +3,6 @@
 #include "Cef/CefRuntime.h"
 #include "Core.h"
 #include "InputHandler.h"
-#include "Listeners.h"
 #include "ViewOperationQueue.h"
 
 namespace PrismaUI::ViewManager {
@@ -399,6 +398,10 @@ namespace PrismaUI::ViewManager {
                 logger::debug("Destroy: Removed {} JavaScript callback(s) for View [{}]", removed, viewId);
             }
         }
+
+        // Drain any in-flight Invoke callbacks so the caller gets one final empty
+        // string instead of being left holding a never-fired callback.
+        Cef::CefRuntime::GetSingleton().CancelInvokesForView(viewId);
 
         Cef::CefRuntime::GetSingleton().DestroyShellView(viewId);
 

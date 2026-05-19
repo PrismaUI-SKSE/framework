@@ -6,6 +6,8 @@
 
 #include "Cef/CefOsrClient.h"
 #include "Cef/CefRuntime.h"
+#include "include/cef_process_message.h"
+#include "include/cef_values.h"
 
 #include <algorithm>
 #include <cstring>
@@ -381,6 +383,30 @@ namespace PrismaUI::Cef
         logger::info("CEF console [{}] browser [{}] {}:{} {}", LogSeverityName(level),
                      browser ? browser->GetIdentifier() : -1, source.ToString(), line, message.ToString());
         return false;
+    }
+
+    bool CefOsrClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> /*browser*/,
+                                                CefRefPtr<CefFrame> frame,
+                                                CefProcessId source_process,
+                                                CefRefPtr<CefProcessMessage> message)
+    {
+        if (source_process != PID_RENDERER || !frame || !message) {
+            return false;
+        }
+
+        const std::string messageName = message->GetName().ToString();
+        const std::string frameName = frame->GetName().ToString();
+
+        std::vector<std::string> payload;
+        if (CefRefPtr<CefListValue> args = message->GetArgumentList()) {
+            const size_t size = args->GetSize();
+            payload.reserve(size);
+            for (size_t i = 0; i < size; ++i) {
+                payload.push_back(args->GetString(i).ToString());
+            }
+        }
+
+        return CefRuntime::GetSingleton().OnRendererMessage(frameName, messageName, payload);
     }
 
     void CefOsrClient::SignalCloseComplete()

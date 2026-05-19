@@ -37,6 +37,9 @@ file(GLOB_RECURSE SOURCES
 set(PRISMAUI_CEF_SHARED_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/PrismaCefApp.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/PrismaCefApp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/PrismaCefRenderApp.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/PrismaCefRenderApp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/ProcessMessageNames.h"
 )
 
 set(PRISMAUI_CEF_SUBPROCESS_SOURCES
@@ -72,6 +75,7 @@ add_commonlibsse_plugin(${PROJECT_NAME}
 
 set_source_files_properties(
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/PrismaCefApp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/PrismaCefRenderApp.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/CefRuntime.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/CefOsrClient.cpp"
     PROPERTIES SKIP_PRECOMPILE_HEADERS ON

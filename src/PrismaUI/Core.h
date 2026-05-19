@@ -39,10 +39,9 @@ namespace PRISMA_UI_API {
     enum class ConsoleMessageLevel : uint8_t;
 }
 
-namespace PrismaUI::Listeners {
-    class MyLoadListener;
-    class MyViewListener;
-}
+// Listeners namespace deleted in Step 7. The Ultralight LoadListener/ViewListener
+// shims used to live here; their responsibilities now flow through CefRuntime +
+// PrismaCefRenderApp + Communication::Dispatch* (see Step 7 plan).
 
 namespace PrismaUI::Core {
     using namespace ultralight;
@@ -66,18 +65,16 @@ namespace PrismaUI::Core {
         std::move_only_function<void(const PrismaViewId&)> domReadyCallback;
         std::move_only_function<void(PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> consoleMessageCallback;
 
-        // ---- Transitional Ultralight fields (Step 6) ----
-        // Declared so out-of-scope modules (Communication, InputHandler, ImeHelper, Inspector,
-        // Listeners, ViewRenderer) keep compiling. ViewManager/Core no longer assign or read them.
-        // Steps 7-9 retire those dependents; Step 10 deletes the fields.
+        // ---- Transitional Ultralight fields (Step 6/7) ----
+        // Declared so out-of-scope modules (InputHandler, ImeHelper, Inspector,
+        // ViewRenderer) keep compiling. ViewManager/Core/Communication no longer
+        // touch these. Steps 8-9 retire those dependents; Step 10 deletes the fields.
         RefPtr<View> ultralightView = nullptr;
         RefPtr<View> inspectorView = nullptr;
         std::string htmlPathToLoad;                                  // deprecated; superseded by resolvedUrl + iframeCreateRequested
         std::string originalUrl;                                     // retained for Step 11 recovery policy
         std::string lastLoadedUrl;                                   // deprecated; removed in Step 10
-        std::unique_ptr<Listeners::MyLoadListener> loadListener;     // deprecated; removed in Step 10
-        std::unique_ptr<Listeners::MyViewListener> viewListener;     // deprecated; removed in Step 10
-        std::atomic<bool> isLoadingFinished = false;
+        std::atomic<bool> isLoadingFinished = false;                 // deprecated; ViewRenderer/InputHandler still read it (Step 10)
         std::atomic<bool> inspectorVisible = false;                  // deprecated; Step 9 replaces with DevTools API
         std::atomic<bool> needsRecovery = false;                     // deprecated; Step 11 reintroduces recovery
         std::atomic<int> recoveryAttempts = 0;                       // deprecated; Step 11 reintroduces recovery

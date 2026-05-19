@@ -62,6 +62,11 @@ namespace PrismaUI::Cef
         bool OnConsoleMessage(CefRefPtr<CefBrowser> browser, cef_log_severity_t level, const CefString& message,
                               const CefString& source, int line) override;
 
+        // CefClient (process-message routing) — Step 7.
+        bool OnProcessMessageReceived(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
+                                      CefProcessId source_process,
+                                      CefRefPtr<CefProcessMessage> message) override;
+
     private:
         void SignalCloseComplete();
 

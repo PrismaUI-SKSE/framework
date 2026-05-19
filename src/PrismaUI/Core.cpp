@@ -6,7 +6,6 @@
 #include "Communication.h"
 #include "InputHandler.h"
 #include "Inspector.h"
-#include "Listeners.h"
 #include "Utils/DllLoader.h"
 #include "ViewManager.h"
 #include "ViewOperationQueue.h"
@@ -85,7 +84,6 @@ namespace {
 }  // namespace
 
 namespace PrismaUI::Core {
-    using namespace PrismaUI::Listeners;
     using namespace PrismaUI::ViewRenderer;
     using namespace PrismaUI::ViewManager;
     using namespace PrismaUI::InputHandler;
@@ -94,9 +92,6 @@ namespace PrismaUI::Core {
     NanoIdGenerator generator;
     std::atomic<bool> coreInitialized = false;
     std::atomic<bool> rendererInitFailed = false;
-
-    // Ultralight platform objects - ownership remains with caller per API docs
-    static std::unique_ptr<MyUltralightLogger> ultralightLogger;
 
     RefPtr<Renderer> renderer;
     ID3D11Device* d3dDevice = nullptr;
@@ -128,8 +123,6 @@ namespace PrismaUI::Core {
             .submit([basePath]() {
                 try {
                     Platform& plat = Platform::instance();
-                    ultralightLogger = std::make_unique<MyUltralightLogger>();
-                    plat.set_logger(ultralightLogger.get());
                     plat.set_font_loader(ultralight::GetPlatformFontLoader());
 
                     plat.set_file_system(ultralight::GetPlatformFileSystem(basePath.string().c_str()));
@@ -433,8 +426,6 @@ namespace PrismaUI::Core {
                 .get();
         }
 
-        // Release Ultralight platform objects after renderer is destroyed
-        ultralightLogger.reset();
 
         coreInitialized = false;
         logger::info("PrismaUI Core System shut down complete.");

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Cef/PrismaCefRenderApp.h"
 #include "include/cef_app.h"
 
 namespace PrismaUI::Cef
@@ -7,11 +8,14 @@ namespace PrismaUI::Cef
     class PrismaCefApp final : public CefApp
     {
     public:
-        PrismaCefApp() = default;
+        PrismaCefApp();
         void OnBeforeCommandLineProcessing(const CefString& process_type,
                                            CefRefPtr<CefCommandLine> command_line) override;
+        CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler() override;
 
     private:
+        CefRefPtr<PrismaCefRenderApp> renderHandler_;
+
         IMPLEMENT_REFCOUNTING(PrismaCefApp);
     };
 

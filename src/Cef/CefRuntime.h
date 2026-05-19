@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace PrismaUI::Cef
 {
@@ -49,6 +50,37 @@ namespace PrismaUI::Cef
         void NotifyShellFrameLoadError(const std::string& frameName, const std::string& frameIdentifier,
                                        const std::string& url, int errorCode, const std::string& errorText,
                                        const std::string& failedUrl);
+
+        // ---- JavaScript bridge surface (Step 7) ----
+        // Eval `script` inside the iframe associated with `viewId`. `callback` (if any)
+        // is invoked exactly once with the coerced string result. On failure (view
+        // unknown, frame missing, JS exception, view destroyed mid-flight) `callback`
+        // fires with an empty string.
+        void InvokeScript(uint64_t viewId, std::string script,
+                          std::function<void(std::string)> callback);
+
+        // Forward a (functionName, argument) tuple to the iframe's window[functionName].
+        // Fire-and-forget: missing target frame or non-callable property are logged but
+        // do not surface to the caller.
+        void InteropCallInView(uint64_t viewId, std::string functionName, std::string argument);
+
+        // Register a (viewId, name) -> SimpleJSCallback. The renderer installs a
+        // window[name] trampoline that forwards to this callback the next time the
+        // matching frame's V8 context is created. Re-registering replaces the prior
+        // callback in place.
+        void RegisterListener(uint64_t viewId, std::string name,
+                              std::function<void(const std::string&)> callback);
+
+        // Drop any pending Invoke requests issued against `viewId`, firing their
+        // callbacks with an empty string. Called from ViewManager::Destroy so the
+        // caller is never left holding a never-fired callback.
+        void CancelInvokesForView(uint64_t viewId);
+
+        // Routes a process message received from a renderer subprocess to the
+        // matching listener / Invoke / console / DOM-ready dispatcher. Returns true
+        // if the message was recognised.
+        bool OnRendererMessage(const std::string& frameName, const std::string& messageName,
+                               const std::vector<std::string>& payload);
 
     private:
         CefRuntime();

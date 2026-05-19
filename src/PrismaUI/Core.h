@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #pragma warning(push)
 #pragma warning(disable : 4100)
@@ -51,23 +51,36 @@ namespace PrismaUI::Core {
 
     struct PrismaView {
         PrismaViewId id;
-        RefPtr<View> ultralightView = nullptr;
-        RefPtr<View> inspectorView = nullptr;
-        std::string htmlPathToLoad;
-        std::string originalUrl;    // Original URL from view creation (for recovery)
-        std::string lastLoadedUrl;  // Track last successfully loaded URL
+        // CEF shell iframe naming and resolved URL (native source of truth for CEF rewire — Step 6).
+        std::string iframeName;
+        std::string resolvedUrl;
+        // Lifecycle/state atomics (native — no Ultralight involvement).
         std::atomic<bool> isHidden = false;
-        std::unique_ptr<Listeners::MyLoadListener> loadListener;
-        std::unique_ptr<Listeners::MyViewListener> viewListener;
-        std::atomic<bool> isLoadingFinished = false;
+        std::atomic<bool> isFocused = false;
+        std::atomic<bool> iframeCreateRequested = false;
+        std::atomic<bool> iframeReady = false;    // Set by CEF shell load callbacks (wired in Step 5/7).
+        std::atomic<bool> destroyRequested = false;
+        std::atomic<bool> isPaused = false;
+        int scrollingPixelSize = 28;
+        int order = 0;
         std::move_only_function<void(const PrismaViewId&)> domReadyCallback;
         std::move_only_function<void(PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> consoleMessageCallback;
-        int scrollingPixelSize = 28;
-        std::atomic<bool> isPaused = false;
-        int order = 0;
-        std::atomic<bool> inspectorVisible = false;
-        std::atomic<bool> needsRecovery = false;  // Flag for recovery after exception
-        std::atomic<int> recoveryAttempts = 0;    // Track recovery attempts to prevent loops
+
+        // ---- Transitional Ultralight fields (Step 6) ----
+        // Declared so out-of-scope modules (Communication, InputHandler, ImeHelper, Inspector,
+        // Listeners, ViewRenderer) keep compiling. ViewManager/Core no longer assign or read them.
+        // Steps 7-9 retire those dependents; Step 10 deletes the fields.
+        RefPtr<View> ultralightView = nullptr;
+        RefPtr<View> inspectorView = nullptr;
+        std::string htmlPathToLoad;                                  // deprecated; superseded by resolvedUrl + iframeCreateRequested
+        std::string originalUrl;                                     // retained for Step 11 recovery policy
+        std::string lastLoadedUrl;                                   // deprecated; removed in Step 10
+        std::unique_ptr<Listeners::MyLoadListener> loadListener;     // deprecated; removed in Step 10
+        std::unique_ptr<Listeners::MyViewListener> viewListener;     // deprecated; removed in Step 10
+        std::atomic<bool> isLoadingFinished = false;
+        std::atomic<bool> inspectorVisible = false;                  // deprecated; Step 9 replaces with DevTools API
+        std::atomic<bool> needsRecovery = false;                     // deprecated; Step 11 reintroduces recovery
+        std::atomic<int> recoveryAttempts = 0;                       // deprecated; Step 11 reintroduces recovery
 
         // Inspector rendering data
         std::vector<std::byte> inspectorPixelBuffer;

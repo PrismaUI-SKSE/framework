@@ -82,6 +82,7 @@ namespace PrismaUI::ViewOperationQueue {
 
         ultralightThread.submit([viewId, op = std::move(operation)]() {
             try {
+                std::shared_ptr<PrismaView> viewData;
                 {
                     std::shared_lock lock(viewsMutex);
                     auto it = views.find(viewId);
@@ -90,6 +91,13 @@ namespace PrismaUI::ViewOperationQueue {
                                      viewId);
                         return;
                     }
+                    viewData = it->second;
+                }
+
+                if (viewData && viewData->destroyRequested.load(std::memory_order_acquire)) {
+                    logger::warn("ProcessNextOperation: View [{}] destroyRequested; skipping queued operation.",
+                                 viewId);
+                    return;
                 }
 
                 op();

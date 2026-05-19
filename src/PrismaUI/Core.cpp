@@ -1,4 +1,4 @@
-﻿#include "Core.h"
+#include "Core.h"
 
 #include <eh.h>  // For _set_se_translator
 
@@ -340,101 +340,9 @@ namespace PrismaUI::Core {
                     return;
                 }
 
-                // Check for views that need recovery after an exception
-                std::vector<std::shared_ptr<PrismaView>> viewsToRecover;
-                {
-                    std::shared_lock lock(viewsMutex);
-                    for (auto& pair : views) {
-                        if (pair.second && pair.second->needsRecovery.load() && pair.second->ultralightView) {
-                            viewsToRecover.push_back(pair.second);
-                        }
-                    }
-                }
-
-                for (auto& viewData : viewsToRecover) {
-                    int attempts = viewData->recoveryAttempts.fetch_add(1);
-                    if (attempts >= 3) {
-                        logger::error(
-                            "UI Thread: View [{}] recovery failed after {} attempts, giving "
-                            "up",
-                            viewData->id, attempts);
-                        viewData->needsRecovery = false;
-                        continue;
-                    }
-
-                    // Use original URL for recovery (the entry point that sets up
-                    // everything)
-                    if (!viewData->originalUrl.empty()) {
-                        logger::info(
-                            "UI Thread: Recovering View [{}] (attempt {}) by reloading "
-                            "original URL: {}",
-                            viewData->id, attempts + 1, viewData->originalUrl);
-                        try {
-                            viewData->ultralightView->LoadURL(String(viewData->originalUrl.c_str()));
-                            viewData->needsRecovery = false;
-                            viewData->isLoadingFinished = false;
-                            // recoveryAttempts will be reset by OnFinishLoading on successful
-                            // load
-                        } catch (...) {
-                            logger::error("UI Thread: Failed to initiate recovery for View [{}]", viewData->id);
-                        }
-                    } else {
-                        logger::warn("UI Thread: View [{}] needs recovery but has no originalUrl", viewData->id);
-                        viewData->needsRecovery = false;  // Clear flag to avoid infinite loop
-                    }
-                }
-
-                std::vector<std::shared_ptr<PrismaView>> viewsToInitialize;
-                {
-                    std::shared_lock lock(viewsMutex);
-                    for (auto& pair : views) {
-                        if (pair.second && !pair.second->ultralightView && !pair.second->htmlPathToLoad.empty()) {
-                            viewsToInitialize.push_back(pair.second);
-                        }
-                    }
-                }
-
-                for (auto& viewData : viewsToInitialize) {
-                    if (!viewData || viewData->ultralightView) continue;
-
-                    logger::info("UI Thread: Creating View [{}] for path: {}", viewData->id, viewData->htmlPathToLoad);
-
-                    if (screenSize.width == 0 || screenSize.height == 0) {
-                        logger::error("UI Thread: Cannot create View [{}], screen size is zero.", viewData->id);
-                        continue;
-                    }
-
-                    // Re-check renderer before creating view
-                    if (!localRenderer) {
-                        logger::warn("UI Thread: Renderer became null during view creation.");
-                        break;
-                    }
-
-                    ViewConfig view_config;
-                    view_config.is_accelerated = false;
-                    view_config.is_transparent = true;
-                    view_config.initial_focus = false;
-                    view_config.enable_images = true;
-                    view_config.enable_javascript = true;
-                    view_config.enable_compositor = false;
-
-                    viewData->ultralightView =
-                        localRenderer->CreateView(screenSize.width, screenSize.height, view_config, nullptr);
-
-                    if (viewData->ultralightView) {
-                        viewData->loadListener = std::make_unique<Listeners::MyLoadListener>(viewData->id);
-                        viewData->viewListener = std::make_unique<Listeners::MyViewListener>(viewData->id);
-                        viewData->ultralightView->set_load_listener(viewData->loadListener.get());
-                        viewData->ultralightView->set_view_listener(viewData->viewListener.get());
-                        viewData->ultralightView->LoadURL(String(viewData->htmlPathToLoad.c_str()));
-                        viewData->ultralightView->Unfocus();
-                        viewData->htmlPathToLoad.clear();
-                        logger::info("UI Thread: View [{}] successfully created and loading URL.", viewData->id);
-                    } else {
-                        logger::error("UI Thread: Failed to create Ultralight View for ID [{}].", viewData->id);
-                        viewData->htmlPathToLoad = "[CREATION FAILED]";
-                    }
-                }
+                // Recovery and view-creation loops moved to native CEF path (Step 6).
+                // Ultralight per-view creation / LoadURL recovery is retired here; CefRuntime
+                // owns iframe lifecycle and replays createView calls when the shell becomes ready.
 
                 ProcessEvents();
 
@@ -448,41 +356,12 @@ namespace PrismaUI::Core {
             } catch (const SEHException& seh) {
                 logger::critical("UI Thread: SEH Exception in render loop: {} at address 0x{:p}", seh.details(),
                                  seh.address());
-                // Mark all views for recovery - the renderer state is likely corrupted
-                {
-                    std::shared_lock lock(viewsMutex);
-                    for (auto& pair : views) {
-                        if (pair.second) {
-                            pair.second->needsRecovery = true;
-                            logger::warn("View [{}] marked for recovery after SEH exception", pair.first);
-                        }
-                    }
-                }
             } catch (const std::exception& e) {
                 logger::critical("UI Thread: Exception in render loop: {}", e.what());
-                // Mark all views for recovery
-                {
-                    std::shared_lock lock(viewsMutex);
-                    for (auto& pair : views) {
-                        if (pair.second) {
-                            pair.second->needsRecovery = true;
-                        }
-                    }
-                }
             } catch (...) {
-                // Unknown exceptions (likely from Ultralight/WebCore internals)
                 logger::critical(
                     "UI Thread: Unknown exception in render loop (likely Ultralight "
                     "internal error)");
-                // Mark all views for recovery
-                {
-                    std::shared_lock lock(viewsMutex);
-                    for (auto& pair : views) {
-                        if (pair.second) {
-                            pair.second->needsRecovery = true;
-                        }
-                    }
-                }
             }
         });
 
@@ -495,20 +374,7 @@ namespace PrismaUI::Core {
             logger::error("D3DPresent: Unknown exception from UI thread");
         }
 
-        std::vector<std::shared_ptr<PrismaView>> viewsToCheck;
-        {
-            std::shared_lock lock(viewsMutex);
-            viewsToCheck.reserve(views.size());
-            for (const auto& pair : views) {
-                if (pair.second && pair.second->ultralightView) {
-                    viewsToCheck.push_back(pair.second);
-                }
-            }
-        }
-
-        for (const auto& viewData : viewsToCheck) {
-            UpdateSingleTextureFromBuffer(viewData);
-        }
+        // Per-view texture upload loop retired in Step 6 — CEF overlay is the single drawn surface.
 
         DrawViews();
         DrawCursor();
@@ -522,6 +388,11 @@ namespace PrismaUI::Core {
             std::shared_lock lock(viewsMutex);
             for (const auto& pair : views) {
                 viewIdsToDestroy.push_back(pair.first);
+                if (pair.second) {
+                    // Mark each view as destroyRequested so any in-flight queue entries
+                    // observe it and no-op before reaching CEF or render state (Step 6).
+                    pair.second->destroyRequested.store(true, std::memory_order_release);
+                }
             }
         }
 

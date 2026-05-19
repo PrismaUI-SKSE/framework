@@ -4,7 +4,7 @@ Copyright (c) 2025 Prisma UI
 
 **IMPORTANT NOTICE**
 
-This software ("The Software") is provided under the terms of this license. The Software incorporates and depends on the Ultralight SDK, which is governed by the "ULTRALIGHT FREE LICENSE AGREEMENT" ("The Ultralight License"). By using The Software, you agree to be bound by all terms and conditions set forth below, which include critical obligations passed down from The Ultralight License.
+This software ("The Software") is provided under the terms of this license. The Software may be distributed with third-party runtime components whose own licenses and notices are provided separately in `NOTICES.txt`.
 
 **Section 1: Definitions**
 
@@ -41,12 +41,9 @@ The rights granted in Section 2 are subject to the following restrictions. It is
 3.1. **Exceed Commercial Use Limitation**: Commercial use is permitted **only if** you or your entity meet all of the following criteria:
     (a) Your total gross revenue (turnover) in the last fiscal year was **less than US$100,000**, AND
     (b) You have raised total investment funding of **less than US$100,000**.
-    If you or your entity exceeds either of these financial limits, you must purchase a Pro License directly from Ultralight, Inc. within thirty (30) days to continue the legal Public Distribution of any product using The Software. This obligation is inherited from The Ultralight License.
+    If you or your entity exceeds either financial limit, Public Distribution of any product using The Software requires prior, explicit, written permission from The Author.
 
 3.2. **Publicly Distribute a Modified Version**: You may not engage in the Public Distribution of any Modified Version of The Software. Only The Author has the right to publish official public versions. Any Public Distribution of a Modified Version requires prior, explicit, written permission from The Author.
-
-3.3. **Violate Inherited Obligations**: You must adhere to the following obligations passed down from The Ultralight License:
-    (a) **No Reverse Engineering**: You may not decompile, disassemble, or otherwise attempt to discover the source code of the binary components of the Ultralight SDK included with The Software.
 
 **Section 4: Disclaimer of Warranty**
 

@@ -16,7 +16,6 @@ namespace PrismaUI::InputHandler {
     using namespace Core;
 
     HWND g_hWnd = nullptr;
-    SingleThreadExecutor* g_stateRefreshExecutor = nullptr;
     std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* g_viewsMap = nullptr;
     std::shared_mutex* g_viewsMapMutex = nullptr;
 
@@ -542,11 +541,9 @@ namespace PrismaUI::InputHandler {
         return DefSubclassProc(hwnd, uMsg, wParam, lParam);
     }
 
-    void Initialize(HWND gameHwnd, SingleThreadExecutor* coreExecutor,
-                    std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* viewsMap,
+    void Initialize(HWND gameHwnd, std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* viewsMap,
                     std::shared_mutex* viewsMapMutex) {
         g_hWnd = gameHwnd;
-        g_stateRefreshExecutor = coreExecutor;
         g_viewsMap = viewsMap;
         g_viewsMapMutex = viewsMapMutex;
         g_isAnyInputCaptureActive = false;
@@ -566,7 +563,6 @@ namespace PrismaUI::InputHandler {
             [](const wchar_t* p, int len) { return ConvertUtf16ToUtf8(p, len); });
         g_imeHelper.SetContext({g_hWnd, g_viewsMap, g_viewsMapMutex, &g_focusedViewIdMutex,
                                 &g_currentlyFocusedViewId, &g_isAnyInputCaptureActive, &g_isFocusedTextInputActive});
-        g_imeHelper.SetExecutor(g_stateRefreshExecutor);
         g_imeHelper.Initialize(g_hWnd);
 
         auto inputEventSource = RE::BSInputDeviceManager::GetSingleton();
@@ -812,7 +808,6 @@ namespace PrismaUI::InputHandler {
         g_imeHelper.Shutdown(g_hWnd);
 
         g_hWnd = nullptr;
-        g_stateRefreshExecutor = nullptr;
         g_viewsMap = nullptr;
         g_viewsMapMutex = nullptr;
         g_isFocusedTextInputActive = false;

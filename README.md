@@ -19,8 +19,8 @@ Skyrim Next-Gen Web UI Framework.
 - [vcpkg](https://vcpkg.io/) with `VCPKG_ROOT` environment variable set
 - Visual Studio 2022 with C++23 support
 - C++23 Compiler (MSVC)
-- [Ultralight SDK](https://ultralig.ht/download) 1.4.1-dev
-  - place the archive "ultralight-free-sdk-1.4.1-dev-win-x64.7z" in the "external folder.
+- [Chromium Embedded Framework (CEF) binary distribution](https://cef-builds.spotifycdn.com/index.html) 147.0.14+g76d2442+chromium-147.0.7727.138 for Windows x64
+  - place `cef_binary_147.0.14+g76d2442+chromium-147.0.7727.138_windows64.tar.bz2` in the `external` folder, or configure `PRISMAUI_CEF_ARCHIVE`.
 ### Getting Started
 
 ```bat
@@ -84,9 +84,9 @@ vcpkg upgrade
 
 ## Dependencies / Acknowledgments
 
-This plugin utilizes the **[Ultralight](https://ultralig.ht) SDK** for rendering web content.
+This plugin uses **[Chromium Embedded Framework (CEF)](https://bitbucket.org/chromiumembedded/cef)** for embedded web rendering.
 
-The Ultralight SDK is provided under the **[Ultralight Free License Agreement](https://ultralig.ht/free-license/LICENSE.txt)**. The full terms of this license are available in the `NOTICES.txt` file located at the root of this repository.
+CEF is BSD-licensed and includes Chromium components with additional third-party notices. The redistributed notice text is in `NOTICES.txt`.
 
 ## License
 
@@ -105,8 +105,8 @@ This license is designed to keep the framework free for community and small comm
 
 ❌ **You ARE NOT allowed to:**
 *   **Publicly release or distribute your own modified versions** of this framework without the author's explicit written permission.
-*   **Use the framework commercially** if your company's revenue or funding is **over US$100,000** (unless you purchase a Pro License from Ultralight, Inc.).
-*   **Reverse-engineer** the included Ultralight SDK components.
+*   **Use the framework commercially** if your company's revenue or funding is **over US$100,000** without the author's explicit written permission.
+*   **Reverse-engineer** included binary components except where allowed by their upstream licenses.
 
 ## Contributors
 

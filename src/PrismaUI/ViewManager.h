@@ -2,15 +2,8 @@
 
 #include <cstdint>
 #include <functional>
+#include <string>
 
-#pragma warning(push)
-#pragma warning(disable : 4100)
-#include <AppCore/Platform.h>
-#include <JavaScriptCore/JSRetainPtr.h>
-#include <Ultralight/StringSTL.h>
-#include <Ultralight/Ultralight.h>
-#include <Ultralight/View.h>
-#pragma warning(pop)
 
 namespace PRISMA_UI_API {
     enum class ConsoleMessageLevel : uint8_t;
@@ -21,7 +14,6 @@ namespace PrismaUI::Core {
 }
 
 namespace PrismaUI::ViewManager {
-    using namespace ultralight;
 
     Core::PrismaViewId Create(const std::string& htmlPath,
                               std::move_only_function<void(Core::PrismaViewId)> onDomReadyCallback = nullptr);

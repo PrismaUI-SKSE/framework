@@ -79,7 +79,6 @@ void ImeHelper::SetCallbacks(ImeEscapeForJSCallback escapeForJS,
 
 void ImeHelper::SetContext(const ImeHelperContext& ctx) { m_ctx = ctx; }
 
-void ImeHelper::SetExecutor(SingleThreadExecutor* executor) { m_executor = executor; }
 
 void ImeHelper::Initialize(HWND hwnd) {
     if (!hwnd) return;
@@ -117,7 +116,6 @@ void ImeHelper::DispatchScriptToView(Core::PrismaViewId viewId, const std::strin
 void ImeHelper::Shutdown(HWND hwnd) {
     if (!m_context) return;
 
-    m_lastKnownTextInputFocus = false;
     m_associated = false;
     if (hwnd) {
         ImmAssociateContext(hwnd, nullptr);
@@ -366,44 +364,5 @@ bool ImeHelper::HandleMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
     }
 }
 
-void ImeHelper::UpdateStateImpl(Core::PrismaViewId viewId) {
-    if (!m_ctx.viewsMap || !m_ctx.viewsMapMutex || viewId == 0) {
-        m_lastKnownTextInputFocus = false;
-        return;
-    }
-
-    bool stillFocused = false;
-    if (m_ctx.focusedViewIdMutex && m_ctx.currentlyFocusedViewId && m_ctx.isAnyInputCaptureActive) {
-        std::lock_guard lock(*m_ctx.focusedViewIdMutex);
-        stillFocused =
-            m_ctx.isAnyInputCaptureActive->load() && *m_ctx.currentlyFocusedViewId == viewId;
-    }
-
-    if (!stillFocused) {
-        m_lastKnownTextInputFocus = false;
-        ClearStateInJS(viewId);
-        return;
-    }
-
-    const bool textInputFocused = IsTextInputFocused();
-    m_lastKnownTextInputFocus = textInputFocused;
-
-    if (!textInputFocused) {
-        ClearStateInJS(viewId);
-    }
-}
-
-void ImeHelper::UpdateStateForFocusedView(Core::PrismaViewId viewId) {
-    if (!m_executor) return;
-
-    if (m_executor->IsWorkerThread()) {
-        UpdateStateImpl(viewId);
-        return;
-    }
-
-    m_executor->submit_with_priority(
-        SingleThreadExecutor::Priority::HIGH,
-        [this, viewId]() { UpdateStateImpl(viewId); });
-}
 
 }  // namespace PrismaUI

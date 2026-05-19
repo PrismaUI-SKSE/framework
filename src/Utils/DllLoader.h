@@ -6,7 +6,6 @@
 #include <filesystem>
 #include <mutex>
 #include <string>
-#include <vector>
 
 // Note: This header depends on 'logger' namespace from PCH.h (SKSE::log)
 
@@ -27,54 +26,6 @@ namespace PrismaUI::Utils
             return instance;
         }
 
-        // Load Ultralight DLLs from the specified path.
-        // Must be called before any Ultralight API usage.
-        bool LoadUltralightLibraries()
-        {
-            std::lock_guard<std::mutex> lock(m_mutex);
-
-            if (m_ultralightLoaded) {
-                return true;
-            }
-
-            auto libsPath = GetBasePath() / "libs";
-
-            if (!std::filesystem::exists(libsPath)) {
-                logger::error("Ultralight libs path does not exist: {}", libsPath.string());
-                return false;
-            }
-
-            // Load order matters due to dependencies:
-            // UltralightCore -> WebCore -> Ultralight -> AppCore
-            const std::vector<std::wstring> dllNames = {L"UltralightCore.dll", L"WebCore.dll", L"Ultralight.dll",
-                                                        L"AppCore.dll"};
-
-            for (const auto& dllName : dllNames) {
-                auto dllPath = libsPath / dllName;
-
-                if (!std::filesystem::exists(dllPath)) {
-                    logger::error("DLL not found: {}", dllPath.string());
-                    UnloadUltralightInternal();
-                    return false;
-                }
-
-                HMODULE handle = LoadLibraryW(dllPath.c_str());
-
-                if (!handle) {
-                    DWORD error = GetLastError();
-                    logger::error("Failed to load DLL: {} (Error: {})", dllPath.string(), error);
-                    UnloadUltralightInternal();
-                    return false;
-                }
-
-                m_ultralightModules.push_back(handle);
-                logger::info("Loaded Ultralight DLL: {}", dllPath.filename().string());
-            }
-
-            m_ultralightLoaded = true;
-            logger::info("All Ultralight DLLs loaded successfully!");
-            return true;
-        }
 
         bool LoadCefLibraries()
         {
@@ -134,14 +85,13 @@ namespace PrismaUI::Utils
             return true;
         }
 
-        // Unload all loaded DLLs (in reverse order)
+        // Unload all loaded CEF DLL state.
         void UnloadAll()
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             UnloadAllInternal();
         }
 
-        bool IsLoaded() const { return m_ultralightLoaded; }
         bool IsCefLoaded() const { return m_cefLoaded; }
 
     private:
@@ -151,16 +101,6 @@ namespace PrismaUI::Utils
         DllLoader(const DllLoader&) = delete;
         DllLoader& operator=(const DllLoader&) = delete;
 
-        void UnloadUltralightInternal()
-        {
-            for (auto it = m_ultralightModules.rbegin(); it != m_ultralightModules.rend(); ++it) {
-                if (*it) {
-                    FreeLibrary(*it);
-                }
-            }
-            m_ultralightModules.clear();
-            m_ultralightLoaded = false;
-        }
 
         void UnloadCefInternal()
         {
@@ -177,16 +117,10 @@ namespace PrismaUI::Utils
             m_cefLoaded = false;
         }
 
-        void UnloadAllInternal()
-        {
-            UnloadCefInternal();
-            UnloadUltralightInternal();
-        }
+        void UnloadAllInternal() { UnloadCefInternal(); }
 
-        std::vector<HMODULE> m_ultralightModules;
         HMODULE m_cefModule = nullptr;
         DLL_DIRECTORY_COOKIE m_cefDllDirectoryCookie = nullptr;
-        bool m_ultralightLoaded = false;
         bool m_cefLoaded = false;
         mutable std::mutex m_mutex;
     };

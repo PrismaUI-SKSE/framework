@@ -6,7 +6,6 @@
 #include <memory>
 #include <shared_mutex>
 
-class SingleThreadExecutor;
 
 namespace PrismaUI::Core {
     typedef uint64_t PrismaViewId;
@@ -14,8 +13,7 @@ namespace PrismaUI::Core {
 }
 
 namespace PrismaUI::InputHandler {
-    void Initialize(HWND gameHwnd, SingleThreadExecutor* coreExecutor,
-                    std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* viewsMap,
+    void Initialize(HWND gameHwnd, std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* viewsMap,
                     std::shared_mutex* viewsMapMutex);
 
     void EnableInputCapture(const Core::PrismaViewId& viewId);

@@ -96,10 +96,10 @@ cmake --build --preset=debug --parallel 8
 
 ## Rollout Plan
 
-1. Keep the Ultralight backend available behind a compile-time switch until CEF parity is proven.
-2. Add CEF as an experimental backend for internal builds.
-3. Make CEF the default backend after normal view parity is verified.
-4. Remove Ultralight only after a CEF release candidate survives in-game testing.
+1. Build and package only the CEF runtime.
+2. Run the CEF-only release candidate through the smoke test matrix above.
+3. Publish the ABI break and DevTools replacement notes with the release.
+4. Keep rollback as a package/version rollback, not a hidden runtime fallback.
 
 ## Acceptance Criteria
 
@@ -110,4 +110,4 @@ cmake --build --preset=debug --parallel 8
 - The Step 9 ABI break is documented: legacy numeric interface requests `0..2` return `nullptr`, supported values are `V1 = 4`, `V2 = 5`, and `V3 = 6`.
 - Inspector API changes are documented as an intentional migration break, and old per-view inspector methods are absent from the public header.
 - New DevTools methods occupy the intended `IVPrismaUI1` vtable position after `GetOrder` and before `HasAnyActiveFocus`.
-- Known differences from Ultralight are documented before release.
+- Known CEF migration differences are documented before release.

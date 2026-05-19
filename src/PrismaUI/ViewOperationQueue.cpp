@@ -1,5 +1,7 @@
 #include "ViewOperationQueue.h"
 
+#include <vector>
+
 #include "Core.h"
 
 namespace PrismaUI::ViewOperationQueue {
@@ -80,50 +82,34 @@ namespace PrismaUI::ViewOperationQueue {
                           viewData->pendingOperations.size());
         }
 
-        ultralightThread.submit([viewId, op = std::move(operation)]() {
-            try {
-                std::shared_ptr<PrismaView> viewData;
-                {
-                    std::shared_lock lock(viewsMutex);
-                    auto it = views.find(viewId);
-                    if (it == views.end()) {
-                        logger::warn("ProcessNextOperation: View [{}] was destroyed before operation execution",
-                                     viewId);
-                        return;
-                    }
-                    viewData = it->second;
-                }
-
-                if (viewData && viewData->destroyRequested.load(std::memory_order_acquire)) {
-                    logger::warn("ProcessNextOperation: View [{}] destroyRequested; skipping queued operation.",
-                                 viewId);
-                    return;
-                }
-
-                op();
-
-                logger::debug("ProcessNextOperation: Operation completed for view [{}]", viewId);
-            } catch (const std::exception& e) {
-                logger::error("ProcessNextOperation: Exception during operation execution for view [{}]: {}", viewId,
-                              e.what());
-            } catch (...) {
-                logger::error("ProcessNextOperation: Unknown exception during operation execution for view [{}]",
-                              viewId);
-            }
-
-            std::shared_ptr<PrismaView> vd = nullptr;
+        try {
             {
                 std::shared_lock lock(viewsMutex);
                 auto it = views.find(viewId);
-                if (it != views.end()) {
-                    vd = it->second;
+                if (it == views.end()) {
+                    logger::warn("ProcessNextOperation: View [{}] was destroyed before operation execution", viewId);
+                    viewData->isProcessingOperation.store(false, std::memory_order_release);
+                    return;
                 }
             }
 
-            if (vd) {
-                vd->isProcessingOperation.store(false, std::memory_order_release);
+            if (viewData->destroyRequested.load(std::memory_order_acquire)) {
+                logger::warn("ProcessNextOperation: View [{}] destroyRequested; skipping queued operation.", viewId);
+                viewData->isProcessingOperation.store(false, std::memory_order_release);
+                return;
             }
-        });
+
+            operation();
+
+            logger::debug("ProcessNextOperation: Operation completed for view [{}]", viewId);
+        } catch (const std::exception& e) {
+            logger::error("ProcessNextOperation: Exception during operation execution for view [{}]: {}", viewId,
+                          e.what());
+        } catch (...) {
+            logger::error("ProcessNextOperation: Unknown exception during operation execution for view [{}]", viewId);
+        }
+
+        viewData->isProcessingOperation.store(false, std::memory_order_release);
     }
 
     void ProcessAllViewOperations() {

@@ -9,7 +9,6 @@
 #include <shared_mutex>
 #include <string>
 
-class SingleThreadExecutor;
 
 namespace PrismaUI {
 
@@ -46,15 +45,9 @@ public:
     void SetCallbacks(ImeEscapeForJSCallback escapeForJS, ImeQueueCommittedCharCallback queueCommittedChar,
                       ImeConvertUtf16ToUtf8Callback convertUtf16ToUtf8);
     void SetContext(const ImeHelperContext& ctx);
-    void SetExecutor(SingleThreadExecutor* executor);
 
-    // Associate/unassociate IME context with window. Must run on main thread for ImmAssociateContext.
+    // Associate/unassociate IME context with window.
     void SetAssociation(bool enabled);
-
-    // Update IME state based on focused view and text input focus. The executor,
-    // when present, only serializes state refresh work; CEF browser APIs are not
-    // called from it.
-    void UpdateStateForFocusedView(Core::PrismaViewId viewId);
 
     // Send current IME composition/candidate state to JS, or clear it.
     void SendStateToJS(Core::PrismaViewId viewId, HWND hwnd, bool active);
@@ -79,18 +72,15 @@ public:
 private:
     void DispatchScriptToView(Core::PrismaViewId viewId, const std::string& script);
     bool IsTextInputFocused() const;
-    void UpdateStateImpl(Core::PrismaViewId viewId);
 
     HIMC m_context = nullptr;
     bool m_contextOwned = false;
     std::atomic<bool> m_associated{false};
-    std::atomic<bool> m_lastKnownTextInputFocus{false};
 
     ImeEscapeForJSCallback m_escapeForJS;
     ImeQueueCommittedCharCallback m_queueCommittedChar;
     ImeConvertUtf16ToUtf8Callback m_convertUtf16ToUtf8;
     ImeHelperContext m_ctx;
-    SingleThreadExecutor* m_executor = nullptr;
 };
 
 }  // namespace PrismaUI

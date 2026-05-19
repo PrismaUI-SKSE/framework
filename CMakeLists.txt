@@ -104,24 +104,14 @@ add_dependencies(${PROJECT_NAME} PrismaUICefSubprocess)
 target_include_directories(${PROJECT_NAME}
     PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
-    "${ULTRALIGHT_INCLUDE_DIR}"
     "${CEF_ROOT}"
     "${CEF_ROOT}/include"
 )
 
-# Link directories for Ultralight
-target_link_directories(${PROJECT_NAME}
-    PRIVATE
-    "${ULTRALIGHT_LIBRARY_DIR}"
-)
 
-# Link Ultralight libraries
+# Link PrismaUI runtime libraries
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
-    AppCore
-    Ultralight
-    UltralightCore
-    WebCore
     comctl32  # Required for SetWindowSubclass/RemoveWindowSubclass
     libcef_dll_wrapper
     libcef_lib
@@ -129,13 +119,9 @@ target_link_libraries(${PROJECT_NAME}
     imm32     # Required for IME (Input Method Editor) support
 )
 
-# Delay-load Ultralight DLLs so they can be loaded from custom path at runtime
+# Delay-load CEF so it can be loaded from the packaged runtime directory
 target_link_options(${PROJECT_NAME}
     PRIVATE
-    "/DELAYLOAD:UltralightCore.dll"
-    "/DELAYLOAD:WebCore.dll"
-    "/DELAYLOAD:Ultralight.dll"
-    "/DELAYLOAD:AppCore.dll"
     "/DELAYLOAD:libcef.dll"
 )
 
@@ -158,13 +144,6 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
 )
 
-# Post-build: Copy Ultralight DLLs to output directory (for development)
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    "${ULTRALIGHT_BINARY_DIR}"
-    "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-    COMMAND "${CMAKE_COMMAND}" -E echo "Copying Ultralight DLLs to output directory"
-)
 
 # Post-build: Copy CEF runtime files to output directory (for development)
 prismaui_copy_cef_runtime(PrismaUICefSubprocess "$<TARGET_FILE_DIR:PrismaUICefSubprocess>")
@@ -176,17 +155,14 @@ set(DIST_PRISMAUI_DIR "${DIST_VERSION_DIR}/PrismaUI")
 set(DIST_SKSE_PLUGINS_DIR "${DIST_VERSION_DIR}/SKSE/plugins")
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E remove_directory "${DIST_VERSION_DIR}"
     # Create distribution directories
     COMMAND ${CMAKE_COMMAND} -E make_directory "${DIST_PRISMAUI_DIR}/libs"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${DIST_SKSE_PLUGINS_DIR}"
     
     # Copy assets folder contents to PrismaUI folder
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/assets/" "${DIST_PRISMAUI_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${ULTRALIGHT_RESOURCES_DIR}" "${DIST_PRISMAUI_DIR}/resources"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${ULTRALIGHT_INSPECTOR_DIR}" "${DIST_PRISMAUI_DIR}/inspector"
-    
-    # Copy Ultralight DLLs to libs folder
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${ULTRALIGHT_BINARY_DIR}" "${DIST_PRISMAUI_DIR}/libs"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/NOTICES.txt" "${DIST_VERSION_DIR}/NOTICES.txt"
     
     # Copy PrismaUI DLL to SKSE/plugins
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:${PROJECT_NAME}>" "${DIST_SKSE_PLUGINS_DIR}/"

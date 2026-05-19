@@ -25,11 +25,6 @@ SKSEPlugin_Load(const SKSE::LoadInterface *a_skse) {
   logger::info("------------------- built using CommonLibSSE-NG v{} -------------------", COMMONLIBSSE_VERSION);
   logger::info("------------------- Running on Skyrim v{} -------------------", REL::Module::get().version().string());
 
-  // Load Ultralight DLLs from Data/PrismaUI/libs before any Ultralight API usage
-  if (!PrismaUI::Utils::DllLoader::GetSingleton().LoadUltralightLibraries()) {
-    logger::critical("Failed to load Ultralight libraries! Plugin will not load.");
-    return false;
-  }
 
   auto g_messaging = reinterpret_cast<SKSE::MessagingInterface *>(
       a_skse->QueryInterface(SKSE::LoadInterface::kMessaging));

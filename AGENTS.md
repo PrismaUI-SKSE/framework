@@ -1,15 +1,16 @@
 # PrismaUI Agent Notes
 
-This repository is an SKSE plugin for Skyrim that exposes a C API for mods to render HTML/CSS/JS UI through Ultralight. The core implementation is C++23, CommonLibSSE-NG, D3D11, DirectXTK `SpriteBatch`, JavaScriptCore, and Ultralight 1.4.1-dev.
+This repository is an SKSE plugin for Skyrim that exposes a C API for mods to render HTML/CSS/JS UI through Chromium Embedded Framework (CEF). The core implementation is C++23, CommonLibSSE-NG, D3D11, DirectXTK `SpriteBatch`, and CEF 147 (Chromium 147). Ultralight is no longer used.
 
 ## Working Rules
 
 - Keep changes scoped. This plugin runs inside Skyrim's process, so avoid broad refactors unless the task explicitly calls for them.
-- Preserve the public ABI in `src/PrismaUI_API.h` and the matching vtable method order in `src/API/API.h`.
-- Treat Ultralight objects as UI-thread-owned. Use `Core::ultralightThread` for Ultralight `View`, JS context, load/listener, and renderer operations.
-- Treat D3D11 texture/resource work as render-thread work. Texture creation, mapping, drawing, and release are handled from the present/render path.
+- Preserve the public ABI in `src/PrismaUI_API.h` and the matching vtable method order in `src/API/API.h`. Supported `InterfaceVersion` values are `V1 = 4`, `V2 = 5`, `V3 = 6`. Legacy numeric requests `0`, `1`, `2` are the old Ultralight-inspector ABI and must keep returning `nullptr`.
+- Treat CEF browser/frame/V8 objects as CEF-UI-thread-owned. Route work through `Cef::CefRuntime` and `CefPostTask(TID_UI, ...)`; CEF renderer-process V8 work belongs in `PrismaCefRenderApp` on `TID_RENDERER`.
+- Treat D3D11 texture/resource work as render-thread work. Texture creation, mapping, drawing, and release happen on the present/render path; the only drawn surface is the CEF overlay texture (plus the Prisma cursor).
+- Public API callbacks into mods must be scheduled with `SKSE::GetTaskInterface()->AddTask`/`AddUITask` — do not call mod code directly from CEF UI/renderer threads.
 - Do not directly touch `external/commonlibsse-ng` unless the task is explicitly about vendored CommonLibSSE.
-- Prefer `rg` for searches. The `external/` tree is large; scope searches to `src`, `cmake`, `assets`, and docs unless dependency code is relevant.
+- Use the harness `search` tool for content lookup and `find` for filename lookup. The `external/` and `build/external_builds/` trees are large; scope searches to `src`, `cmake`, `assets`, `docs`, and root docs unless dependency code is relevant.
 - Use existing logging style via `logger::info/warn/error/debug/critical`.
 - Follow `.clang-format`: Google base style, 4-space indents, no tabs, 120-column limit.
 - Default to ASCII for new code/docs unless updating text that already uses non-ASCII.
@@ -24,32 +25,43 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
   - `cmake -S . --preset=debug`
   - `cmake --build --preset=debug --parallel 8`
 - `BuildRelease.ps1` exists as a convenience wrapper, but do not use it as the default build instruction.
-- Requires `VCPKG_ROOT`, Ninja, VS 2022 C++ tooling, and `external/ultralight-free-sdk-1.4.1-dev-win-x64.7z`.
-- CMake extracts Ultralight to `build/external_builds/ultralight`.
-- Build output: `build/<preset>/bin/PrismaUI.dll`.
-- Distribution output: `dist/PrismaUI_<version>/`, including `PrismaUI/libs`, `PrismaUI/resources`, `PrismaUI/inspector`, and `SKSE/plugins/PrismaUI.dll`.
-- `UpdateExternalDeps.ps1` prepares submodules and warns if the Ultralight archive is missing. It can remove/reinitialize submodule folders, so do not run it casually in a dirty tree.
+- Requires `VCPKG_ROOT`, Ninja, VS 2022 C++ tooling, and `external/cef_binary_147.0.14+g76d2442+chromium-147.0.7727.138_windows64.tar.bz2` (or `PRISMAUI_CEF_ARCHIVE` pointing at an equivalent local archive).
+- CMake extracts CEF to `build/external_builds/cef/<cef_binary_root>/`.
+- Two targets are built:
+  - `PrismaUI` (the SKSE plugin DLL) → `build/<preset>/bin/PrismaUI.dll`.
+  - `PrismaUICefSubprocess` (the CEF helper executable) → `build/<preset>/bin/PrismaUICefSubprocess.exe`.
+- Distribution output: `dist/PrismaUI_<version>[_Debug]/`:
+  - `PrismaUI/libs/` — `libcef.dll`, `chrome_elf.dll`, `icudtl.dat`, `v8_context_snapshot.bin`, resource `.pak`s, `locales/`, ANGLE/SwiftShader/D3D support DLLs, and `PrismaUICefSubprocess.exe`.
+  - `PrismaUI/shell/` and other CEF-facing assets copied from `assets/`.
+  - `SKSE/plugins/PrismaUI.dll`.
+  - `NOTICES.txt` at the package root.
+- The packaging step calls `cmake -E remove_directory` on the version dir before repopulating it, so stale Ultralight/per-view inspector folders never reappear; do not reintroduce Ultralight copy rules.
+- `UpdateExternalDeps.ps1` prepares submodules. It can remove/reinitialize submodule folders, so do not run it casually in a dirty tree.
 
 ## Repository Map
 
-- `src/main.cpp`: SKSE entry point, logger setup, Ultralight DLL loading, SKSE messaging, API export.
+- `src/main.cpp`: SKSE entry point, logger setup, SKSE messaging, API export. No DLL preloading — CEF is loaded lazily by `Cef::CefRuntime` through `DllLoader::LoadCefLibraries()`.
 - `src/PrismaUI_API.h`: public modder-facing API. Mods may copy this header.
-- `src/API/`: implementation of the exported PrismaUI API singleton.
-- `src/PrismaUI/Core.*`: global runtime state, D3D present hook integration, Ultralight renderer lifecycle, render loop, shutdown.
-- `src/PrismaUI/ViewManager.*`: view lifecycle, show/hide/focus/unfocus, order, destroy, console callbacks.
-- `src/PrismaUI/ViewRenderer.*`: bitmap-to-buffer copy, D3D texture upload, view compositing, cursor draw.
-- `src/PrismaUI/InputHandler.*`: Win32 subclass hook, Skyrim input sink, mouse/key/scroll queueing, clipboard, IME focus tracking.
+- `src/API/`: implementation of the exported PrismaUI API singleton; DevTools methods (`OpenDevTools`/`CloseDevTools`/`IsDevToolsOpen`) live in `IVPrismaUI1` after `GetOrder` and before `HasAnyActiveFocus`.
+- `src/Cef/CefRuntime.*`: CEF process/runtime lifecycle, OSR browser, shell-page command bus, JS invoke result bridge, DevTools control, GPU/CPU paint upload.
+- `src/Cef/CefOsrClient.*`: `CefClient` for the shell browser; OSR `OnPaint`/`OnAcceleratedPaint`, load/render-handler glue.
+- `src/Cef/PrismaCefApp.*`: browser-process `CefApp`.
+- `src/Cef/PrismaCefRenderApp.*`: renderer-process `CefRenderProcessHandler`; owns V8 bindings for `Invoke`/`InteropCall`/`RegisterJSListener`/DOM-ready/console.
+- `src/Cef/ProcessMessageNames.h`: stable IPC message names shared between browser and renderer.
+- `src/Cef/SubprocessMain.cpp`: entry point for `PrismaUICefSubprocess.exe`.
+- `src/PrismaUI/Core.*`: global runtime state, D3D present hook, CEF lifecycle wiring, render loop, shutdown.
+- `src/PrismaUI/ViewManager.*`: view lifecycle, show/hide/focus/unfocus, order, destroy, console callbacks; routes through `CefRuntime` shell commands.
+- `src/PrismaUI/ViewRenderer.*`: CEF overlay draw + cursor draw on the present path. No per-view textures.
+- `src/PrismaUI/InputHandler.*`: Win32 subclass hook, Skyrim input sink, mouse/key/scroll queueing, clipboard, IME focus tracking; dispatches events as CEF input events through `CefRuntime`.
 - `src/PrismaUI/ImeHelper.*`: Windows IME context management and custom JS-dispatched composition/candidate state.
-- `src/PrismaUI/Communication.*`: JS eval, native-to-JS calls, JS-to-C++ callback binding.
-- `src/PrismaUI/Listeners.*`: Ultralight load/view listeners, DOM-ready and console callback dispatch, inspector creation callback.
-- `src/PrismaUI/Inspector.*`: local Ultralight inspector lifecycle and rendering.
-- `src/PrismaUI/ViewOperationQueue.*`: per-view operation queues processed from the present loop.
+- `src/PrismaUI/Communication.*`: JS eval, native-to-JS calls, JS-to-C++ callback binding; backed by CEF process messages.
+- `src/PrismaUI/ViewOperationQueue.*`: per-view operation queues processed from the present loop. Each `ProcessNextOperation` runs inline on the present thread (no separate executor).
 - `src/Hooks/`: trampoline install wrappers for D3D hooks.
 - `src/Menus/FocusMenu/`: hidden Scaleform menu used to capture UI focus and cursor behavior.
 - `src/Menus/CursorMenu/`: hook that hides vanilla cursor menu while PrismaUI has active focus.
-- `src/Utils/`: DLL loader, encoding helpers, NanoID, priority single-thread executor, key conversion.
-- `assets/`: files copied into `Data/PrismaUI` distribution, currently includes `misc/cursor.png`.
-- `cmake/`: CommonLibSSE, Ultralight, dependency, and compiler flag setup.
+- `src/Utils/`: `DllLoader` (CEF only), encoding helpers, NanoID, `WinKeyHandler` (Win32→`CefKeyEvent`).
+- `assets/`: files copied into the `Data/PrismaUI` distribution (cursor texture, shell page, etc.).
+- `cmake/`: `commonlibsse.cmake`, `cef.cmake`, `ExternalDependencies.cmake`, `CompilerFlags.cmake`. There is no `ultralight.cmake`.
 
 ## Runtime Architecture
 
@@ -58,121 +70,116 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
 `SKSEPlugin_Load` in `src/main.cpp`:
 
 - initializes SKSE and logging
-- loads Ultralight DLLs from `Data/PrismaUI/libs` before any Ultralight API use
 - registers `SKSEMessageHandler`
 - allocates trampoline storage
 
-On `kDataLoaded`, `CursorMenuEx::InstallHook()` hooks Skyrim's cursor menu.
+No CEF DLLs are loaded here; CEF is brought up lazily on first view creation. On `kDataLoaded`, `CursorMenuEx::InstallHook()` hooks Skyrim's cursor menu.
 
-`RequestPluginAPI` returns one of `IVPrismaUI1`, `IVPrismaUI2`, or `IVPrismaUI3` implemented by `PluginAPI::PrismaUIInterface`.
+`RequestPluginAPI` returns one of `IVPrismaUI1`, `IVPrismaUI2`, or `IVPrismaUI3` implemented by `PluginAPI::PrismaUIInterface`. Numeric values `0`, `1`, `2` are rejected with `nullptr`.
 
 ### Core Initialization
 
 The first `ViewManager::Create()` lazily initializes the core:
 
 - installs the D3D present hook
-- configures Ultralight platform, logger, font loader, file system, and resource path on `Core::ultralightThread`
-- creates global `ultralight::Renderer`
 - registers `FocusMenu`
 
-Graphics state is acquired lazily in `Core::InitGraphics()` from `RE::BSGraphics::Renderer`.
+Graphics state is acquired lazily in `Core::InitGraphics()` from `RE::BSGraphics::Renderer`. Once `d3dDevice`/`d3dContext`/`hWnd`/screen size are valid, `Core::InitGraphics()` calls `Cef::CefRuntime::Initialize(...)` which loads `libcef.dll` (via `DllLoader::LoadCefLibraries()`), launches `PrismaUICefSubprocess.exe`, runs `CefInitialize`, and creates the single transparent OSR shell browser.
 
 ### Frame Loop
 
 `Core::D3DPresent()` calls the original present function first, then:
 
 - initializes graphics if needed
-- releases pending D3D resources
-- processes one queued operation per view
-- runs Ultralight work on `ultralightThread`
-- creates pending Ultralight views
-- processes input events
-- calls `renderer->Update()`, `RefreshDisplay(0)`, and `Render()`
-- copies dirty Ultralight bitmap surfaces into CPU buffers
-- uploads ready buffers to D3D textures on the render thread
-- draws all visible views
+- detects screen-size changes and forwards them to `CefRuntime::Resize`
+- calls `CefRuntime::BeginFrame()` and `CefRuntime::UpdateOverlayTexture()`
+- processes all queued per-view operations
+- processes the queued input events into the focused view
+- draws the CEF overlay texture
 - draws the Prisma cursor last
 
-### View Rendering And Mixing
+There is no Ultralight thread, renderer, or per-frame bitmap copy step.
 
-Each `PrismaView` is a full-screen transparent Ultralight bitmap view:
+### View Rendering And Compositing
 
-- `ViewConfig::is_accelerated = false`
-- `ViewConfig::is_transparent = true`
-- `ViewConfig::enable_compositor = false`
-- dimensions are `screenSize.width` by `screenSize.height`
+All Prisma views are iframes inside the single CEF shell browser. The browser renders OSR into one CEF overlay texture; PrismaUI does not own per-view textures.
 
-The plugin does not composite multiple views inside Ultralight. Each view has its own bitmap buffer, D3D11 texture, and shader resource view. `ViewRenderer::DrawViews()` gathers visible views with a valid `textureView`, sorts by `PrismaView::order`, begins `SpriteBatch` with `commonStates->AlphaBlend()`, then draws each texture at `(0, 0)`.
+Shell view rules:
+
+- Each `PrismaView` has a stable `iframeName = "prisma-view-<id>"` and a resolved URL.
+- `ViewManager` issues shell commands (create/show/hide/focus/blur/order/destroy) through `Cef::CefRuntime` which marshals them to the shell page's JS as a command bus.
+- Visibility, order, and focus are DOM/CSS state on the shell page. Native side keeps the source-of-truth flags in `Core::PrismaView`.
 
 Ordering rule:
 
-- lower `order` draws earlier and appears underneath
-- higher `order` draws later and appears on top
+- lower `order` draws earlier (z-index lower) and appears underneath
+- higher `order` draws later (z-index higher) and appears on top
 - new views default to `max(existing order) + 1`
-- mods can change order through `SetOrder`
+- mods change order through `SetOrder`, which updates native state and posts a shell `z-index` command
 
-There is no C++ per-view rectangle, transform, clipping, or layout system for normal views. Positioning is handled by each view's HTML/CSS inside a full-screen transparent page.
+There is no C++ per-view rectangle, transform, or clipping system. Positioning is authored in each iframe's HTML/CSS inside a full-screen transparent shell page.
 
 ### Thread Ownership
 
-- Ultralight renderer/view operations must run on `Core::ultralightThread`.
-- Public API callbacks back into mods are scheduled with `SKSE::GetTaskInterface()->AddTask` or `AddUITask`.
-- Input events are collected from Win32/Skyrim callbacks, queued under mutex, and fired into the focused Ultralight view from the Ultralight thread.
-- D3D11 textures and DirectXTK drawing are handled from the D3D present/render path.
-- Shared view state is guarded by `Core::viewsMutex`; per-view pixel buffers and operation queues have their own mutexes.
+- CEF browser/frame/V8 work must run on the CEF UI thread (browser-process) or `TID_RENDERER` (renderer-process). Reach those threads through `CefRuntime` helpers and `CefPostTask`.
+- Per-view operations queued through `ViewOperationQueue` run inline on the D3D present thread; they MUST NOT call CEF browser APIs directly — go through `CefRuntime` which posts to `TID_UI`.
+- Public API callbacks back into mods are scheduled with `SKSE::GetTaskInterface()->AddTask`/`AddUITask`.
+- Input events are collected from Win32/Skyrim callbacks, queued under mutex, and dispatched to the focused iframe through `CefRuntime::DispatchInputEvents` on the present thread.
+- D3D11 textures and DirectXTK drawing are handled from the D3D present/render path. CEF accelerated-paint shared textures are imported into the same context.
+- Shared view state is guarded by `Core::viewsMutex`; per-view operation queues have their own mutexes.
 
 ## Public API Notes
 
 - `PrismaView` is a `uint64_t` ID, not a pointer.
-- V1 API: create/destroy, invoke JS, interop call, JS listener registration, focus, visibility, scroll size, order, inspector, active-focus query.
-- V2 adds `RegisterConsoleCallback`.
-- V3 adds state-aware callback variants. The caller owns `callbackState`; PrismaUI stores and passes it back unchanged.
-- `CreateView` accepts `http://` and `https://` URLs directly. Other paths become `file:///views/<htmlPath>` relative to the Ultralight platform filesystem rooted at `Data/PrismaUI`.
-- `Invoke` evaluates a JS string and optionally returns the result string.
-- `InteropCall` calls a named global JS function with one string argument and avoids script construction overhead.
-- `RegisterJSListener` exposes a global JS function with the requested name; JS should call it with a string argument.
+- V1 API (`InterfaceVersion::V1 = 4`): create/destroy, invoke JS, interop call, JS listener registration, focus, visibility, scroll size, order, DevTools control, active-focus query.
+- V2 API (`InterfaceVersion::V2 = 5`) adds `RegisterConsoleCallback`.
+- V3 API (`InterfaceVersion::V3 = 6`) adds state-aware callback variants. The caller owns `callbackState`; PrismaUI stores and passes it back unchanged.
+- `CreateView` accepts `http://` and `https://` URLs directly. Other paths become `file:///views/<htmlPath>` and are resolved by CEF against the shell base, rooted at `Data/PrismaUI`.
+- `Invoke` evaluates a JS string in the target iframe and optionally returns a string result via the CEF result bridge.
+- `InteropCall` calls a named global JS function with one string argument inside the target iframe and avoids script construction overhead.
+- `RegisterJSListener` exposes a global JS function with the requested name inside the target iframe; JS should call it with a string argument.
+- `OpenDevTools`/`CloseDevTools`/`IsDevToolsOpen` operate on the single shell browser; individual Prisma views show up as `prisma-view-<id>` iframes in the DevTools frame tree.
 - API string inputs are validated as UTF-8 and converted from the system ANSI code page as fallback.
 
 ## Input And Focus
 
 - Only the focused Prisma view receives input events.
-- `Focus(view, pauseGame, disableFocusMenu)` focuses the Ultralight view, enables input capture, opens `FocusMenu` unless disabled, disables several Skyrim controls, and optionally increments `RE::UI::numPausesGame`.
+- `Focus(view, pauseGame, disableFocusMenu)` sets native focus and posts focus to the iframe through the shell command bus, enables input capture, opens `FocusMenu` unless disabled, disables several Skyrim controls, and optionally increments `RE::UI::numPausesGame`.
 - Focusing one view queues unfocus operations for any other focused views.
-- `Unfocus`, `Hide`, and `Destroy` clean up capture and pause state.
-- `FocusMenu` is a hidden Scaleform menu using cursor/modal flags to keep the game in menu-mode style input while PrismaUI is active.
+- `Unfocus`, `Hide`, and `Destroy` clean up capture and pause state and blur the iframe in CEF.
+- `FocusMenu` is a hidden Scaleform menu using cursor/modal flags to keep the game in menu-mode input while PrismaUI is active.
 - `CursorMenuEx` hides the vanilla cursor menu while any PrismaUI view has focus.
 
 ## IME And Clipboard
 
 - `InputHandler` subclasses the game HWND with `SetWindowSubclass`.
-- Keyboard input uses `WinKeyHandler` to generate Ultralight key events.
+- Keyboard input uses `WinKeyHandler` to convert Win32 messages into `CefKeyEvent`s, which are queued and dispatched through `CefRuntime`.
 - Clipboard reads/writes use Unicode clipboard text, with hard safety limits.
-- IME is intentionally custom: native IME windows are suppressed and IME state is dispatched to JS as a `prismaIME_state` custom event.
+- IME is intentionally custom: native IME windows are suppressed and IME state is dispatched to JS as a `prismaIME_state` custom event by running script in the focused iframe.
 - UI authors are expected to render their own IME overlay from that event. See `IME_SUPPORT.md`.
 
-## Inspector
+## DevTools
 
-- Inspector assets must exist at `Data/PrismaUI/inspector/Main.html`.
-- `CreateInspectorView` uses Ultralight's local inspector facility.
-- Inspector has independent pixel buffer and D3D texture fields on `PrismaView`.
-- Inspector input routing is special: mouse/scroll events go to inspector when the cursor is inside its bounds; key events go to inspector if it is visible and focused.
+- DevTools is browser-wide: there is exactly one DevTools window for the PrismaUI shell browser, opened via `IVPrismaUI1::OpenDevTools`.
+- All Prisma views are visible in the DevTools frame tree as iframes named `prisma-view-<PrismaView>`.
+- There is no per-view inspector, no embedded inspector surface, and no per-view inspector texture. The old `CreateInspectorView`/`SetInspectorVisibility`/`IsInspectorVisible`/`SetInspectorBounds` methods are intentionally absent from the public header.
 
 ## Common Pitfalls
 
-- Do not call Ultralight `View` methods directly from arbitrary threads.
-- Do not release or recreate D3D resources from the Ultralight thread.
-- Be careful when adding fields to `PrismaView`; consider shutdown, destroy, pending resource release, and thread synchronization.
+- Do not call CEF browser/frame/V8 methods directly from arbitrary threads. Go through `CefRuntime` (browser-process UI thread) or `PrismaCefRenderApp` (renderer-process `TID_RENDERER`).
+- Do not release or recreate D3D resources from a CEF thread; do it on the present/render path.
+- Do not reintroduce per-view textures, bitmap-surface code, or an Ultralight-style render loop. The drawn surface is the single CEF overlay plus the cursor.
+- Be careful when adding fields to `PrismaView`; consider shutdown, destroy, in-flight operation-queue entries, and CEF iframe readiness.
 - Do not change `PrismaUI_API.h` method order or insert methods into earlier interfaces. Add new API only by extending a new interface version.
-- `ViewRenderer::RenderSingleView()` only copies when the Ultralight surface has dirty bounds. If adding behavior that requires a fresh texture, make sure `newFrameReady` and dirty bounds semantics are understood.
-- `ViewOperationQueue` executes at most one operation per view per present-loop pass. Long operations block the Ultralight executor and can cause stutter.
-- `BuildRelease.ps1` assumes a VS Community path unless overridden by `Build_Config_Local.ps1`; prefer direct CMake commands.
-- `Utils::GetBasePath()` uses `std::filesystem::current_path() / "Data" / "PrismaUI"`, which is correct for game runtime assumptions but not arbitrary process working directories.
+- `ViewOperationQueue` executes at most one operation per view per present-loop pass. Long synchronous operations on the present thread cause stutter; offload work into `CefPostTask` instead.
+- `Utils::GetBasePath()` uses `std::filesystem::current_path() / "Data" / "PrismaUI"`, which is correct for the in-game working directory but not for arbitrary process working directories.
+- CEF `RegisterJSListener` and `Invoke` result delivery cross process boundaries; assume failures (frame gone, renderer crash, race with destroy) and ensure callbacks fire exactly once with a sensible payload.
 
 ## Verification
 
 There is no dedicated test suite in this repository. For code changes:
 
-- At minimum, run `cmake -S . --preset=release` and `cmake --build --preset=release --parallel 8` when the local environment has VS, vcpkg, Ninja, and the Ultralight archive.
+- At minimum, run `cmake -S . --preset=release` and `cmake --build --preset=release --parallel 8` when the local environment has VS, vcpkg, Ninja, and the CEF binary archive.
 - For debug/runtime-sensitive work, also build `debug`.
-- For rendering/input/IME changes, static build success is not enough; verify in-game when possible.
-- If the Ultralight archive or external tooling is missing, state that verification was not possible and mention the missing prerequisite.
+- For rendering/input/IME/DevTools/CEF-lifecycle changes, static build success is not enough; verify in-game when possible. Look for `CefInitialize` success, subprocess path, shell browser creation, selected GPU/CPU paint path, and clean `CefShutdown` in logs.
+- If the CEF archive or external tooling is missing, state that verification was not possible and mention the missing prerequisite.

@@ -19,8 +19,8 @@ typedef uint64_t PrismaView;
 namespace PRISMA_UI_API {
     constexpr const auto PrismaUIPluginName = "PrismaUI";
 
-    // Available PrismaUI interface versions. Values 0..2 are the legacy Ultralight-inspector ABI epoch and are unsupported.
-    enum class InterfaceVersion : uint8_t { V1 = 4, V2 = 5, V3 = 6 };
+    // Available PrismaUI interface versions
+    enum class InterfaceVersion : uint8_t { V1, V2, V3 };
 
     typedef void (*OnDomReadyCallback)(PrismaView view);
     typedef void (*OnDomReadyCallbackWithState)(PrismaView view, void* state);
@@ -92,14 +92,18 @@ namespace PRISMA_UI_API {
         // Get view order.
         virtual int GetOrder(PrismaView view) noexcept = 0;
 
-        // Open Chromium DevTools for the PrismaUI shell browser.
-        virtual void OpenDevTools() noexcept = 0;
+        // Create inspector view for debugging.
+        virtual void CreateInspectorView(PrismaView view) noexcept = 0;
 
-        // Close the PrismaUI shell browser DevTools window if it is open.
-        virtual void CloseDevTools() noexcept = 0;
+        // Show or hide the inspector overlay.
+        virtual void SetInspectorVisibility(PrismaView view, bool visible) noexcept = 0;
 
-        // Returns true if the PrismaUI shell browser DevTools window is open.
-        virtual bool IsDevToolsOpen() noexcept = 0;
+        // Returns true if inspector is visible.
+        virtual bool IsInspectorVisible(PrismaView view) noexcept = 0;
+
+        // Set inspector window position and size.
+        virtual void SetInspectorBounds(PrismaView view, float topLeftX, float topLeftY, unsigned int width,
+                                        unsigned int height) noexcept = 0;
 
         // Returns true if any view has active focus.
         virtual bool HasAnyActiveFocus() noexcept = 0;
@@ -144,6 +148,15 @@ namespace PRISMA_UI_API {
         // callbackState may be nullptr.
         virtual void RegisterConsoleCallbackV2(PrismaView view, ConsoleMessageCallbackWithState callback,
             void* callbackState = nullptr) noexcept = 0;
+
+        // Open Chromium DevTools for the PrismaUI shell browser.
+        virtual void OpenDevTools() noexcept = 0;
+
+        // Close the PrismaUI shell browser DevTools window if it is open.
+        virtual void CloseDevTools() noexcept = 0;
+
+        // Returns true if the PrismaUI shell browser DevTools window is open.
+        virtual bool IsDevToolsOpen() noexcept = 0;
     };
 
     // Maps interface types to InterfaceVersion enum values.
@@ -193,7 +206,6 @@ namespace PRISMA_UI_API {
     ///   auto* m_prismaUI   = PRISMA_UI_API::RequestPluginAPI<PRISMA_UI_API::IVPrismaUI1>();
     ///   auto* m_prismaUIv2 = PRISMA_UI_API::RequestPluginAPI<PRISMA_UI_API::IVPrismaUI2>();
     ///   auto* m_prismaUIv3 = PRISMA_UI_API::RequestPluginAPI<PRISMA_UI_API::IVPrismaUI3>();
-    ///   m_prismaUI->OpenDevTools(); // Opens DevTools for the PrismaUI shell browser after recompiling against this ABI epoch.
     template <typename T>
     [[nodiscard]] inline T* RequestPluginAPI() {
         return static_cast<T*>(RequestPluginAPI(InterfaceVersionMap<T>::version));

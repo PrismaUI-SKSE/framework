@@ -136,19 +136,22 @@ int PluginAPI::PrismaUIInterface::GetOrder(PrismaView view) noexcept
 	return PrismaUI::ViewManager::GetOrder(view);
 }
 
-void PluginAPI::PrismaUIInterface::OpenDevTools() noexcept
+void PluginAPI::PrismaUIInterface::CreateInspectorView(PrismaView view) noexcept
 {
-    PrismaUI::Cef::CefRuntime::GetSingleton().OpenDevTools();
 }
 
-void PluginAPI::PrismaUIInterface::CloseDevTools() noexcept
+void PluginAPI::PrismaUIInterface::SetInspectorVisibility(PrismaView view, bool visible) noexcept
 {
-    PrismaUI::Cef::CefRuntime::GetSingleton().CloseDevTools();
 }
 
-bool PluginAPI::PrismaUIInterface::IsDevToolsOpen() noexcept
+bool PluginAPI::PrismaUIInterface::IsInspectorVisible(PrismaView view) noexcept
 {
-    return PrismaUI::Cef::CefRuntime::GetSingleton().IsDevToolsOpen();
+    return false;
+}
+
+void PluginAPI::PrismaUIInterface::SetInspectorBounds(PrismaView view, float topLeftX, float topLeftY, unsigned width,
+    unsigned height) noexcept
+{
 }
 
 bool PluginAPI::PrismaUIInterface::HasAnyActiveFocus() noexcept
@@ -217,6 +220,21 @@ void PluginAPI::PrismaUIInterface::RegisterConsoleCallbackV2(
         });
     };
     PrismaUI::ViewManager::RegisterConsoleCallback(view, wrappedCallback);
+}
+
+void PluginAPI::PrismaUIInterface::OpenDevTools() noexcept
+{
+    PrismaUI::Cef::CefRuntime::GetSingleton().OpenDevTools();
+}
+
+void PluginAPI::PrismaUIInterface::CloseDevTools() noexcept
+{
+    PrismaUI::Cef::CefRuntime::GetSingleton().CloseDevTools();
+}
+
+bool PluginAPI::PrismaUIInterface::IsDevToolsOpen() noexcept
+{
+    return PrismaUI::Cef::CefRuntime::GetSingleton().IsDevToolsOpen();
 }
 
 PrismaView PluginAPI::PrismaUIInterface::CreateViewInternal(

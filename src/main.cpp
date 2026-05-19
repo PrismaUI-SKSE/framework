@@ -56,11 +56,6 @@ RequestPluginAPI(const PRISMA_UI_API::InterfaceVersion a_interfaceVersion) {
   case static_cast<uint8_t>(PRISMA_UI_API::InterfaceVersion::V3):
       logger::info("RequestPluginAPI returned V3 interface for ABI epoch 6");
       return static_cast<PRISMA_UI_API::IVPrismaUI3*>(api);
-  case 0:
-  case 1:
-  case 2:
-    logger::warn("RequestPluginAPI rejected legacy Ultralight-inspector ABI epoch value {}", requestedVersion);
-    return nullptr;
   default:
     logger::info("RequestPluginAPI requested unsupported interface version {}", requestedVersion);
     return nullptr;

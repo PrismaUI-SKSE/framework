@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <cstdint>
 #include <functional>
@@ -39,12 +39,6 @@ namespace PrismaUI::ViewManager {
     void SetOrder(const Core::PrismaViewId& viewId, int order);
     int GetOrder(const Core::PrismaViewId& viewId);
 
-    // Inspector View functions
-    void CreateInspectorView(const Core::PrismaViewId& viewId);
-    void SetInspectorVisibility(const Core::PrismaViewId& viewId, bool visible);
-    bool IsInspectorVisible(const Core::PrismaViewId& viewId);
-    void SetInspectorBounds(const Core::PrismaViewId& viewId, float topLeftX, float topLeftY, uint32_t width,
-                            uint32_t height);
     bool HasAnyActiveFocus();
 
     // Console message callback registration

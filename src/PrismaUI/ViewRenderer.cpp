@@ -1,9 +1,8 @@
-﻿#include "ViewRenderer.h"
+#include "ViewRenderer.h"
 
 #include "Core.h"
 #include "Cef/CefRuntime.h"
 #include "InputHandler.h"
-#include "Inspector.h"
 
 namespace PrismaUI::ViewRenderer {
     using namespace Core;
@@ -50,8 +49,6 @@ namespace PrismaUI::ViewRenderer {
             surface->ClearDirtyBounds();
         }
 
-        // Render inspector view if visible
-        Inspector::RenderInspectorView(viewData);
     }
 
     void CopyBitmapToBuffer(std::shared_ptr<Core::PrismaView> viewData) {
@@ -128,7 +125,6 @@ namespace PrismaUI::ViewRenderer {
                 viewData->id);
 
             ReleaseViewTexture(viewData.get());
-            Inspector::ReleaseInspectorTexture(viewData.get());
 
             viewData->pendingResourceRelease = false;
             return;
@@ -144,16 +140,6 @@ namespace PrismaUI::ViewRenderer {
             }
         }
 
-        // Update inspector texture independently (don't gate on main view frame)
-        if (viewData->inspectorVisible.load() && viewData->inspectorFrameReady.exchange(false)) {
-            std::lock_guard inspectorLock(viewData->inspectorBufferMutex);
-            if (!viewData->inspectorPixelBuffer.empty() && viewData->inspectorBufferWidth > 0 &&
-                viewData->inspectorBufferHeight > 0) {
-                Inspector::CopyInspectorPixelsToTexture(viewData.get(), viewData->inspectorPixelBuffer.data(),
-                                                        viewData->inspectorBufferWidth, viewData->inspectorBufferHeight,
-                                                        viewData->inspectorBufferStride);
-            }
-        }
     }
 
     void CopyPixelsToTexture(Core::PrismaView* viewData, void* pixels, uint32_t width, uint32_t height,
@@ -377,17 +363,5 @@ namespace PrismaUI::ViewRenderer {
         spriteBatch->Draw(viewData->textureView, position, &sourceRect, DirectX::Colors::White, 0.f,
                           DirectX::SimpleMath::Vector2::Zero, 1.0f, DirectX::SpriteEffects_None, 0.f);
 
-        // Draw inspector overlay if visible
-        if (viewData->inspectorVisible.load() && viewData->inspectorTextureView &&
-            viewData->inspectorTextureWidth > 0 && viewData->inspectorTextureHeight > 0) {
-            DirectX::SimpleMath::Vector2 inspectorPos(viewData->inspectorPosX, viewData->inspectorPosY);
-            // Source rect should use actual texture dimensions
-            RECT inspectorSourceRect = {0, 0, (long)viewData->inspectorTextureWidth,
-                                        (long)viewData->inspectorTextureHeight};
-
-            spriteBatch->Draw(viewData->inspectorTextureView, inspectorPos, &inspectorSourceRect,
-                              DirectX::Colors::White, 0.f, DirectX::SimpleMath::Vector2::Zero, 1.0f,
-                              DirectX::SpriteEffects_None, 0.f);
-        }
     }
 }

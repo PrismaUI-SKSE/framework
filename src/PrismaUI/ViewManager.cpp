@@ -444,47 +444,6 @@ namespace PrismaUI::ViewManager {
         return -1;
     }
 
-    // ========== Inspector API Wrappers (Step 6 stubs) ==========
-    // Inspector V3 API stays in the vtable but every call is a deprecation log + no-op.
-    // Step 9 introduces a new API version with proper DevTools verbs.
-
-    namespace {
-        template <typename Tag>
-        void LogDeprecatedOnce(const char* method, const Core::PrismaViewId& viewId) {
-            static std::atomic<bool> logged{false};
-            bool expected = false;
-            if (logged.compare_exchange_strong(expected, true)) {
-                logger::warn(
-                    "{}: Inspector API is deprecated and superseded by the DevTools API in Step 9. "
-                    "Call against View [{}] is a no-op.",
-                    method, viewId);
-            }
-        }
-    }
-
-    struct InspectorCreateTag {};
-    struct InspectorVisibilityTag {};
-    struct InspectorIsVisibleTag {};
-    struct InspectorBoundsTag {};
-
-    void CreateInspectorView(const Core::PrismaViewId& viewId) {
-        LogDeprecatedOnce<InspectorCreateTag>("CreateInspectorView", viewId);
-    }
-
-    void SetInspectorVisibility(const Core::PrismaViewId& viewId, bool /*visible*/) {
-        LogDeprecatedOnce<InspectorVisibilityTag>("SetInspectorVisibility", viewId);
-    }
-
-    bool IsInspectorVisible(const Core::PrismaViewId& viewId) {
-        LogDeprecatedOnce<InspectorIsVisibleTag>("IsInspectorVisible", viewId);
-        return false;
-    }
-
-    void SetInspectorBounds(const Core::PrismaViewId& viewId, float /*topLeftX*/, float /*topLeftY*/,
-                            uint32_t /*width*/, uint32_t /*height*/) {
-        LogDeprecatedOnce<InspectorBoundsTag>("SetInspectorBounds", viewId);
-    }
-
     bool HasAnyActiveFocus() {
         std::shared_lock lock(viewsMutex);
         for (const auto& pair : views) {

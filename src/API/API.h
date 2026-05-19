@@ -42,11 +42,9 @@ public:
         void Destroy(PrismaView view) noexcept override;
         void SetOrder(PrismaView view, int order) noexcept override;
         int GetOrder(PrismaView view) noexcept override;
-        void CreateInspectorView(PrismaView view) noexcept override;
-        void SetInspectorVisibility(PrismaView view, bool visible) noexcept override;
-        bool IsInspectorVisible(PrismaView view) noexcept override;
-        void SetInspectorBounds(PrismaView view, float topLeftX, float topLeftY, unsigned int width,
-                                unsigned int height) noexcept override;
+        void OpenDevTools() noexcept override;
+        void CloseDevTools() noexcept override;
+        bool IsDevToolsOpen() noexcept override;
         bool HasAnyActiveFocus() noexcept override;
 
         // IVPrismaUI2

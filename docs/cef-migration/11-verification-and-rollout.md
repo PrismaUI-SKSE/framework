@@ -66,9 +66,13 @@ cmake --build --preset=debug --parallel 8
    - reload a failing URL
    - destroy during load
    - create/destroy many views in a row
-8. DevTools:
-   - open DevTools for the CEF browser
-   - confirm all Prisma iframe views are visible in the frame tree
+8. DevTools and ABI break:
+   - request legacy numeric interface versions `0`, `1`, and `2`; each returns `nullptr`
+   - request updated `InterfaceVersion::V1`, `V2`, and `V3`; each returns the expected interface pointer after recompilation
+   - confirm the removed inspector methods cannot be called from code compiled against the updated header
+   - call `IsDevToolsOpen()` before opening, after `OpenDevTools()`, after user-closing the DevTools window, and after `CloseDevTools()`
+   - open DevTools for the CEF shell browser and confirm logs include the request, target shell browser ID, tracked DevTools browser ID, and that remote debugging is disabled
+   - confirm all Prisma iframe views are visible in the frame tree as `prisma-view-<PrismaView>`
    - inspect DOM and console output for at least one iframe-backed view
 
 ## Performance Checks
@@ -88,7 +92,7 @@ cmake --build --preset=debug --parallel 8
 - View logs include public view ID, iframe name, URL, lifecycle changes, and failed operations.
 - JS bridge logs include listener binding, invoke request IDs, callback dispatch, and process-message errors.
 - Input logs include focus/capture transitions, WndProc hook status, clipboard failures, and IME association changes.
-- Shutdown logs include browser close request, browser closed, and `CefShutdown` completion.
+- Shutdown logs include DevTools close when open, browser close request, browser closed, and `CefShutdown` completion.
 
 ## Rollout Plan
 
@@ -103,7 +107,7 @@ cmake --build --preset=debug --parallel 8
 - In-game smoke tests pass.
 - GPU accelerated CEF OSR is the normal rendering path; CPU fallback is verified but not the expected path.
 - Important lifecycle and error logs are present.
-- Normal view API compatibility is preserved, or intentional breaking changes are documented.
-- Inspector API changes are documented as an intentional migration break.
-- Existing ABI method order is not accidentally changed. If old interfaces are retained, new methods are added only through a new interface version.
+- The Step 9 ABI break is documented: legacy numeric interface requests `0..2` return `nullptr`, supported values are `V1 = 4`, `V2 = 5`, and `V3 = 6`.
+- Inspector API changes are documented as an intentional migration break, and old per-view inspector methods are absent from the public header.
+- New DevTools methods occupy the intended `IVPrismaUI1` vtable position after `GetOrder` and before `HasAnyActiveFocus`.
 - Known differences from Ultralight are documented before release.

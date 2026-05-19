@@ -35,6 +35,7 @@
 #include "include/cef_process_message.h"
 #include "include/cef_task.h"
 #include "include/cef_values.h"
+#include "include/wrapper/cef_helpers.h"
 
 namespace
 {
@@ -226,6 +227,57 @@ namespace
 
         IMPLEMENT_REFCOUNTING(FunctionTask);
     };
+
+    class DevToolsClient final : public CefClient, public CefLifeSpanHandler
+    {
+    public:
+        using BrowserCallback = std::function<void(CefRefPtr<CefBrowser>)>;
+
+        DevToolsClient(BrowserCallback onCreated, BrowserCallback onClosed) :
+            onCreated_(std::move(onCreated)),
+            onClosed_(std::move(onClosed))
+        {}
+
+        CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override
+        {
+            return this;
+        }
+
+        void OnAfterCreated(CefRefPtr<CefBrowser> browser) override
+        {
+            CEF_REQUIRE_UI_THREAD();
+            if (browser) {
+                logger::info("CEF DevTools OnAfterCreated browser [{}].", browser->GetIdentifier());
+            } else {
+                logger::error("CEF DevTools OnAfterCreated received a null browser.");
+            }
+            if (onCreated_) {
+                onCreated_(browser);
+            }
+        }
+
+        bool DoClose(CefRefPtr<CefBrowser> browser) override
+        {
+            CEF_REQUIRE_UI_THREAD();
+            logger::info("CEF DevTools DoClose browser [{}].", browser ? browser->GetIdentifier() : -1);
+            return false;
+        }
+
+        void OnBeforeClose(CefRefPtr<CefBrowser> browser) override
+        {
+            CEF_REQUIRE_UI_THREAD();
+            logger::info("CEF DevTools OnBeforeClose browser [{}].", browser ? browser->GetIdentifier() : -1);
+            if (onClosed_) {
+                onClosed_(browser);
+            }
+        }
+
+    private:
+        BrowserCallback onCreated_;
+        BrowserCallback onClosed_;
+
+        IMPLEMENT_REFCOUNTING(DevToolsClient);
+    };
 }
 
 namespace PrismaUI::Cef
@@ -241,6 +293,13 @@ namespace PrismaUI::Cef
         std::atomic<bool> shutdownSkipped = false;
         uint32_t width = 0;
         uint32_t height = 0;
+        HWND hwnd = nullptr;
+        mutable std::mutex devToolsMutex;
+        CefRefPtr<CefClient> devToolsClient;
+        CefRefPtr<CefBrowser> devToolsBrowser;
+        std::atomic<bool> devToolsOpen = false;
+        std::atomic<int> devToolsTargetBrowserId = -1;
+        std::atomic<int> devToolsBrowserId = -1;
 
         struct ShellViewState
         {
@@ -379,6 +438,7 @@ namespace PrismaUI::Cef
         impl_->initialized.store(true, std::memory_order_release);
         impl_->width = width;
         impl_->height = height;
+        impl_->hwnd = hwnd;
         logger::info("CefInitialize succeeded.");
 
         impl_->client = new CefOsrClient(width, height);
@@ -983,6 +1043,159 @@ namespace PrismaUI::Cef
         return impl_->shellReady;
     }
 
+    void CefRuntime::OpenDevTools()
+    {
+        logger::info("CEF DevTools open requested.");
+
+        if (!impl_->initialized.load(std::memory_order_acquire)) {
+            logger::warn("CEF DevTools open ignored because CEF is not initialized.");
+            return;
+        }
+
+        CefRefPtr<CefOsrClient> client;
+        HWND hwnd = nullptr;
+        {
+            std::lock_guard lock(impl_->stateMutex);
+            client = impl_->client;
+            hwnd = impl_->hwnd;
+        }
+
+        if (!client || !client->HasBrowser()) {
+            logger::warn("CEF DevTools open ignored because no shell browser is available.");
+            return;
+        }
+
+        PostToCefUi([this, client, hwnd]() {
+            CefRefPtr<CefBrowser> browser = client->GetBrowserOnUiThread();
+            CefRefPtr<CefBrowserHost> host = browser ? browser->GetHost() : nullptr;
+            if (!browser || !host) {
+                logger::error("CEF DevTools open failed: shell browser host is unavailable.");
+                return;
+            }
+
+            const int targetBrowserId = browser->GetIdentifier();
+            logger::info("CEF DevTools opening for shell browser [{}]; remote debugging is disabled.", targetBrowserId);
+
+            if (host->HasDevTools()) {
+                impl_->devToolsOpen.store(true, std::memory_order_release);
+                impl_->devToolsTargetBrowserId.store(targetBrowserId, std::memory_order_release);
+                logger::info("CEF DevTools already open for shell browser [{}]; focusing existing DevTools.", targetBrowserId);
+                CefWindowInfo ignoredWindowInfo;
+                CefBrowserSettings ignoredSettings;
+                host->ShowDevTools(ignoredWindowInfo, nullptr, ignoredSettings, CefPoint());
+                return;
+            }
+
+            CefRefPtr<DevToolsClient> devToolsClient = new DevToolsClient(
+                [this, targetBrowserId](CefRefPtr<CefBrowser> devToolsBrowser) {
+                    if (!devToolsBrowser) {
+                        impl_->devToolsOpen.store(false, std::memory_order_release);
+                        impl_->devToolsBrowserId.store(-1, std::memory_order_release);
+                        logger::error("CEF DevTools failed to report a browser for shell browser [{}].", targetBrowserId);
+                        return;
+                    }
+
+                    {
+                        std::lock_guard lock(impl_->devToolsMutex);
+                        impl_->devToolsBrowser = devToolsBrowser;
+                    }
+                    impl_->devToolsOpen.store(true, std::memory_order_release);
+                    impl_->devToolsTargetBrowserId.store(targetBrowserId, std::memory_order_release);
+                    impl_->devToolsBrowserId.store(devToolsBrowser->GetIdentifier(), std::memory_order_release);
+                    logger::info("CEF DevTools browser [{}] opened for shell browser [{}].",
+                                 devToolsBrowser->GetIdentifier(), targetBrowserId);
+                },
+                [this, targetBrowserId](CefRefPtr<CefBrowser> devToolsBrowser) {
+                    const int devToolsBrowserId = devToolsBrowser ? devToolsBrowser->GetIdentifier() : -1;
+                    {
+                        std::lock_guard lock(impl_->devToolsMutex);
+                        impl_->devToolsBrowser = nullptr;
+                        impl_->devToolsClient = nullptr;
+                    }
+                    impl_->devToolsOpen.store(false, std::memory_order_release);
+                    impl_->devToolsTargetBrowserId.store(-1, std::memory_order_release);
+                    impl_->devToolsBrowserId.store(-1, std::memory_order_release);
+                    logger::info("CEF DevTools browser [{}] closed for shell browser [{}].", devToolsBrowserId,
+                                 targetBrowserId);
+                });
+
+            {
+                std::lock_guard lock(impl_->devToolsMutex);
+                impl_->devToolsClient = devToolsClient;
+            }
+
+            CefWindowInfo windowInfo;
+            CefString windowTitle;
+            windowTitle.FromASCII("PrismaUI DevTools");
+            windowInfo.SetAsPopup(hwnd, windowTitle);
+
+            CefBrowserSettings browserSettings;
+            host->ShowDevTools(windowInfo, devToolsClient, browserSettings, CefPoint());
+            logger::info("CEF DevTools ShowDevTools submitted for shell browser [{}].", targetBrowserId);
+        });
+    }
+
+    void CefRuntime::CloseDevTools()
+    {
+        logger::info("CEF DevTools close requested.");
+
+        if (!impl_->initialized.load(std::memory_order_acquire)) {
+            logger::warn("CEF DevTools close ignored because CEF is not initialized.");
+            return;
+        }
+
+        CefRefPtr<CefOsrClient> client;
+        {
+            std::lock_guard lock(impl_->stateMutex);
+            client = impl_->client;
+        }
+
+        if (!client || !client->HasBrowser()) {
+            logger::warn("CEF DevTools close found no shell browser.");
+            {
+                std::lock_guard lock(impl_->devToolsMutex);
+                impl_->devToolsBrowser = nullptr;
+                impl_->devToolsClient = nullptr;
+            }
+            impl_->devToolsOpen.store(false, std::memory_order_release);
+            impl_->devToolsTargetBrowserId.store(-1, std::memory_order_release);
+            impl_->devToolsBrowserId.store(-1, std::memory_order_release);
+            return;
+        }
+
+        PostToCefUi([this, client]() {
+            CefRefPtr<CefBrowser> browser = client->GetBrowserOnUiThread();
+            CefRefPtr<CefBrowserHost> host = browser ? browser->GetHost() : nullptr;
+            if (!browser || !host) {
+                logger::error("CEF DevTools close failed: shell browser host is unavailable.");
+                return;
+            }
+
+            const int targetBrowserId = browser->GetIdentifier();
+            if (!host->HasDevTools()) {
+                logger::info("CEF DevTools close no-op: shell browser [{}] has no DevTools.", targetBrowserId);
+                {
+                    std::lock_guard lock(impl_->devToolsMutex);
+                    impl_->devToolsBrowser = nullptr;
+                    impl_->devToolsClient = nullptr;
+                }
+                impl_->devToolsOpen.store(false, std::memory_order_release);
+                impl_->devToolsTargetBrowserId.store(-1, std::memory_order_release);
+                impl_->devToolsBrowserId.store(-1, std::memory_order_release);
+                return;
+            }
+
+            logger::info("CEF DevTools CloseDevTools submitted for shell browser [{}], tracked DevTools browser [{}].",
+                         targetBrowserId, impl_->devToolsBrowserId.load(std::memory_order_acquire));
+            host->CloseDevTools();
+        });
+    }
+
+    bool CefRuntime::IsDevToolsOpen() const
+    {
+        return impl_->devToolsOpen.load(std::memory_order_acquire);
+    }
+
     void CefRuntime::NotifyShellLoadStart(const std::string& frameIdentifier, const std::string& url)
     {
         std::lock_guard lock(impl_->shellMutex);
@@ -1109,7 +1322,16 @@ namespace PrismaUI::Cef
         bool browserClosed = true;
         if (client && client->HasBrowser()) {
             client->ResetCloseSignal();
-            PostToCefUi([client]() { client->CloseBrowser(); });
+            PostToCefUi([this, client]() {
+                CefRefPtr<CefBrowser> browser = client->GetBrowserOnUiThread();
+                CefRefPtr<CefBrowserHost> host = browser ? browser->GetHost() : nullptr;
+                if (browser && host && host->HasDevTools()) {
+                    logger::info("CEF shutdown closing DevTools for shell browser [{}], tracked DevTools browser [{}].",
+                                 browser->GetIdentifier(), impl_->devToolsBrowserId.load(std::memory_order_acquire));
+                    host->CloseDevTools();
+                }
+                client->CloseBrowser();
+            });
             browserClosed = client->WaitForClose(kBrowserCloseTimeout);
             if (browserClosed) {
                 logger::info("CEF browser closed before shutdown.");
@@ -1137,6 +1359,15 @@ namespace PrismaUI::Cef
             impl_->shellUrl.clear();
         }
 
+        {
+            std::lock_guard lock(impl_->devToolsMutex);
+            impl_->devToolsBrowser = nullptr;
+            impl_->devToolsClient = nullptr;
+        }
+        impl_->devToolsOpen.store(false, std::memory_order_release);
+        impl_->devToolsTargetBrowserId.store(-1, std::memory_order_release);
+        impl_->devToolsBrowserId.store(-1, std::memory_order_release);
+
         logger::info("Calling CefShutdown.");
         CefShutdown();
         logger::info("CefShutdown completed.");
@@ -1147,6 +1378,7 @@ namespace PrismaUI::Cef
             impl_->app = nullptr;
             impl_->width = 0;
             impl_->height = 0;
+            impl_->hwnd = nullptr;
             impl_->initialized.store(false, std::memory_order_release);
             impl_->shuttingDown.store(false, std::memory_order_release);
         }

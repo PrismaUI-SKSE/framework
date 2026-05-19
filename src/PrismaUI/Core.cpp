@@ -5,7 +5,6 @@
 #include "Cef/CefRuntime.h"
 #include "Communication.h"
 #include "InputHandler.h"
-#include "Inspector.h"
 #include "Utils/DllLoader.h"
 #include "ViewManager.h"
 #include "ViewOperationQueue.h"
@@ -303,7 +302,6 @@ namespace PrismaUI::Core {
                     "thread",
                     viewId);
                 ViewRenderer::ReleaseViewTexture(viewData.get());
-                Inspector::ReleaseInspectorTexture(viewData.get());
                 viewData->pendingResourceRelease = false;
             }
         }

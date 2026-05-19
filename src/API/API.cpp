@@ -1,4 +1,5 @@
 #include "API.h"
+#include "Cef/CefRuntime.h"
 #include "Utils/Encoding.h"
 #include "PrismaUI/ViewManager.h"
 #include "PrismaUI/Communication.h"
@@ -135,36 +136,19 @@ int PluginAPI::PrismaUIInterface::GetOrder(PrismaView view) noexcept
 	return PrismaUI::ViewManager::GetOrder(view);
 }
 
-void PluginAPI::PrismaUIInterface::CreateInspectorView(PrismaView view) noexcept
+void PluginAPI::PrismaUIInterface::OpenDevTools() noexcept
 {
-    if (!view) {
-        return;
-    }
-    return PrismaUI::ViewManager::CreateInspectorView(view);
+    PrismaUI::Cef::CefRuntime::GetSingleton().OpenDevTools();
 }
 
-void PluginAPI::PrismaUIInterface::SetInspectorVisibility(PrismaView view, bool visible) noexcept
+void PluginAPI::PrismaUIInterface::CloseDevTools() noexcept
 {
-    if (!view) {
-        return;
-    }
-    return PrismaUI::ViewManager::SetInspectorVisibility(view, visible);
+    PrismaUI::Cef::CefRuntime::GetSingleton().CloseDevTools();
 }
 
-bool PluginAPI::PrismaUIInterface::IsInspectorVisible(PrismaView view) noexcept
+bool PluginAPI::PrismaUIInterface::IsDevToolsOpen() noexcept
 {
-    if (!view) {
-        return false;
-    }
-    return PrismaUI::ViewManager::IsInspectorVisible(view);
-}
-
-void PluginAPI::PrismaUIInterface::SetInspectorBounds(PrismaView view, float topLeftX, float topLeftY, unsigned int width, unsigned int height) noexcept
-{
-    if (!view) {
-        return;
-    }
-    return PrismaUI::ViewManager::SetInspectorBounds(view, topLeftX, topLeftY, width, height);
+    return PrismaUI::Cef::CefRuntime::GetSingleton().IsDevToolsOpen();
 }
 
 bool PluginAPI::PrismaUIInterface::HasAnyActiveFocus() noexcept

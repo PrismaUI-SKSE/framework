@@ -13,9 +13,20 @@ Treat this as an intentional public API break or a new API-version boundary:
 - Use Chromium's frame tree to inspect individual Prisma iframe views.
 - Document that all Prisma views are represented as iframes in the DevTools target.
 
-## Recommended API Shape
+## Final API Shape
 
-If a public debug API is still needed, replace the old inspector methods with a simpler DevTools-oriented surface in a new interface version:
+Step 9 is an intentional ABI epoch break, not a compatible extension. `InterfaceVersion` values `0`, `1`, and `2` are legacy Ultralight-inspector ABI values and are rejected with `nullptr`. The supported source-level interfaces remain `IVPrismaUI1`, `IVPrismaUI2`, and `IVPrismaUI3`, but their numeric values are now `V1 = 4`, `V2 = 5`, and `V3 = 6`.
+
+The old per-view inspector methods were removed from `IVPrismaUI1`:
+
+```cpp
+CreateInspectorView(PrismaView view)
+SetInspectorVisibility(PrismaView view, bool visible)
+IsInspectorVisible(PrismaView view)
+SetInspectorBounds(PrismaView view, float topLeftX, float topLeftY, unsigned int width, unsigned int height)
+```
+
+They were replaced in the same vtable position by browser-wide DevTools methods:
 
 ```cpp
 virtual void OpenDevTools() noexcept = 0;
@@ -31,13 +42,21 @@ Optional later additions:
 
 Use standard Chromium DevTools only:
 
-1. Enable CEF remote debugging or call `ShowDevTools` with a normal CEF window if viable in the Skyrim process.
-2. Let Chromium DevTools inspect the main browser.
-3. Rely on iframe visibility in DevTools to debug individual Prisma views.
-4. Remove the old inspector texture and input routing code.
-5. Log DevTools open/close requests, success/failure, target browser ID, and remote debugging port if remote debugging is enabled.
+1. `CefRuntime::OpenDevTools()` calls `CefBrowserHost::ShowDevTools` for the single PrismaUI shell browser using a normal native popup window parented to the game HWND when available.
+2. `CefRuntime::CloseDevTools()` calls `CefBrowserHost::CloseDevTools` on the shell browser host.
+3. DevTools lifecycle is tracked in `CefRuntime`, not on `PrismaView`, because all public Prisma views are iframes inside the shell browser.
+4. A dedicated DevTools `CefClient` tracks DevTools browser create/close callbacks so user-close updates `IsDevToolsOpen()`.
+5. Remote debugging is not enabled by default in Step 9. Logs explicitly note that remote debugging is disabled, and log open/close requests, target shell browser IDs, tracked DevTools browser IDs, and failures.
+6. The old inspector texture/resource path and `src/PrismaUI/Inspector.*` are removed from normal rendering.
 
 Do not implement embedded OSR DevTools. It would recreate a second rendering/input stack for debug-only UI and does not fit the iframe-based CEF architecture.
+
+## Inspecting A Prisma View
+
+1. Request the recompiled API (`InterfaceVersion::V1`, `V2`, or `V3` from the current header) and call `OpenDevTools()`.
+2. In Chromium DevTools, inspect the main PrismaUI shell browser.
+3. Select the frame named `prisma-view-<PrismaView>` in the frame tree, or inspect the iframe element with `data-prisma-view-id="<PrismaView>"`.
+4. Use that frame context for DOM, console, and script inspection for the corresponding Prisma view.
 
 ## Migration Tasks
 

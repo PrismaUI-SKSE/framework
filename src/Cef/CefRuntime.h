@@ -94,6 +94,10 @@ namespace PrismaUI::Cef
         bool BlurShellView(uint64_t viewId);
         bool TryGetShellFrameName(uint64_t viewId, std::string& outName) const;
         bool IsShellReady() const;
+        void OpenDevTools();
+        void CloseDevTools();
+        bool IsDevToolsOpen() const;
+
 
         // Dispatch a batch of native input events to the focused CEF OSR shell iframe.
         // The events are copied into a single CEF UI-thread task; callers must not call

@@ -66,36 +66,16 @@ namespace PrismaUI::Core {
         std::move_only_function<void(PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> consoleMessageCallback;
 
         // ---- Transitional Ultralight fields (Step 6/7) ----
-        // Declared so out-of-scope modules (InputHandler, ImeHelper, Inspector,
-        // ViewRenderer) keep compiling. ViewManager/Core/Communication no longer
-        // touch these. Steps 8-9 retire those dependents; Step 10 deletes the fields.
+        // Declared so out-of-scope modules (InputHandler, ImeHelper, ViewRenderer)
+        // keep compiling. ViewManager/Core/Communication no longer touch these.
+        // Steps 8-10 retire those dependents.
         RefPtr<View> ultralightView = nullptr;
-        RefPtr<View> inspectorView = nullptr;
         std::string htmlPathToLoad;                                  // deprecated; superseded by resolvedUrl + iframeCreateRequested
         std::string originalUrl;                                     // retained for Step 11 recovery policy
         std::string lastLoadedUrl;                                   // deprecated; removed in Step 10
         std::atomic<bool> isLoadingFinished = false;                 // deprecated; ViewRenderer/InputHandler still read it (Step 10)
-        std::atomic<bool> inspectorVisible = false;                  // deprecated; Step 9 replaces with DevTools API
         std::atomic<bool> needsRecovery = false;                     // deprecated; Step 11 reintroduces recovery
         std::atomic<int> recoveryAttempts = 0;                       // deprecated; Step 11 reintroduces recovery
-
-        // Inspector rendering data
-        std::vector<std::byte> inspectorPixelBuffer;
-        uint32_t inspectorBufferWidth = 0;
-        uint32_t inspectorBufferHeight = 0;
-        uint32_t inspectorBufferStride = 0;
-        std::mutex inspectorBufferMutex;
-        std::atomic<bool> inspectorFrameReady = false;
-        std::atomic<bool> inspectorPointerHover = false;
-        ID3D11Texture2D* inspectorTexture = nullptr;
-        ID3D11ShaderResourceView* inspectorTextureView = nullptr;
-        uint32_t inspectorTextureWidth = 0;
-        uint32_t inspectorTextureHeight = 0;
-        float inspectorPosX = 0.0f;
-        float inspectorPosY = 0.0f;
-        uint32_t inspectorDisplayWidth = 0;
-        uint32_t inspectorDisplayHeight = 0;
-        float inspectorOpacity = 1.0f;
 
         // Primary view rendering data
         ID3D11Texture2D* texture = nullptr;
@@ -155,10 +135,4 @@ namespace PrismaUI::Core {
     void D3DPresent(uint32_t a_p1);
     void Shutdown();
 
-    // Inspector View functions
-    void CreateInspectorView(const PrismaViewId& viewId);
-    void SetInspectorVisibility(const PrismaViewId& viewId, bool visible);
-    bool IsInspectorVisible(const PrismaViewId& viewId);
-    void SetInspectorBounds(const PrismaViewId& viewId, float topLeftX, float topLeftY, uint32_t width,
-                            uint32_t height);
 }

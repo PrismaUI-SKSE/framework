@@ -1,4 +1,4 @@
-﻿#include "API/API.h"
+#include "API/API.h"
 #include "Menus/CursorMenu/CursorMenu.h"
 #include "PrismaUI_API.h"
 #include "Utils/DllLoader.h"
@@ -50,18 +50,24 @@ extern "C" DLLEXPORT void *SKSEAPI
 RequestPluginAPI(const PRISMA_UI_API::InterfaceVersion a_interfaceVersion) {
   auto api = PluginAPI::PrismaUIInterface::GetSingleton();
 
-  switch (a_interfaceVersion) {
-  case PRISMA_UI_API::InterfaceVersion::V1:
-    logger::info("RequestPluginAPI returned V1 interface");
+  const auto requestedVersion = static_cast<uint8_t>(a_interfaceVersion);
+  switch (requestedVersion) {
+  case static_cast<uint8_t>(PRISMA_UI_API::InterfaceVersion::V1):
+    logger::info("RequestPluginAPI returned V1 interface for ABI epoch 4");
     return static_cast<PRISMA_UI_API::IVPrismaUI1*>(api);
-  case PRISMA_UI_API::InterfaceVersion::V2:
-    logger::info("RequestPluginAPI returned V2 interface");
+  case static_cast<uint8_t>(PRISMA_UI_API::InterfaceVersion::V2):
+    logger::info("RequestPluginAPI returned V2 interface for ABI epoch 5");
     return static_cast<PRISMA_UI_API::IVPrismaUI2*>(api);
-  case PRISMA_UI_API::InterfaceVersion::V3:
-      logger::info("RequestPluginAPI returned V3 interface");
+  case static_cast<uint8_t>(PRISMA_UI_API::InterfaceVersion::V3):
+      logger::info("RequestPluginAPI returned V3 interface for ABI epoch 6");
       return static_cast<PRISMA_UI_API::IVPrismaUI3*>(api);
+  case 0:
+  case 1:
+  case 2:
+    logger::warn("RequestPluginAPI rejected legacy Ultralight-inspector ABI epoch value {}", requestedVersion);
+    return nullptr;
   default:
-    logger::info("RequestPluginAPI requested unsupported interface version");
+    logger::info("RequestPluginAPI requested unsupported interface version {}", requestedVersion);
     return nullptr;
   }
 }

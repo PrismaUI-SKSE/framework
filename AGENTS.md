@@ -43,12 +43,12 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
 - `src/main.cpp`: SKSE entry point, logger setup, SKSE messaging, API export. No DLL preloading — CEF is loaded lazily by `Cef::CefRuntime` through `DllLoader::LoadCefLibraries()`.
 - `src/PrismaUI_API.h`: public modder-facing API. Mods may copy this header.
 - `src/API/`: implementation of the exported PrismaUI API singleton; DevTools methods (`OpenDevTools`/`CloseDevTools`/`IsDevToolsOpen`) live in `IVPrismaUI1` after `GetOrder` and before `HasAnyActiveFocus`.
-- `src/Cef/CefRuntime.*`: CEF process/runtime lifecycle, OSR browser, shell-page command bus, JS invoke result bridge, DevTools control, GPU/CPU paint upload.
-- `src/Cef/CefOsrClient.*`: `CefClient` for the shell browser; OSR `OnPaint`/`OnAcceleratedPaint`, load/render-handler glue.
-- `src/Cef/PrismaCefApp.*`: browser-process `CefApp`.
-- `src/Cef/PrismaCefRenderApp.*`: renderer-process `CefRenderProcessHandler`; owns V8 bindings for `Invoke`/`InteropCall`/`RegisterJSListener`/DOM-ready/console.
-- `src/Cef/ProcessMessageNames.h`: stable IPC message names shared between browser and renderer.
-- `src/Cef/SubprocessMain.cpp`: entry point for `PrismaUICefSubprocess.exe`.
+- `src/Cef/Browser/CefRuntime.*`: CEF process/runtime lifecycle, OSR browser, shell-page command bus, JS invoke result bridge, DevTools control, GPU/CPU paint upload. Linked into `PrismaUI.dll` only.
+- `src/Cef/Browser/CefOsrClient.*`: `CefClient` for the shell browser; OSR `OnPaint`/`OnAcceleratedPaint`, load/render-handler glue. Linked into `PrismaUI.dll` only.
+- `src/Cef/Shared/PrismaCefApp.*`: `CefApp` returned in both processes. Linked into `PrismaUI.dll` and `PrismaUICefSubprocess.exe`.
+- `src/Cef/Shared/PrismaCefRenderApp.*`: renderer-process `CefRenderProcessHandler`; owns V8 bindings for `Invoke`/`InteropCall`/`RegisterJSListener`/DOM-ready/console. Linked into both processes; only executes in the renderer subprocess.
+- `src/Cef/Shared/ProcessMessageNames.h`: stable IPC message names shared between browser and renderer.
+- `src/Cef/Subprocess/SubprocessMain.cpp`: entry point for `PrismaUICefSubprocess.exe`.
 - `src/PrismaUI/Core.*`: global runtime state, D3D present hook, CEF lifecycle wiring, render loop, shutdown.
 - `src/PrismaUI/ViewManager.*`: view lifecycle, show/hide/focus/unfocus, order, destroy, console callbacks; routes through `CefRuntime` shell commands.
 - `src/PrismaUI/ViewRenderer.*`: CEF overlay draw + cursor draw on the present path. No per-view textures.

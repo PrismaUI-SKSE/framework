@@ -1,6 +1,6 @@
-#include "Cef/PrismaCefApp.h"
+#include "Cef/Shared/PrismaCefApp.h"
 
-#include "Cef/PrismaCefRenderApp.h"
+#include "Cef/Shared/PrismaCefRenderApp.h"
 #include "include/cef_command_line.h"
 
 namespace PrismaUI::Cef

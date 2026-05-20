@@ -35,19 +35,19 @@ file(GLOB_RECURSE SOURCES
 )
 
 set(PRISMAUI_CEF_SHARED_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/PrismaCefApp.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/PrismaCefApp.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/PrismaCefRenderApp.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/PrismaCefRenderApp.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/ProcessMessageNames.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Shared/PrismaCefApp.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Shared/PrismaCefApp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Shared/PrismaCefRenderApp.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Shared/PrismaCefRenderApp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Shared/ProcessMessageNames.h"
 )
 
 set(PRISMAUI_CEF_SUBPROCESS_SOURCES
     ${PRISMAUI_CEF_SHARED_SOURCES}
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/SubprocessMain.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Subprocess/SubprocessMain.cpp"
 )
 
-list(REMOVE_ITEM SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/SubprocessMain.cpp")
+list(REMOVE_ITEM SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Subprocess/SubprocessMain.cpp")
 
 # Create source groups for IDE
 source_group(
@@ -74,10 +74,10 @@ add_commonlibsse_plugin(${PROJECT_NAME}
 )
 
 set_source_files_properties(
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/PrismaCefApp.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/PrismaCefRenderApp.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/CefRuntime.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/CefOsrClient.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Shared/PrismaCefApp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Shared/PrismaCefRenderApp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Browser/CefRuntime.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Browser/CefOsrClient.cpp"
     PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 

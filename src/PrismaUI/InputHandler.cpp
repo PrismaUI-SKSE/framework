@@ -2,8 +2,8 @@
 
 #include <commctrl.h>
 
-#include "Cef/CefRuntime.h"
-#include "Cef/ProcessMessageNames.h"
+#include "Cef/Browser/CefRuntime.h"
+#include "Cef/Shared/ProcessMessageNames.h"
 #include "Communication.h"
 #include "Core.h"
 #include "ImeHelper.h"

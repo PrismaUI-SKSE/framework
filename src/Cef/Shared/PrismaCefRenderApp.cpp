@@ -1,6 +1,6 @@
-#include "Cef/PrismaCefRenderApp.h"
+#include "Cef/Shared/PrismaCefRenderApp.h"
 
-#include "Cef/ProcessMessageNames.h"
+#include "Cef/Shared/ProcessMessageNames.h"
 #include "include/base/cef_logging.h"
 #include "include/cef_browser.h"
 #include "include/cef_frame.h"

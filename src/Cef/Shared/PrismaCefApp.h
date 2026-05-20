@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Cef/PrismaCefRenderApp.h"
+#include "Cef/Shared/PrismaCefRenderApp.h"
 #include "include/cef_app.h"
 
 namespace PrismaUI::Cef

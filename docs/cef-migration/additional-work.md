@@ -2,6 +2,5 @@
 - Remove console logs from cef.log and PrismaUI.log
 - Check that each prisma view give its own console logs
 - Refactor duplicated DirectX, CEF API code
-- Separate PrismaUI CEF code and PrismaUICefSubprocess code
 - Fix JS interop
-- Set renderer max fps to 120
+- Create C++ shell API

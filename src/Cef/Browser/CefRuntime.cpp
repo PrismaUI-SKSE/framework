@@ -4,7 +4,7 @@
 #    undef GetNextSibling
 #endif
 
-#include "Cef/CefRuntime.h"
+#include "Cef/Browser/CefRuntime.h"
 #include <d3d11_1.h>
 #include <d3d11_4.h>
 #include <wrl/client.h>
@@ -25,9 +25,9 @@
 #include <type_traits>
 #include <vector>
 
-#include "Cef/CefOsrClient.h"
-#include "Cef/PrismaCefApp.h"
-#include "Cef/ProcessMessageNames.h"
+#include "Cef/Browser/CefOsrClient.h"
+#include "Cef/Shared/PrismaCefApp.h"
+#include "Cef/Shared/ProcessMessageNames.h"
 #include "PrismaUI/Communication.h"
 #include "Utils/DllLoader.h"
 #include "include/cef_app.h"

@@ -4,8 +4,8 @@
 #    undef GetNextSibling
 #endif
 
-#include "Cef/CefOsrClient.h"
-#include "Cef/CefRuntime.h"
+#include "Cef/Browser/CefOsrClient.h"
+#include "Cef/Browser/CefRuntime.h"
 #include "include/cef_process_message.h"
 #include "include/cef_values.h"
 

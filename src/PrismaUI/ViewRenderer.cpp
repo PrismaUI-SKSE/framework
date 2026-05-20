@@ -5,44 +5,12 @@
 #include "Cef/Browser/CefRuntime.h"
 #include "Core.h"
 #include "InputHandler.h"
+#include "Utils/D3DStateGuard.h"
 
 namespace PrismaUI::ViewRenderer {
     using namespace Core;
 
-    namespace {
-        class D3DStateGuard {
-        public:
-            explicit D3DStateGuard(ID3D11DeviceContext* context) : context_(context) {
-                if (!context_) return;
-                context_->OMGetBlendState(&blendState_, blendFactor_, &sampleMask_);
-                context_->OMGetDepthStencilState(&depthStencilState_, &stencilRef_);
-                context_->RSGetState(&rasterizerState_);
-            }
-
-            ~D3DStateGuard() {
-                if (!context_) return;
-                context_->OMSetBlendState(blendState_, blendFactor_, sampleMask_);
-                context_->OMSetDepthStencilState(depthStencilState_, stencilRef_);
-                context_->RSSetState(rasterizerState_);
-
-                if (blendState_) blendState_->Release();
-                if (depthStencilState_) depthStencilState_->Release();
-                if (rasterizerState_) rasterizerState_->Release();
-            }
-
-            D3DStateGuard(const D3DStateGuard&) = delete;
-            D3DStateGuard& operator=(const D3DStateGuard&) = delete;
-
-        private:
-            ID3D11DeviceContext* context_ = nullptr;
-            ID3D11BlendState* blendState_ = nullptr;
-            FLOAT blendFactor_[4] = {};
-            UINT sampleMask_ = 0;
-            ID3D11DepthStencilState* depthStencilState_ = nullptr;
-            UINT stencilRef_ = 0;
-            ID3D11RasterizerState* rasterizerState_ = nullptr;
-        };
-    }
+    using PrismaUI::Utils::D3DStateGuard;
 
     void DrawViews() {
         if (!spriteBatch || !commonStates) return;

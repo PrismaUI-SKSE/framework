@@ -5,9 +5,8 @@
 #endif
 
 #include "Cef/Browser/CefRuntime.h"
-#include <d3d11_1.h>
-#include <d3d11_4.h>
-#include <wrl/client.h>
+
+#include "Cef/Browser/OverlayTexture.h"
 
 #include <algorithm>
 #include <atomic>
@@ -41,38 +40,6 @@ namespace
 {
     constexpr int kCefWindowlessFrameRate = 120;
     constexpr std::chrono::milliseconds kBrowserCloseTimeout{5000};
-
-    enum class OverlayMode : uint8_t
-    {
-        None,
-        Accelerated,
-        Cpu
-    };
-
-    struct OverlayDesc
-    {
-        uint32_t width = 0;
-        uint32_t height = 0;
-        DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
-
-        bool Matches(const D3D11_TEXTURE2D_DESC& desc) const
-        {
-            return width == desc.Width && height == desc.Height && format == desc.Format;
-        }
-    };
-
-    const char* OverlayModeName(OverlayMode mode)
-    {
-        switch (mode) {
-            case OverlayMode::Accelerated:
-                return "accelerated shared texture";
-            case OverlayMode::Cpu:
-                return "CPU OnPaint fallback";
-            default:
-                return "none";
-        }
-    }
-
     std::wstring ToFileUrl(const std::filesystem::path& path)
     {
         std::wstring generic = std::filesystem::absolute(path).generic_wstring();
@@ -320,23 +287,8 @@ namespace PrismaUI::Cef
         std::string shellFrameIdentifier;
         std::string shellUrl;
 
-        mutable std::mutex overlayMutex;
-        Microsoft::WRL::ComPtr<ID3D11Device> renderDevice;
-        Microsoft::WRL::ComPtr<ID3D11Device1> renderDevice1;
-        Microsoft::WRL::ComPtr<ID3D11DeviceContext> renderContext;
-        Microsoft::WRL::ComPtr<ID3D11Multithread> d3dMultithread;
-        Microsoft::WRL::ComPtr<ID3D11Texture2D> overlayTexture;
-        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> overlaySrv;
-        OverlayDesc overlayDesc;
-        OverlayDesc pendingAcceleratedDesc;
-        OverlayMode overlayMode = OverlayMode::None;
-        OverlayMode activeMode = OverlayMode::None;
-        bool pendingAcceleratedTexture = false;
-        bool overlayHasFrame = false;
-        bool multithreadProtectionConfigured = false;
-        bool multithreadProtectionUnavailableLogged = false;
+        OverlayTexture overlay;
         bool missingD3DLogged = false;
-        bool firstAcceleratedCopyLogged = false;
 
         // ---- Step 7 JS bridge state ----
         struct InvokeEntry
@@ -527,97 +479,28 @@ namespace PrismaUI::Cef
         }
 
         if (!device || !context) {
-            std::lock_guard lock(impl_->overlayMutex);
             if (!impl_->missingD3DLogged) {
                 logger::warn("CEF overlay texture update skipped: D3D device/context is missing.");
                 impl_->missingD3DLogged = true;
             }
             return;
         }
+        impl_->missingD3DLogged = false;
+
+        impl_->overlay.BindRenderDevice(device, context);
+
+        if (impl_->overlay.RealizePendingAccelerated()) {
+            PostToCefUi([client]() {
+                client->InvalidateView();
+                client->SendExternalBeginFrame();
+            });
+        }
 
         std::vector<std::byte> cpuFrame;
         uint32_t cpuWidth = 0;
         uint32_t cpuHeight = 0;
         uint32_t cpuStride = 0;
-        const bool hasCpuFrame = client->ConsumeCpuFrame(cpuFrame, cpuWidth, cpuHeight, cpuStride);
-
-        std::lock_guard lock(impl_->overlayMutex);
-        impl_->missingD3DLogged = false;
-
-        if (impl_->renderDevice.Get() != device) {
-            impl_->renderDevice = device;
-            impl_->renderDevice1.Reset();
-            const HRESULT hr = device->QueryInterface(IID_PPV_ARGS(impl_->renderDevice1.ReleaseAndGetAddressOf()));
-            if (FAILED(hr)) {
-                logger::error("CEF accelerated OSR disabled: D3D device does not expose ID3D11Device1. HR={:#X}", hr);
-            }
-        }
-
-        if (impl_->renderContext.Get() != context) {
-            impl_->renderContext = context;
-            impl_->d3dMultithread.Reset();
-            impl_->multithreadProtectionConfigured = false;
-        }
-
-        if (!impl_->multithreadProtectionConfigured) {
-            const HRESULT hr = context->QueryInterface(IID_PPV_ARGS(impl_->d3dMultithread.ReleaseAndGetAddressOf()));
-            if (SUCCEEDED(hr) && impl_->d3dMultithread) {
-                const BOOL wasProtected = impl_->d3dMultithread->SetMultithreadProtected(TRUE);
-                logger::info("CEF overlay enabled D3D11 multithread protection (previously {}).",
-                             wasProtected ? "enabled" : "disabled");
-            } else if (!impl_->multithreadProtectionUnavailableLogged) {
-                logger::warn("CEF overlay could not acquire ID3D11Multithread; accelerated copies will use only the overlay mutex. HR={:#X}",
-                             hr);
-                impl_->multithreadProtectionUnavailableLogged = true;
-            }
-            impl_->multithreadProtectionConfigured = true;
-        }
-
-        if (impl_->pendingAcceleratedTexture && impl_->pendingAcceleratedDesc.width != 0 &&
-            impl_->pendingAcceleratedDesc.height != 0 && impl_->pendingAcceleratedDesc.format != DXGI_FORMAT_UNKNOWN) {
-            Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
-
-            D3D11_TEXTURE2D_DESC desc = {};
-            desc.Width = impl_->pendingAcceleratedDesc.width;
-            desc.Height = impl_->pendingAcceleratedDesc.height;
-            desc.MipLevels = 1;
-            desc.ArraySize = 1;
-            desc.Format = impl_->pendingAcceleratedDesc.format;
-            desc.SampleDesc.Count = 1;
-            desc.Usage = D3D11_USAGE_DEFAULT;
-            desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-
-            HRESULT hr = device->CreateTexture2D(&desc, nullptr, texture.ReleaseAndGetAddressOf());
-            if (FAILED(hr)) {
-                logger::error("Failed to create accelerated CEF overlay texture {}x{} format {}. HR={:#X}",
-                              desc.Width, desc.Height, static_cast<unsigned int>(desc.Format), hr);
-                impl_->pendingAcceleratedTexture = false;
-            } else {
-                hr = device->CreateShaderResourceView(texture.Get(), nullptr, srv.ReleaseAndGetAddressOf());
-                if (FAILED(hr)) {
-                    logger::error("Failed to create accelerated CEF overlay SRV {}x{} format {}. HR={:#X}",
-                                  desc.Width, desc.Height, static_cast<unsigned int>(desc.Format), hr);
-                    impl_->pendingAcceleratedTexture = false;
-                } else {
-                    impl_->overlayTexture = std::move(texture);
-                    impl_->overlaySrv = std::move(srv);
-                    impl_->overlayDesc = impl_->pendingAcceleratedDesc;
-                    impl_->overlayMode = OverlayMode::Accelerated;
-                    impl_->overlayHasFrame = false;
-                    impl_->pendingAcceleratedTexture = false;
-                    logger::info("Created accelerated CEF overlay texture {}x{} DXGI format {}.",
-                                 impl_->overlayDesc.width, impl_->overlayDesc.height,
-                                 static_cast<unsigned int>(impl_->overlayDesc.format));
-                    PostToCefUi([client]() {
-                        client->InvalidateView();
-                        client->SendExternalBeginFrame();
-                    });
-                }
-            }
-        }
-
-        if (!hasCpuFrame) {
+        if (!client->ConsumeCpuFrame(cpuFrame, cpuWidth, cpuHeight, cpuStride)) {
             return;
         }
 
@@ -638,170 +521,33 @@ namespace PrismaUI::Cef
             return;
         }
 
-        const OverlayDesc cpuDesc{cpuWidth, cpuHeight, DXGI_FORMAT_B8G8R8A8_UNORM};
-        if (!impl_->overlayTexture || !impl_->overlaySrv || impl_->overlayMode != OverlayMode::Cpu ||
-            impl_->overlayDesc.width != cpuDesc.width || impl_->overlayDesc.height != cpuDesc.height ||
-            impl_->overlayDesc.format != cpuDesc.format) {
-            Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
-
-            D3D11_TEXTURE2D_DESC desc = {};
-            desc.Width = cpuDesc.width;
-            desc.Height = cpuDesc.height;
-            desc.MipLevels = 1;
-            desc.ArraySize = 1;
-            desc.Format = cpuDesc.format;
-            desc.SampleDesc.Count = 1;
-            desc.Usage = D3D11_USAGE_DYNAMIC;
-            desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-            desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-
-            HRESULT hr = device->CreateTexture2D(&desc, nullptr, texture.ReleaseAndGetAddressOf());
-            if (FAILED(hr)) {
-                logger::error("Failed to create CPU fallback CEF overlay texture {}x{}. HR={:#X}", desc.Width,
-                              desc.Height, hr);
-                return;
-            }
-
-            hr = device->CreateShaderResourceView(texture.Get(), nullptr, srv.ReleaseAndGetAddressOf());
-            if (FAILED(hr)) {
-                logger::error("Failed to create CPU fallback CEF overlay SRV {}x{}. HR={:#X}", desc.Width,
-                              desc.Height, hr);
-                return;
-            }
-
-            impl_->overlayTexture = std::move(texture);
-            impl_->overlaySrv = std::move(srv);
-            impl_->overlayDesc = cpuDesc;
-            impl_->overlayMode = OverlayMode::Cpu;
-            impl_->overlayHasFrame = false;
-            logger::warn("Created degraded CPU fallback CEF overlay texture {}x{}.", cpuDesc.width, cpuDesc.height);
-        }
-
-        D3D11_MAPPED_SUBRESOURCE mapped = {};
-        const HRESULT hr = context->Map(impl_->overlayTexture.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-        if (FAILED(hr)) {
-            logger::error("Failed to map CPU fallback CEF overlay texture. HR={:#X}", hr);
-            return;
-        }
-
-        auto* destination = static_cast<std::byte*>(mapped.pData);
-        const std::byte* source = cpuFrame.data();
-        for (uint32_t y = 0; y < cpuHeight; ++y) {
-            std::memcpy(destination + static_cast<size_t>(y) * mapped.RowPitch,
-                        source + static_cast<size_t>(y) * cpuStride, rowBytes);
-        }
-        context->Unmap(impl_->overlayTexture.Get(), 0);
-
-        impl_->overlayHasFrame = true;
-        if (impl_->activeMode != OverlayMode::Cpu) {
-            logger::warn("CEF render path switched: {} -> {}.", OverlayModeName(impl_->activeMode),
-                         OverlayModeName(OverlayMode::Cpu));
-            impl_->activeMode = OverlayMode::Cpu;
-        }
+        impl_->overlay.UploadBgra32(cpuFrame.data(), cpuWidth, cpuHeight, cpuStride);
     }
 
     ID3D11ShaderResourceView* CefRuntime::GetOverlaySrv() const
     {
-        std::lock_guard lock(impl_->overlayMutex);
-        return impl_->overlayHasFrame ? impl_->overlaySrv.Get() : nullptr;
+        return impl_->overlay.GetSrv();
     }
 
     uint32_t CefRuntime::GetOverlayWidth() const
     {
-        std::lock_guard lock(impl_->overlayMutex);
-        return impl_->overlayHasFrame ? impl_->overlayDesc.width : 0;
+        return impl_->overlay.GetWidth();
     }
 
     uint32_t CefRuntime::GetOverlayHeight() const
     {
-        std::lock_guard lock(impl_->overlayMutex);
-        return impl_->overlayHasFrame ? impl_->overlayDesc.height : 0;
+        return impl_->overlay.GetHeight();
     }
 
     void CefRuntime::ReleaseRenderResources()
     {
-        std::lock_guard lock(impl_->overlayMutex);
-        if (impl_->overlayTexture || impl_->overlaySrv || impl_->renderDevice || impl_->renderContext) {
-            logger::info("Releasing CEF overlay D3D resources.");
-        }
-        impl_->overlaySrv.Reset();
-        impl_->overlayTexture.Reset();
-        impl_->renderContext.Reset();
-        impl_->renderDevice1.Reset();
-        impl_->renderDevice.Reset();
-        impl_->d3dMultithread.Reset();
-        impl_->overlayDesc = {};
-        impl_->pendingAcceleratedDesc = {};
-        impl_->overlayMode = OverlayMode::None;
-        impl_->activeMode = OverlayMode::None;
-        impl_->pendingAcceleratedTexture = false;
-        impl_->overlayHasFrame = false;
-        impl_->multithreadProtectionConfigured = false;
+        impl_->overlay.ReleaseResources();
         impl_->missingD3DLogged = false;
     }
 
     bool CefRuntime::CopyAcceleratedFrameDuringCallback(HANDLE sharedTextureHandle)
     {
-        if (!sharedTextureHandle) {
-            return false;
-        }
-
-        std::lock_guard lock(impl_->overlayMutex);
-        if (!impl_->renderDevice1 || !impl_->renderContext) {
-            if (!impl_->missingD3DLogged) {
-                logger::warn("CEF accelerated paint arrived before the D3D11.1 render bridge was ready.");
-                impl_->missingD3DLogged = true;
-            }
-            return false;
-        }
-
-        Microsoft::WRL::ComPtr<ID3D11Texture2D> sharedTexture;
-        HRESULT hr = impl_->renderDevice1->OpenSharedResource1(sharedTextureHandle, IID_PPV_ARGS(sharedTexture.ReleaseAndGetAddressOf()));
-        if (FAILED(hr)) {
-            logger::error("Failed to open CEF accelerated shared texture. HR={:#X}", hr);
-            return false;
-        }
-
-        D3D11_TEXTURE2D_DESC sharedDesc = {};
-        sharedTexture->GetDesc(&sharedDesc);
-        if (sharedDesc.Width == 0 || sharedDesc.Height == 0 || sharedDesc.Format == DXGI_FORMAT_UNKNOWN) {
-            logger::error("CEF accelerated shared texture had invalid description {}x{} format {}.", sharedDesc.Width,
-                          sharedDesc.Height, static_cast<unsigned int>(sharedDesc.Format));
-            return false;
-        }
-
-        const OverlayDesc incoming{sharedDesc.Width, sharedDesc.Height, sharedDesc.Format};
-        const bool overlayMatches = impl_->overlayTexture && impl_->overlaySrv &&
-                                    impl_->overlayMode == OverlayMode::Accelerated &&
-                                    impl_->overlayDesc.Matches(sharedDesc);
-        if (!overlayMatches) {
-            const bool pendingMatches = impl_->pendingAcceleratedTexture &&
-                                        impl_->pendingAcceleratedDesc.width == incoming.width &&
-                                        impl_->pendingAcceleratedDesc.height == incoming.height &&
-                                        impl_->pendingAcceleratedDesc.format == incoming.format;
-            if (!pendingMatches) {
-                impl_->pendingAcceleratedDesc = incoming;
-                impl_->pendingAcceleratedTexture = true;
-                logger::info("CEF accelerated shared texture description requested {}x{} DXGI format {}.",
-                             incoming.width, incoming.height, static_cast<unsigned int>(incoming.format));
-            }
-            return false;
-        }
-
-        impl_->renderContext->CopyResource(impl_->overlayTexture.Get(), sharedTexture.Get());
-        impl_->overlayHasFrame = true;
-        if (!impl_->firstAcceleratedCopyLogged) {
-            logger::info("First accelerated CEF overlay frame copied: {}x{} DXGI format {}.", impl_->overlayDesc.width,
-                         impl_->overlayDesc.height, static_cast<unsigned int>(impl_->overlayDesc.format));
-            impl_->firstAcceleratedCopyLogged = true;
-        }
-        if (impl_->activeMode != OverlayMode::Accelerated) {
-            logger::info("CEF render path switched: {} -> {}.", OverlayModeName(impl_->activeMode),
-                         OverlayModeName(OverlayMode::Accelerated));
-            impl_->activeMode = OverlayMode::Accelerated;
-        }
-        return true;
+        return impl_->overlay.CopyFromSharedHandle(sharedTextureHandle);
     }
 
     bool CefRuntime::RunShellCommand(const std::string& command, const std::string& description,

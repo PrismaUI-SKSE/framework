@@ -1,6 +1,5 @@
 - Reduce logs
-- Remove console logs from cef.log and PrismaUI.log
+- Remove console logs from cef.log
 - Check that each prisma view give its own console logs
-- Refactor duplicated DirectX, CEF API code
 - Fix JS interop
 - Create C++ shell API

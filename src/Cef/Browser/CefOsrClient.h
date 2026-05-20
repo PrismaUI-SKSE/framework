@@ -59,9 +59,6 @@ namespace PrismaUI::Cef
         void OnLoadEnd(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int httpStatusCode) override;
         void OnLoadError(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, ErrorCode errorCode,
                          const CefString& errorText, const CefString& failedUrl) override;
-        bool OnConsoleMessage(CefRefPtr<CefBrowser> browser, cef_log_severity_t level, const CefString& message,
-                              const CefString& source, int line) override;
-
         // CefClient (process-message routing) — Step 7.
         bool OnProcessMessageReceived(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                                       CefProcessId source_process,

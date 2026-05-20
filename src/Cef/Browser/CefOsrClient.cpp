@@ -19,23 +19,6 @@ namespace
 {
     constexpr int kCefWindowlessFrameRate = 120;
 
-    const char* LogSeverityName(cef_log_severity_t level)
-    {
-        switch (level) {
-            case LOGSEVERITY_VERBOSE:
-                return "verbose";
-            case LOGSEVERITY_INFO:
-                return "info";
-            case LOGSEVERITY_WARNING:
-                return "warning";
-            case LOGSEVERITY_ERROR:
-                return "error";
-            case LOGSEVERITY_FATAL:
-                return "fatal";
-            default:
-                return "default";
-        }
-    }
 }
 
 namespace PrismaUI::Cef
@@ -377,13 +360,6 @@ namespace PrismaUI::Cef
                                                              error, failed);
     }
 
-    bool CefOsrClient::OnConsoleMessage(CefRefPtr<CefBrowser> browser, cef_log_severity_t level,
-                                        const CefString& message, const CefString& source, int line)
-    {
-        logger::info("CEF console [{}] browser [{}] {}:{} {}", LogSeverityName(level),
-                     browser ? browser->GetIdentifier() : -1, source.ToString(), line, message.ToString());
-        return false;
-    }
 
     bool CefOsrClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> /*browser*/,
                                                 CefRefPtr<CefFrame> frame,

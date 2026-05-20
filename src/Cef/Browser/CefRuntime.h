@@ -154,8 +154,47 @@ namespace PrismaUI::Cef
         CefRuntime(const CefRuntime&) = delete;
         CefRuntime& operator=(const CefRuntime&) = delete;
 
-        bool RunShellCommand(const std::string& command, const std::string& description,
-                             const std::string& iframeName = {});
+        struct ShellCreateViewArg
+        {
+            uint64_t id;
+            std::string_view url;
+            int order;
+            bool hidden;
+        };
+
+        static void AppendShellArg(std::string& out, uint64_t value);
+        static void AppendShellArg(std::string& out, int value);
+        static void AppendShellArg(std::string& out, bool value);
+        static void AppendShellArg(std::string& out, std::string_view value);
+        static void AppendShellArg(std::string& out, const ShellCreateViewArg& value);
+
+        bool RunShellScript(std::string_view method, uint64_t viewId, std::string script);
+
+        // Build `window.__prismaShell.<method>(<args>);` from typed arguments and
+        // dispatch it through `RunShellScript`. If the caller is already on the CEF
+        // UI thread the script runs inline; otherwise it is posted to TID_UI.
+        // `viewId` is used for iframe-existence diagnostics and logging; pass the
+        // affected view's id (createView is exempted from the iframe check).
+        template <class... Args>
+        bool InvokeShell(std::string_view method, uint64_t viewId, const Args&... args)
+        {
+            std::string script;
+            script.reserve(48 + method.size());
+            script += "window.__prismaShell.";
+            script.append(method);
+            script += '(';
+            bool first = true;
+            const auto appendOne = [&](const auto& value) {
+                if (!first) {
+                    script += ", ";
+                }
+                first = false;
+                AppendShellArg(script, value);
+            };
+            (appendOne(args), ...);
+            script += ");";
+            return RunShellScript(method, viewId, std::move(script));
+        }
         void ReplayShellViews();
 
         struct Impl;

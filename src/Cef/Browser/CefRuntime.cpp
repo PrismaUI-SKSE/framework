@@ -104,7 +104,7 @@ namespace
         return NarrowAscii(ToFileUrl(path));
     }
 
-    std::string JsonEscape(std::string_view value)
+    std::string JsLiteralString(std::string_view value)
     {
         std::string escaped;
         escaped.reserve(value.size() + 2);
@@ -550,11 +550,46 @@ namespace PrismaUI::Cef
         return impl_->overlay.CopyFromSharedHandle(sharedTextureHandle);
     }
 
-    bool CefRuntime::RunShellCommand(const std::string& command, const std::string& description,
-                                     const std::string& iframeName)
+    void CefRuntime::AppendShellArg(std::string& out, uint64_t value)
+    {
+        // NanoID generates uint64 across the full range; encode as a JS string
+        // literal so values above 2^53-1 survive (JS shell `normalizeId` accepts
+        // string-of-digits in addition to safe integers).
+        out += JsLiteralString(std::to_string(value));
+    }
+
+    void CefRuntime::AppendShellArg(std::string& out, int value)
+    {
+        out += std::to_string(value);
+    }
+
+    void CefRuntime::AppendShellArg(std::string& out, bool value)
+    {
+        out += value ? "true" : "false";
+    }
+
+    void CefRuntime::AppendShellArg(std::string& out, std::string_view value)
+    {
+        out += JsLiteralString(value);
+    }
+
+    void CefRuntime::AppendShellArg(std::string& out, const ShellCreateViewArg& value)
+    {
+        out += "{ id: ";
+        AppendShellArg(out, value.id);
+        out += ", url: ";
+        AppendShellArg(out, value.url);
+        out += ", order: ";
+        AppendShellArg(out, value.order);
+        out += ", hidden: ";
+        AppendShellArg(out, value.hidden);
+        out += " }";
+    }
+
+    bool CefRuntime::RunShellScript(std::string_view method, uint64_t viewId, std::string script)
     {
         if (!impl_->initialized.load(std::memory_order_acquire)) {
-            logger::warn("CEF shell command '{}' ignored because CEF is not initialized.", description);
+            logger::warn("CEF shell '{}' (view={}) ignored: CEF is not initialized.", method, viewId);
             return false;
         }
 
@@ -565,46 +600,54 @@ namespace PrismaUI::Cef
         }
 
         if (!client || !client->HasBrowser()) {
-            logger::warn("CEF shell command '{}' ignored because no browser is available.", description);
+            logger::warn("CEF shell '{}' (view={}) ignored: no browser is available.", method, viewId);
             return false;
         }
 
         {
             std::lock_guard lock(impl_->shellMutex);
             if (!impl_->shellReady) {
-                logger::warn("CEF shell command '{}' deferred because the shell is not ready.", description);
+                logger::warn("CEF shell '{}' (view={}) deferred: shell is not ready.", method, viewId);
                 return false;
             }
         }
 
-        PostToCefUi([client, command, description, iframeName]() {
+        const bool checkIframe = method != std::string_view{"createView"};
+        auto run = [client, script = std::move(script), method = std::string(method), viewId, checkIframe]() {
             CefRefPtr<CefBrowser> browser = client->GetBrowserOnUiThread();
             if (!browser) {
-                logger::error("CEF shell command '{}' failed: browser disappeared.", description);
+                logger::error("CEF shell '{}' (view={}) failed: browser disappeared.", method, viewId);
                 return;
             }
 
-            if (!iframeName.empty()) {
+            if (checkIframe) {
+                const std::string iframeName = MakeIframeName(viewId);
                 CefString frameName;
                 frameName.FromString(iframeName);
                 if (!client->GetFrameByNameOnUiThread(frameName)) {
-                    logger::warn("CEF shell command '{}' did not find iframe frame '{}'.", description, iframeName);
+                    logger::warn("CEF shell '{}' did not find iframe '{}'.", method, iframeName);
                 }
             }
 
             CefRefPtr<CefFrame> mainFrame = browser->GetMainFrame();
             if (!mainFrame) {
-                logger::error("CEF shell command '{}' failed: main frame is unavailable.", description);
+                logger::error("CEF shell '{}' (view={}) failed: main frame is unavailable.", method, viewId);
                 return;
             }
 
             CefString sourceUrl;
             sourceUrl.FromASCII("prismaui://shell-command");
-            CefString script;
-            script.FromString(command);
-            mainFrame->ExecuteJavaScript(script, sourceUrl, 0);
-            logger::debug("CEF shell command '{}' executed.", description);
-        });
+            CefString cefScript;
+            cefScript.FromString(script);
+            mainFrame->ExecuteJavaScript(cefScript, sourceUrl, 0);
+            logger::debug("CEF shell '{}' (view={}) executed.", method, viewId);
+        };
+
+        if (CefCurrentlyOn(TID_UI)) {
+            run();
+        } else {
+            PostToCefUi(std::move(run));
+        }
         return true;
     }
 
@@ -614,20 +657,16 @@ namespace PrismaUI::Cef
         {
             std::lock_guard lock(impl_->shellMutex);
             views.reserve(impl_->shellViews.size());
-            for (const auto& [viewId, state] : impl_->shellViews) {
+            for (const auto& state : impl_->shellViews | std::views::values) {
                 views.push_back(state);
             }
         }
 
         for (const auto& state : views) {
-            std::string command = "window.__prismaShell.createView({ id: " + JsonEscape(std::to_string(state.viewId)) +
-                                  ", url: " + JsonEscape(state.resolvedUrl) +
-                                  ", order: " + std::to_string(state.order) +
-                                  ", hidden: " + (state.hidden ? "true" : "false") + " });";
-            RunShellCommand(command, "replay createView " + state.iframeName);
+            InvokeShell("createView", state.viewId,
+                        ShellCreateViewArg{state.viewId, state.resolvedUrl, state.order, state.hidden});
             if (state.focused) {
-                command = "window.__prismaShell.focusView(" + JsonEscape(std::to_string(state.viewId)) + ");";
-                RunShellCommand(command, "replay focusView " + state.iframeName, state.iframeName);
+                InvokeShell("focusView", state.viewId, state.viewId);
             }
         }
     }
@@ -651,10 +690,8 @@ namespace PrismaUI::Cef
 
         logger::info("CEF shell create view: id={}, iframe='{}', url='{}', order={}, hidden={}.",
                      viewId, iframeName, resolvedUrl, order, hidden);
-        const std::string command = "window.__prismaShell.createView({ id: " + JsonEscape(std::to_string(viewId)) +
-                                    ", url: " + JsonEscape(resolvedUrl) + ", order: " + std::to_string(order) +
-                                    ", hidden: " + (hidden ? "true" : "false") + " });";
-        return RunShellCommand(command, "createView " + iframeName) || (IsInitialized() && HasBrowser() && !IsShellReady());
+        return InvokeShell("createView", viewId, ShellCreateViewArg{viewId, resolvedUrl, order, hidden})
+            || (IsInitialized() && HasBrowser() && !IsShellReady());
     }
 
     bool CefRuntime::DestroyShellView(uint64_t viewId)
@@ -667,12 +704,11 @@ namespace PrismaUI::Cef
         }
 
         logger::info("CEF shell destroy view: id={}, iframe='{}', existed={}.", viewId, iframeName, existed);
-        const std::string command = "window.__prismaShell.destroyView(" + JsonEscape(std::to_string(viewId)) + ");";
         if (!existed) {
             return true;
         }
-        return RunShellCommand(command, "destroyView " + iframeName, iframeName) ||
-               (IsInitialized() && HasBrowser() && !IsShellReady());
+        return InvokeShell("destroyView", viewId, viewId)
+            || (IsInitialized() && HasBrowser() && !IsShellReady());
     }
 
     bool CefRuntime::SetShellViewHidden(uint64_t viewId, bool hidden)
@@ -689,10 +725,8 @@ namespace PrismaUI::Cef
         }
 
         logger::info("CEF shell set hidden: id={}, iframe='{}', hidden={}.", viewId, iframeName, hidden);
-        const std::string command = "window.__prismaShell.setHidden(" + JsonEscape(std::to_string(viewId)) + ", " +
-                                    (hidden ? "true" : "false") + ");";
-        return RunShellCommand(command, "setHidden " + iframeName, iframeName) ||
-               (IsInitialized() && HasBrowser() && !IsShellReady());
+        return InvokeShell("setHidden", viewId, viewId, hidden)
+            || (IsInitialized() && HasBrowser() && !IsShellReady());
     }
 
     bool CefRuntime::SetShellViewOrder(uint64_t viewId, int order)
@@ -709,10 +743,8 @@ namespace PrismaUI::Cef
         }
 
         logger::info("CEF shell set order: id={}, iframe='{}', order={}.", viewId, iframeName, order);
-        const std::string command = "window.__prismaShell.setOrder(" + JsonEscape(std::to_string(viewId)) + ", " +
-                                    std::to_string(order) + ");";
-        return RunShellCommand(command, "setOrder " + iframeName, iframeName) ||
-               (IsInitialized() && HasBrowser() && !IsShellReady());
+        return InvokeShell("setOrder", viewId, viewId, order)
+            || (IsInitialized() && HasBrowser() && !IsShellReady());
     }
 
     bool CefRuntime::FocusShellView(uint64_t viewId)
@@ -747,9 +779,8 @@ namespace PrismaUI::Cef
                 }
             });
         }
-        const std::string command = "window.__prismaShell.focusView(" + JsonEscape(std::to_string(viewId)) + ");";
-        return RunShellCommand(command, "focusView " + iframeName, iframeName) ||
-               (IsInitialized() && HasBrowser() && !IsShellReady());
+        return InvokeShell("focusView", viewId, viewId)
+            || (IsInitialized() && HasBrowser() && !IsShellReady());
     }
 
     bool CefRuntime::BlurShellView(uint64_t viewId)
@@ -766,9 +797,8 @@ namespace PrismaUI::Cef
         }
 
         logger::info("CEF shell blur view: id={}, iframe='{}'.", viewId, iframeName);
-        const std::string command = "window.__prismaShell.blurView(" + JsonEscape(std::to_string(viewId)) + ");";
-        return RunShellCommand(command, "blurView " + iframeName, iframeName) ||
-               (IsInitialized() && HasBrowser() && !IsShellReady());
+        return InvokeShell("blurView", viewId, viewId)
+            || (IsInitialized() && HasBrowser() && !IsShellReady());
     }
 
     bool CefRuntime::TryGetShellFrameName(uint64_t viewId, std::string& outName) const
@@ -1259,18 +1289,9 @@ namespace PrismaUI::Cef
 
             host->SetFocus(true);
 
-            if (CefRefPtr<CefFrame> mainFrame = browser->GetMainFrame()) {
-                const std::string command =
-                    "window.__prismaShell.focusView(" + JsonEscape(std::to_string(viewId)) + ");";
-                CefString sourceUrl;
-                sourceUrl.FromASCII("prismaui://input-focus");
-                CefString script;
-                script.FromString(command);
-                mainFrame->ExecuteJavaScript(script, sourceUrl, 0);
-            } else {
-                logger::warn("CEF input dispatch for View [{}] could not refresh iframe focus: main frame missing.",
-                             viewId);
-            }
+            // Already on TID_UI inside this PostToCefUi continuation; InvokeShell
+            // short-circuits and executes the focusView script inline.
+            InvokeShell("focusView", viewId, viewId);
 
             logger::debug("CEF input dispatch sending {} event(s) to View [{}].", events.size(), viewId);
             for (const auto& event : events) {

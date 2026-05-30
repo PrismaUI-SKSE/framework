@@ -735,6 +735,18 @@ static void DestroyVROverlay(uint64_t viewId)
 	}
 
 	g_vrOverlays.erase(it);
+	for (int hand = 0; hand < 2; hand++) {
+		if (g_hitInfo[hand].hitViewId == viewId) {
+			g_hitInfo[hand].hitting = false;
+			g_hitInfo[hand].hitViewId = 0;
+			g_lastHitViewId[hand] = 0;
+			g_lastCursorX[hand] = -1;
+			g_lastCursorY[hand] = -1;
+			g_cursorDotCreated[hand] = false;
+			if (g_mouseActiveHand == hand)
+				g_mouseActiveHand = -1;
+		}
+	}
 	logger::info("PrismaVR: Destroyed VR overlay for view {}", viewId);
 }
 
@@ -1694,12 +1706,22 @@ static void UpdateControlMasking()
 		return;
 	}
 
-	// Combat: mask when any laser is hitting a panel (prevents trigger from firing spells/attacks)
-	bool anyHitting = g_hitInfo[0].hitting || g_hitInfo[1].hitting;
-	if (anyHitting && !g_combatMasked) {
+	// Combat: mask only while a live controller trigger is actively interacting
+	// with an open Prisma panel. Hover alone must not disable Skyrim's fighting
+	// group; in VR that group owns weapon fire, spell fire, and combat stance.
+	auto triggerOnOpenPanel = [](int hand) {
+		return g_controllers[hand].valid &&
+		       g_controllers[hand].triggerPressed &&
+		       g_hitInfo[hand].hitting &&
+		       g_vrOverlays.find(g_hitInfo[hand].hitViewId) != g_vrOverlays.end();
+	};
+	bool anyTriggerOnPanel = triggerOnOpenPanel(0) || triggerOnOpenPanel(1);
+	if (anyTriggerOnPanel && !g_combatMasked) {
+		logger::info("PrismaVR: masking combat controls (trigger on panel)");
 		PrismaVR_Bridge::MaskCombatControls();
 		g_combatMasked = true;
-	} else if (!anyHitting && g_combatMasked) {
+	} else if (!anyTriggerOnPanel && g_combatMasked) {
+		logger::info("PrismaVR: unmasking combat controls (trigger released/off panel)");
 		PrismaVR_Bridge::UnmaskCombatControls();
 		g_combatMasked = false;
 	}
@@ -2160,6 +2182,7 @@ namespace PrismaVR {
 					VCallOvl(g_overlay, OVL_SLOT::HideOverlay, "HideOverlay(laser/cleanup)", g_laserBeamHandle[i]);
 			}
 			// No panels open — unmask movement if it was masked
+			if (g_combatMasked) { PrismaVR_Bridge::UnmaskCombatControls(); g_combatMasked = false; }
 			if (g_movementMasked) { PrismaVR_Bridge::UnmaskMovement(); g_movementMasked = false; }
 			// Clear hit state and active hand so masking doesn't re-trigger on next panel open
 			g_hitInfo[0].hitting = false;

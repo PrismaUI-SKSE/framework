@@ -1,12 +1,9 @@
 // PrismaVR.cpp — VR Bridge for Prisma UI
 // Translates 2D Prisma views into 3D VR overlays with full interaction.
 //
-// Supported runtime: OpenComposite Unleashed (production).
-// SteamVR native: partial support, WORK IN PROGRESS, NOT RECOMMENDED FOR USE.
-//   Known issues: controller laser misaligned, keyboard API unreliable.
-//   SteamVR code paths remain in-tree for future work — search for "SteamVR
-//   native" / "WORK IN PROGRESS" comments below. End users should install
-//   OpenComposite Unleashed.
+// Supported runtime: OpenComposite Unleashed.
+// SteamVR headset users should run through OCU with SteamVR as the OpenXR runtime.
+// Native SteamVR keyboard/laser fallbacks are intentionally not supported here.
 
 #include "PrismaVR.h"
 #include "PrismaVR_Bridge.h"
@@ -72,17 +69,6 @@ namespace openvr {
 		VROverlayInputMethod_Mouse = 1,
 	};
 
-	enum EGamepadTextInputMode {
-		k_EGamepadTextInputModeNormal = 0,
-		k_EGamepadTextInputModePassword = 1,
-		k_EGamepadTextInputModeSubmit = 2,
-	};
-
-	enum EGamepadTextInputLineMode {
-		k_EGamepadTextInputLineModeSingleLine = 0,
-		k_EGamepadTextInputLineModeMultipleLines = 1,
-	};
-
 	struct HmdMatrix34_t {
 		float m[3][4];
 	};
@@ -142,52 +128,10 @@ namespace openvr {
 		float fDistance;
 	};
 
-	// Overlay event types
-	enum EVREventType {
-		VREvent_MouseMove = 300,
-		VREvent_MouseButtonDown = 301,
-		VREvent_MouseButtonUp = 302,
-		VREvent_ScrollDiscrete = 305,
-		VREvent_ScrollSmooth = 309,
-		VREvent_KeyboardClosed = 1200,
-		VREvent_KeyboardCharInput = 1201,
-		VREvent_KeyboardDone = 1202,
-	};
-
 	enum EVRMouseButton {
 		VRMouseButton_Left = 0x0001,
 		VRMouseButton_Right = 0x0002,
 		VRMouseButton_Middle = 0x0004,
-	};
-
-	struct VREvent_Mouse_t {
-		float x, y;
-		uint32_t button;
-	};
-
-	struct VREvent_Scroll_t {
-		float xdelta, ydelta;
-		uint32_t unused;
-		float viewportscale;
-	};
-
-	struct VREvent_Keyboard_t {
-		char cNewInput[8]; // UTF-8 character(s) from SteamVR keyboard
-		uint64_t uUserValue;
-	};
-
-	union VREvent_Data_t {
-		VREvent_Mouse_t mouse;
-		VREvent_Scroll_t scroll;
-		VREvent_Keyboard_t keyboard;
-		char reserved[64]; // padding to match actual union size
-	};
-
-	struct VREvent_t {
-		uint32_t eventType;
-		TrackedDeviceIndex_t trackedDeviceIndex;
-		float eventAgeSeconds;
-		VREvent_Data_t data;
 	};
 
 } // namespace openvr
@@ -226,13 +170,10 @@ namespace OVL_SLOT {
 	constexpr int SetOverlayTransformAbsolute = 32;     // (handle, origin, *matrix) → error
 	constexpr int ShowOverlay = 43;                     // (handle) → error
 	constexpr int HideOverlay = 44;                     // (handle) → error
-	constexpr int PollNextOverlayEvent = 48;             // (handle, *event, eventSize) → bool
 	constexpr int SetOverlayInputMethod = 50;           // (handle, method) → error
 	constexpr int SetOverlayMouseScale = 52;            // (handle, *vec2) → error
 	constexpr int SetOverlaySortOrder = 19;              // (handle, sortOrder) → error
 	constexpr int SetOverlayTexture = 60;               // (handle, *texture) → error
-	constexpr int ShowKeyboardForOverlay = 75;          // (overlayHandle, inputMode, lineMode, flags, desc, charMax, existingText, userValue) → error
-	constexpr int HideKeyboard = 77;                    // () → void
 }
 
 // IVRSystem_022 vtable slot indices
@@ -377,9 +318,6 @@ static constexpr float SCROLL_DELTA_MULTIPLIER = 40.0f;  // scroll pixels per fu
 static constexpr int CURSOR_DOT_SIZE_PX = 12;          // pixel diameter of laser dot on panel
 static constexpr int CURSOR_DOT_Z_INDEX = 2147483647;  // max int — always renders on top
 
-// VR keyboard
-static constexpr uint32_t VR_KEYBOARD_MAX_CHARS = 256;  // character limit for text input
-
 // Polling intervals (in frames, not seconds)
 static constexpr int TEXT_FOCUS_POLL_FRAMES    = 10;   // ~110ms at 90fps
 static constexpr int DEBUG_LOG_INTERVAL_FRAMES = 300;  // ~5 seconds at 60fps
@@ -409,8 +347,7 @@ static std::atomic<bool> g_interactiveDragActive{false}; // true when trigger-ho
 static int g_mouseActiveHand = -1;
 
 // ── Aim pose data from OpenComposite (exposed via window property) ──
-// OC computes aim poses from OpenXR's /input/aim/pose — universally correct
-// for all controllers (Quest, Vive, Index, Pico, WMR, etc.) with zero calibration.
+// OCU computes aim poses from OpenXR's /input/aim/pose.
 struct OCAimPoseData {
 	openvr::HmdMatrix34_t matrix[2]; // [0]=left, [1]=right
 	bool valid[2];
@@ -822,13 +759,9 @@ static void SyncOverlays()
 
 // UpdateControllers — Reads VR controller poses and button states each frame.
 //
-// Two-stage pose sourcing:
-//   1. Preferred: OpenComposite's aim poses (exposed via window property).
-//      These come from OpenXR /input/aim/pose — universally correct for all
-//      controllers (Quest, Index, Vive, Pico, WMR) with zero calibration.
-//   2. Fallback: raw grip pose from GetDeviceToAbsoluteTrackingPose().
-//      Less accurate (laser may point slightly wrong on some controllers)
-//      but works on SteamVR and when OC isn't present.
+// Pose sourcing:
+//   OCU exposes OpenXR /input/aim/pose through the game window.
+//   Raw SteamVR grip-pose laser fallback is intentionally disabled.
 //
 // Button state is read via GetControllerState() — works identically on both
 // OC and SteamVR. We track trigger (click/grab), grip, and thumbstick axes.
@@ -890,32 +823,22 @@ static void UpdateControllers()
 
 		ctrl.valid = true;
 
-		// --- Pose: position and forward direction ---
-		// Use OC aim pose (universal, zero calibration needed for any controller).
-		if (g_aimPoses && g_aimPoses->valid[hand]) {
-			const auto& aim = g_aimPoses->matrix[hand];
-			ctrl.posX = aim.m[0][3];
-			ctrl.posY = aim.m[1][3];
-			ctrl.posZ = aim.m[2][3];
-			// Aim pose -Z is the pointing direction (OpenXR convention)
-			ctrl.fwdX = -aim.m[0][2];
-			ctrl.fwdY = -aim.m[1][2];
-			ctrl.fwdZ = -aim.m[2][2];
-			float len = sqrtf(ctrl.fwdX * ctrl.fwdX + ctrl.fwdY * ctrl.fwdY + ctrl.fwdZ * ctrl.fwdZ);
-			if (len > 1e-6f) { ctrl.fwdX /= len; ctrl.fwdY /= len; ctrl.fwdZ /= len; }
-		} else {
-			// Fallback: grip pose raw -Z (no calibration — laser may point wrong on some controllers)
-			const auto& m = poses[idx].mDeviceToAbsoluteTracking;
-			ctrl.posX = m.m[0][3];
-			ctrl.posY = m.m[1][3];
-			ctrl.posZ = m.m[2][3];
-			ctrl.fwdX = -m.m[0][2];
-			ctrl.fwdY = -m.m[1][2];
-			ctrl.fwdZ = -m.m[2][2];
-			float len = sqrtf(ctrl.fwdX * ctrl.fwdX + ctrl.fwdY * ctrl.fwdY + ctrl.fwdZ * ctrl.fwdZ);
-			if (len > 1e-6f) { ctrl.fwdX /= len; ctrl.fwdY /= len; ctrl.fwdZ /= len; }
+		if (!g_aimPoses || !g_aimPoses->valid[hand]) {
+			ctrl.valid = false;
+			continue;
 		}
 
+		// --- Pose: position and forward direction ---
+		const auto& aim = g_aimPoses->matrix[hand];
+		ctrl.posX = aim.m[0][3];
+		ctrl.posY = aim.m[1][3];
+		ctrl.posZ = aim.m[2][3];
+		// Aim pose -Z is the pointing direction (OpenXR convention)
+		ctrl.fwdX = -aim.m[0][2];
+		ctrl.fwdY = -aim.m[1][2];
+		ctrl.fwdZ = -aim.m[2][2];
+		float len = sqrtf(ctrl.fwdX * ctrl.fwdX + ctrl.fwdY * ctrl.fwdY + ctrl.fwdZ * ctrl.fwdZ);
+		if (len > 1e-6f) { ctrl.fwdX /= len; ctrl.fwdY /= len; ctrl.fwdZ /= len; }
 
 
 		// --- Button state: universal across all headsets ---
@@ -940,7 +863,7 @@ static void UpdateControllers()
 }
 
 // ============================================================================
-// Section 10: Ray-plane intersection (our own math, works on both runtimes)
+// Section 10: Ray-plane intersection (our own math fed by OCU aim poses)
 // ============================================================================
 
 struct RayHit {
@@ -957,8 +880,8 @@ struct RayHit {
 // if the ray hits within the overlay bounds, plus the 3D hit point and distance.
 //
 // This replaces OpenVR's built-in ComputeOverlayIntersection which requires the
-// overlay to be visible and has quirks across runtimes. Our own math works
-// identically on both OpenComposite and SteamVR.
+// overlay to be visible and has quirks across runtimes. Our own math stays
+// stable because OCU supplies calibrated aim poses.
 static RayHit RayOverlayIntersection(const ControllerInfo& ctrl, const VROverlayState& overlay)
 {
 	RayHit result;
@@ -1813,45 +1736,7 @@ static void CheckTextInputFocusAsync(std::shared_ptr<PrismaUI::Core::PrismaView>
 			} else {
 				logger::warn("PrismaVR: g_gameHwnd is NULL — cannot signal OC for VR keyboard!");
 			}
-			// ================================================================
-			// SteamVR native keyboard path — WORK IN PROGRESS, NOT PRODUCTION-READY
-			// ----------------------------------------------------------------
-			// This calls SteamVR's ShowKeyboardForOverlay to open the native
-			// SteamVR keyboard attached to our overlay. On OpenComposite this
-			// hits a STUBBED implementation (harmless log) — the OC_PRISMA_TEXT
-			// window property path above is what actually opens the OC keyboard.
-			//
-			// Known issues on SteamVR native (not OC):
-			//   * Controller laser ray direction is misaligned
-			//   * SteamVR keyboard API (ShowKeyboardForOverlay + overlay event
-			//     polling for VREvent_KeyboardCharInput) has unresolved reliability
-			//     issues; text input is unreliable
-			//
-			// VR users should install OpenComposite Unleashed for a supported
-			// experience. The SteamVR code remains in-tree for future work but
-			// is NOT recommended for end users in its current state.
-			// ================================================================
-			if (g_overlay) {
-				if (focused) {
-					openvr::VROverlayHandle_t targetHandle = 0;
-					auto it = g_vrOverlays.find(g_keyboardTargetViewId);
-					if (it != g_vrOverlays.end())
-						targetHandle = it->second.handle;
-					logger::info("PrismaVR: ShowKeyboardForOverlay — targetViewId={}, overlayHandle={}",
-						g_keyboardTargetViewId, targetHandle);
-					if (targetHandle) {
-						VCallOvl(g_overlay, OVL_SLOT::ShowKeyboardForOverlay, "ShowKeyboardForOverlay",
-							targetHandle,
-							(uint32_t)openvr::k_EGamepadTextInputModeNormal,
-							(uint32_t)openvr::k_EGamepadTextInputLineModeSingleLine,
-							(uint32_t)0,   // unFlags (0 = default)
-							"", VR_KEYBOARD_MAX_CHARS, "", (uint64_t)0);
-					}
-				} else {
-					// OC auto-closes the keyboard when OC_PRISMA_TEXT is removed
-					// (BaseOverlay auto-detect). Don't call HideKeyboard directly.
-				}
-			}
+			// OCU owns VR keyboard creation through OC_PRISMA_TEXT.
 		}
 	});
 }
@@ -1863,15 +1748,12 @@ static void CheckTextInputFocusAsync(std::shared_ptr<PrismaUI::Core::PrismaView>
 // Without this, typing in a Prisma text field would also trigger game hotkeys
 // (e.g., pressing 'I' opens inventory while typing in a search box).
 //
-// Three input sources are handled:
+// Two input sources are handled:
 //   1. Standard Windows keyboard (WM_KEYDOWN/WM_KEYUP/WM_CHAR) — physical keyboard,
 //      system VR keyboard, or any IME. Translated to Ultralight KeyEvents.
 //   2. OC VR keyboard (WM_OC_CHAR) — custom message from OpenComposite with UTF-16
 //      characters. Each char needs the full RawKeyDown→Char→KeyUp sequence for
 //      Chromium/Ultralight to process it into <input> fields.
-//   3. SteamVR keyboard — handled separately in PollSteamVRKeyboardEvents() via
-//      overlay event polling. Not intercepted here.
-//
 // Interception is only active when: VR is on, panels are open, a text field has
 // DOM focus (g_textInputFocused), and we have a target view. Alt+F4 always passes through.
 static LRESULT CALLBACK PrismaVR_KBSubclassProc(
@@ -2036,84 +1918,6 @@ static LRESULT CALLBACK PrismaVR_KBSubclassProc(
 }
 
 // ============================================================================
-// Section 14d: SteamVR keyboard event polling — WORK IN PROGRESS
-// ----------------------------------------------------------------------------
-// NOT PRODUCTION-READY. See SteamVR WIP comment block in the text-focus-change
-// callback above for rationale. This function polls the overlay event queue for
-// VREvent_KeyboardCharInput / VREvent_KeyboardClosed events that SteamVR emits
-// when ShowKeyboardForOverlay is active. Text input reliability is poor on
-// SteamVR native; VR users should use OpenComposite Unleashed instead.
-//
-// On OpenComposite this function does nothing — OC never emits these events
-// and instead delivers characters via WM_OC_CHAR (handled in
-// PrismaVR_KBSubclassProc) or direct-delivery via PrismaVR_DeliverChar /
-// PrismaVR_DeliverVKey (new in this version). Those paths are the supported
-// keyboard integration.
-// ============================================================================
-
-static void PollSteamVRKeyboardEvents() {
-	if (!g_overlay || g_keyboardTargetViewId == 0 || !g_textInputFocused.load())
-		return;
-
-	auto it = g_vrOverlays.find(g_keyboardTargetViewId);
-	if (it == g_vrOverlays.end() || !it->second.handle)
-		return;
-
-	auto targetView = FindKeyboardTargetView();
-	if (!targetView) return;
-
-	openvr::VREvent_t event;
-	while (VCall<bool>(g_overlay, OVL_SLOT::PollNextOverlayEvent,
-		it->second.handle, &event, (uint32_t)sizeof(openvr::VREvent_t))) {
-
-		if (event.eventType == openvr::VREvent_KeyboardCharInput) {
-			// cNewInput is a UTF-8 string (up to 8 bytes, null-terminated)
-			const char* utf8 = event.data.keyboard.cNewInput;
-			if (utf8[0] == '\0') continue;
-
-			ultralight::String ul_text(utf8);
-
-			// Ultralight needs RawKeyDown → Char → KeyUp for text input
-			ultralight::KeyEvent keyDown;
-			keyDown.type = ultralight::KeyEvent::kType_RawKeyDown;
-			keyDown.virtual_key_code = 0;
-			keyDown.native_key_code = 0;
-			keyDown.modifiers = 0;
-			keyDown.is_auto_repeat = false;
-			keyDown.text = ul_text;
-			keyDown.unmodified_text = ul_text;
-			PrismaVR_Bridge::FireKeyEvent(targetView, keyDown);
-
-			ultralight::KeyEvent charEv;
-			charEv.type = ultralight::KeyEvent::kType_Char;
-			charEv.modifiers = 0;
-			charEv.text = ul_text;
-			charEv.unmodified_text = ul_text;
-			charEv.virtual_key_code = 0;
-			charEv.native_key_code = 0;
-			charEv.is_auto_repeat = false;
-			PrismaVR_Bridge::FireKeyEvent(targetView, charEv);
-
-			ultralight::KeyEvent keyUp;
-			keyUp.type = ultralight::KeyEvent::kType_KeyUp;
-			keyUp.virtual_key_code = 0;
-			keyUp.native_key_code = 0;
-			keyUp.modifiers = 0;
-			keyUp.is_auto_repeat = false;
-			PrismaVR_Bridge::FireKeyEvent(targetView, keyUp);
-
-		} else if (event.eventType == openvr::VREvent_KeyboardClosed) {
-			// User dismissed the SteamVR keyboard — clear text focus state
-			g_textInputFocused.store(false);
-			if (g_gameHwnd) RemovePropW(g_gameHwnd, L"OC_PRISMA_TEXT");
-			break;
-		}
-		// VREvent_KeyboardDone (1202): "Done" button pressed. We don't need
-		// to handle this — each character was already injected above.
-	}
-}
-
-// ============================================================================
 // Section 15: Public API implementation
 // ============================================================================
 
@@ -2146,7 +1950,7 @@ namespace PrismaVR {
 	//  10. CleanupDistantOverlays: detect teleports, destroy far-away panels
 	//  11. CreateLaserOverlays: one-time laser beam texture/overlay creation
 	//  12. UpdateLasers: position beams from controllers to panels
-	//  13. Text focus polling + SteamVR keyboard event polling
+	//  13. Text focus polling for OCU keyboard routing
 	void OnFrame()
 	{
 		if (!g_vrActive) return;
@@ -2165,10 +1969,15 @@ namespace PrismaVR {
 		}
 
 		// Read OC aim pose pointer (set once by OpenComposite via window property)
+		static bool s_loggedMissingAimPoses = false;
 		if (g_gameHwnd && !g_aimPoses) {
 			g_aimPoses = reinterpret_cast<const OCAimPoseData*>(GetPropW(g_gameHwnd, L"OC_AIM_POSES"));
-			if (g_aimPoses)
+			if (g_aimPoses) {
 				logger::info("PrismaVR: OC aim pose data found — universal laser pointing active.");
+			} else if (!s_loggedMissingAimPoses) {
+				logger::warn("PrismaVR: OC aim pose data unavailable; VR laser input requires OpenComposite Unleashed.");
+				s_loggedMissingAimPoses = true;
+			}
 		}
 
 
@@ -2215,9 +2024,7 @@ namespace PrismaVR {
 			if (tv) CheckTextInputFocusAsync(tv);
 		}
 
-		// SteamVR keyboard: poll overlay events for character input.
-		// On OC this is a no-op (no keyboard events in the queue).
-		PollSteamVRKeyboardEvents();
+		// OCU owns Prisma text input through OC_PRISMA_TEXT and direct delivery.
 
 		// Debug: periodic status log every ~5 seconds
 		static int dbgFrame = 0;

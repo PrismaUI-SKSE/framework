@@ -5,6 +5,7 @@
 #include "Communication.h"
 #include "Core.h"
 #include "ImeHelper.h"
+#include "PrismaVR.h"
 #include "Utils/Encoding.h"
 #pragma comment(lib, "comctl32.lib")
 
@@ -316,6 +317,11 @@ namespace PrismaUI::InputHandler {
                 return RE::BSEventNotifyControl::kContinue;
             }
 
+            // In VR, PrismaVR laser input owns pointer and scroll events.
+            if (PrismaVR::IsVRActive()) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
             auto cursor = RE::MenuCursor::GetSingleton();
             if (!cursor) {
                 return RE::BSEventNotifyControl::kContinue;
@@ -434,6 +440,17 @@ namespace PrismaUI::InputHandler {
 
     LRESULT CALLBACK SubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass,
                                   DWORD_PTR /*dwRefData*/) {
+        // In VR, PrismaVR owns keyboard input; leave upstream desktop input handling untouched.
+        if (PrismaVR::IsVRActive()) {
+            if (uMsg == WM_NCDESTROY) {
+                RemoveWindowSubclass(hwnd, SubclassProc, uIdSubclass);
+                if (uIdSubclass == SUBCLASS_ID) {
+                    g_wndProcInstalled.store(false);
+                }
+            }
+            return DefSubclassProc(hwnd, uMsg, wParam, lParam);
+        }
+
         LRESULT imeControlResult = 0;
         if (g_imeHelper.HandleControlMessage(hwnd, uMsg, wParam, lParam, &imeControlResult)) {
             return imeControlResult;

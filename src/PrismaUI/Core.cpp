@@ -10,6 +10,7 @@
 #include "ViewManager.h"
 #include "ViewOperationQueue.h"
 #include "ViewRenderer.h"
+#include "PrismaVR.h"
 
 namespace {
     // SEH exception class to convert structured exceptions to C++ exceptions
@@ -161,8 +162,14 @@ namespace PrismaUI::Core {
             })
             .get();
 
+        PrismaVR::Initialize();
+
         auto ui = RE::UI::GetSingleton();
-        ui->Register(FocusMenu::MENU_NAME, FocusMenu::Creator);
+        if (!PrismaVR::IsVRActive()) {
+            ui->Register(FocusMenu::MENU_NAME, FocusMenu::Creator);
+        } else {
+            logger::info("VR detected — skipping FocusMenu (cursor) registration. Laser interaction active.");
+        }
 
         logger::info("PrismaUI Core System Initialized.");
     }
@@ -397,8 +404,19 @@ namespace PrismaUI::Core {
                     view_config.enable_javascript = true;
                     view_config.enable_compositor = false;
 
+                    // VR: keep Prisma's HTML canvas at 16:9. The VR mirror can report a
+                    // 4:3-ish size even when the headset render target is valid, which clips
+                    // layouts built for the normal Prisma viewport. Physical quad size is
+                    // independent of this and is controlled in PrismaVR.
+                    uint32_t viewW = screenSize.width;
+                    uint32_t viewH = screenSize.height;
+                    if (PrismaVR::IsVRActive()) {
+                        viewW = 1920;
+                        viewH = 1080;
+                    }
+
                     viewData->ultralightView =
-                        localRenderer->CreateView(screenSize.width, screenSize.height, view_config, nullptr);
+                        localRenderer->CreateView(viewW, viewH, view_config, nullptr);
 
                     if (viewData->ultralightView) {
                         viewData->loadListener = std::make_unique<Listeners::MyLoadListener>(viewData->id);
@@ -491,9 +509,13 @@ namespace PrismaUI::Core {
 
         DrawViews();
         DrawCursor();
+
+        // VR overlay rendering (no-op if not in VR mode)
+        PrismaVR::OnFrame();
     }
 
     void Shutdown() {
+        PrismaVR::Shutdown();
         logger::info("Shutting down PrismaUI Core System...");
 
         std::vector<PrismaViewId> viewIdsToDestroy;

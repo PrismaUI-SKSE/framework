@@ -88,7 +88,7 @@ namespace PrismaUI::Listeners {
                 default: break;
             }
             auto msg = std::string(message.message().utf8().data());
-            auto cb = it->second->consoleMessageCallback;
+            auto& cb = it->second->consoleMessageCallback;
             auto id = viewId_;
             lock.unlock();
             cb(id, level, msg);

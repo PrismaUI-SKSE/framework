@@ -11,12 +11,12 @@
 
 namespace PrismaUI::Core {
     typedef uint64_t PrismaViewId;
-    using SimpleJSCallback = std::function<void(std::string)>;
+    using SimpleJSCallback = std::function<void(const std::string&)>;
 }
 
 namespace PrismaUI::Communication {
     void Invoke(const Core::PrismaViewId& viewId, const ultralight::String& script,
-                std::function<void(std::string)> callback = nullptr);
+                std::move_only_function<void(std::string)> callback = nullptr);
     void BindJSCallbacks(const Core::PrismaViewId& viewId);
     JSValueRef InvokeCppCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject, size_t argumentCount,
                                  const JSValueRef arguments[], JSValueRef* exception);

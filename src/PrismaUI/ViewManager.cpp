@@ -10,7 +10,7 @@
 namespace PrismaUI::ViewManager {
     using namespace Core;
 
-    Core::PrismaViewId Create(const std::string& htmlPath, std::function<void(Core::PrismaViewId)> onDomReadyCallback) {
+    Core::PrismaViewId Create(const std::string& htmlPath, std::move_only_function<void(Core::PrismaViewId)> onDomReadyCallback) {
         bool expected_init = false;
         if (coreInitialized.compare_exchange_strong(expected_init, true)) {
             Core::InitializeCoreSystem();
@@ -40,7 +40,7 @@ namespace PrismaUI::ViewManager {
         viewData->htmlPathToLoad = fileUrl;
         viewData->originalUrl = fileUrl;  // Store for recovery after exceptions
         viewData->isHidden = false;
-        viewData->domReadyCallback = onDomReadyCallback;
+        viewData->domReadyCallback = std::move(onDomReadyCallback);
 
         {
             std::unique_lock lock(viewsMutex);
@@ -618,8 +618,10 @@ namespace PrismaUI::ViewManager {
         }
     }
 
-    void RegisterConsoleCallback(const Core::PrismaViewId& viewId,
-                                 std::function<void(Core::PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> callback) {
+    void RegisterConsoleCallback(
+        const Core::PrismaViewId& viewId,
+        std::move_only_function<void(PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> callback)
+    {
         std::unique_lock lock(viewsMutex);
         auto it = views.find(viewId);
         if (it != views.end() && it->second) {

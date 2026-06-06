@@ -1,8 +1,18 @@
 # CompilerFlags.cmake
 # Configures compiler-specific flags and optimizations
 
+add_compile_definitions(
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    UNICODE
+    _UNICODE
+)
+
 # Statically link the C runtime (avoids MSVC redistributable DLLs)
 if(MSVC)
+    string(REGEX REPLACE "/EH[scra-]*" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    string(APPEND CMAKE_CXX_FLAGS " /permissive- /Zc:preprocessor /MP /W4 /utf-8")
+
     # Add compilation speed optimizations
     # /d2ReducedOptimizeHugeFunctions - Faster optimization for large functions
     string(APPEND CMAKE_CXX_FLAGS " /d2ReducedOptimizeHugeFunctions")

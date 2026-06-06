@@ -7,7 +7,7 @@ namespace PrismaUI::Communication {
     using namespace Core;
     using namespace ViewManager;
 
-    void Invoke(const Core::PrismaViewId& viewId, const String& script, std::function<void(std::string)> callback) {
+    void Invoke(const Core::PrismaViewId& viewId, const String& script, std::move_only_function<void(std::string)> callback) {
         std::shared_ptr<PrismaView> viewData = nullptr;
         {
             std::shared_lock lock(viewsMutex);
@@ -25,7 +25,7 @@ namespace PrismaUI::Communication {
             return;
         }
 
-        ultralightThread.submit([view_ptr = viewData->ultralightView, script_copy = script, callback]() {
+        ultralightThread.submit([view_ptr = viewData->ultralightView, script_copy = script, callback = std::move(callback)] mutable {
             String result = "";
             if (view_ptr) {
                 try {
@@ -55,7 +55,7 @@ namespace PrismaUI::Communication {
             JSCallbackData data;
             data.viewId = viewId;
             data.name = name;
-            data.callback = callback;
+            data.callback = std::move(callback);
             jsCallbacks[std::make_pair(viewId, name)] = std::move(data);
             logger::debug("RegisterJSListener: Registered callback '{}' for view [{}]", name, viewId);
         }
@@ -168,7 +168,7 @@ namespace PrismaUI::Communication {
 
         Core::PrismaViewId retrievedViewId = callbackDataPtr->viewId;
         std::string retrievedName = callbackDataPtr->name;
-        Core::SimpleJSCallback targetCallback = callbackDataPtr->callback;
+        Core::SimpleJSCallback& targetCallback = callbackDataPtr->callback;
 
         logger::debug("JSCallbackDispatcher: Retrieved from C++ pointer -> View ID: '{}', Name: '{}'", retrievedViewId,
                       retrievedName);

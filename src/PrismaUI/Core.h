@@ -60,8 +60,8 @@ namespace PrismaUI::Core {
         std::unique_ptr<Listeners::MyLoadListener> loadListener;
         std::unique_ptr<Listeners::MyViewListener> viewListener;
         std::atomic<bool> isLoadingFinished = false;
-        std::function<void(const PrismaViewId&)> domReadyCallback;
-        std::function<void(PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> consoleMessageCallback;
+        std::move_only_function<void(const PrismaViewId&)> domReadyCallback;
+        std::move_only_function<void(PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> consoleMessageCallback;
         int scrollingPixelSize = 28;
         std::atomic<bool> isPaused = false;
         int order = 0;
@@ -126,7 +126,7 @@ namespace PrismaUI::Core {
     extern std::map<PrismaViewId, std::shared_ptr<PrismaView>> views;
     extern std::shared_mutex viewsMutex;
 
-    using SimpleJSCallback = std::function<void(std::string)>;
+    using SimpleJSCallback = std::function<void(const std::string&)>;
 
     struct JSCallbackData {
         PrismaViewId viewId;

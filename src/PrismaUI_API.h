@@ -20,17 +20,21 @@ namespace PRISMA_UI_API {
     constexpr const auto PrismaUIPluginName = "PrismaUI";
 
     // Available PrismaUI interface versions
-    enum class InterfaceVersion : uint8_t { V1, V2 };
+    enum class InterfaceVersion : uint8_t { V1, V2, V3 };
 
     typedef void (*OnDomReadyCallback)(PrismaView view);
+    typedef void (*OnDomReadyCallbackWithState)(PrismaView view, void* state);
     typedef void (*JSCallback)(const char* result);
+    typedef void (*JSCallbackWithState)(const char* result, void* state);
     typedef void (*JSListenerCallback)(const char* argument);
+    typedef void (*JSListenerCallbackWithState)(const char* argument, void* state);
 
     // JavaScript console message severity level for use with RegisterConsoleCallback().
     enum class ConsoleMessageLevel : uint8_t { Log = 0, Warning, Error, Debug, Info };
 
     // Console message callback.
     typedef void (*ConsoleMessageCallback)(PrismaView view, ConsoleMessageLevel level, const char* message);
+    typedef void (*ConsoleMessageCallbackWithState)(PrismaView view, ConsoleMessageLevel level, const char* message, void* state);
 
     // PrismaUI modder interface v1
     class IVPrismaUI1 {
@@ -116,6 +120,36 @@ namespace PRISMA_UI_API {
         virtual void RegisterConsoleCallback(PrismaView view, ConsoleMessageCallback callback) noexcept = 0;
     };
 
+    // PrismaUI modder interface v3 (extends v2)
+    // Adds state-aware callback variants. PrismaUI stores and passes callbackState back unchanged;
+    // ownership and lifetime of callbackState remain the caller's responsibility.
+    class IVPrismaUI3 : public IVPrismaUI2 {
+    protected:
+        ~IVPrismaUI3() = default;
+
+    public:
+        // Create view and receive callbackState in the DOM-ready callback.
+        // callbackState may be nullptr.
+        virtual PrismaView CreateViewV2(
+            const char* htmlPath, OnDomReadyCallbackWithState onDomReadyCallback = nullptr,
+            void* callbackState = nullptr) noexcept = 0;
+
+        // Send JS code to UI and receive callbackState in the result callback.
+        // callbackState may be nullptr.
+        virtual void InvokeV2(PrismaView view, const char* script, JSCallbackWithState callback = nullptr,
+            void* callbackState = nullptr) noexcept = 0;
+
+        // Register a JS listener and receive callbackState each time JavaScript calls it.
+        // callbackState may be nullptr.
+        virtual void RegisterJSListenerV2(PrismaView view, const char* functionName,
+            JSListenerCallbackWithState callback, void* callbackState = nullptr) noexcept = 0;
+
+        // Register a callback to receive JavaScript console messages with callbackState.
+        // callbackState may be nullptr.
+        virtual void RegisterConsoleCallbackV2(PrismaView view, ConsoleMessageCallbackWithState callback,
+            void* callbackState = nullptr) noexcept = 0;
+    };
+
     // Maps interface types to InterfaceVersion enum values.
     // compile-time constraint -- only request interface versions that actually exist.
     template <typename T>
@@ -129,6 +163,11 @@ namespace PRISMA_UI_API {
     template <>
     struct InterfaceVersionMap<IVPrismaUI2> {
         static constexpr InterfaceVersion version = InterfaceVersion::V2;
+    };
+
+    template <>
+    struct InterfaceVersionMap<IVPrismaUI3> {
+        static constexpr InterfaceVersion version = InterfaceVersion::V3;
     };
 
     typedef void* (*RequestPluginAPIFunc)(InterfaceVersion interfaceVersion);
@@ -158,6 +197,7 @@ namespace PRISMA_UI_API {
     /// Usage:
     ///   auto* m_prismaUI   = PRISMA_UI_API::RequestPluginAPI<PRISMA_UI_API::IVPrismaUI1>();
     ///   auto* m_prismaUIv2 = PRISMA_UI_API::RequestPluginAPI<PRISMA_UI_API::IVPrismaUI2>();
+    ///   auto* m_prismaUIv3 = PRISMA_UI_API::RequestPluginAPI<PRISMA_UI_API::IVPrismaUI3>();
     template <typename T>
     [[nodiscard]] inline T* RequestPluginAPI() {
         return static_cast<T*>(RequestPluginAPI(InterfaceVersionMap<T>::version));

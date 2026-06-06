@@ -5,53 +5,12 @@
 
 PrismaView PluginAPI::PrismaUIInterface::CreateView(const char* htmlPath, PRISMA_UI_API::OnDomReadyCallback onDomReadyCallback) noexcept
 {
-    if (!htmlPath) {
-        return 0;
-    }
-
-    std::function<void(PrismaUI::Core::PrismaViewId)> domReadyWrapper = nullptr;
-    if (onDomReadyCallback) {
-        domReadyWrapper = [onDomReadyCallback](PrismaUI::Core::PrismaViewId viewId) {
-            SKSE::GetTaskInterface()->AddTask([callback = onDomReadyCallback, id = viewId]() {
-                callback(id);
-            });
-        };
-    }
-
-    return PrismaUI::ViewManager::Create(htmlPath, domReadyWrapper);
+    return CreateViewInternal(htmlPath, onDomReadyCallback);
 }
 
 void PluginAPI::PrismaUIInterface::Invoke(PrismaView view, const char* script, PRISMA_UI_API::JSCallback callback) noexcept
 {
-    if (!view || !script) {
-        return;
-    }
-
-    std::string processedScript;
-
-    if (isValidUTF8(script)) {
-        processedScript = script;
-    }
-    else {
-        processedScript = convertFromANSIToUTF8(script);
-        if (processedScript.empty()) {
-            return;  // Conversion failed, cannot safely invoke
-        }
-    }
-
-    ultralight::String _script(processedScript.c_str());
-
-    std::function<void(std::string)> callbackWrapper = nullptr;
-
-    if (callback) {
-        callbackWrapper = [callback](const std::string& result) {
-            SKSE::GetTaskInterface()->AddTask([targetCallback = callback, data = result]() {
-                targetCallback(data.c_str());
-            });
-        };
-    }
-    
-    return PrismaUI::Communication::Invoke(view, _script, callbackWrapper);
+    InvokeInternal(view, script, callback);
 }
 
 void PluginAPI::PrismaUIInterface::InteropCall(PrismaView view, const char* functionName, const char* argument) noexcept
@@ -77,17 +36,7 @@ void PluginAPI::PrismaUIInterface::InteropCall(PrismaView view, const char* func
 
 void PluginAPI::PrismaUIInterface::RegisterJSListener(PrismaView view, const char* fnName, PRISMA_UI_API::JSListenerCallback callback) noexcept
 {
-    if (!view || !fnName || !callback) {
-        return;
-    }
-
-    std::function<void(std::string)> callbackWrapper = [callback](const std::string& arg) {
-        SKSE::GetTaskInterface()->AddTask([targetCallback = callback, data = arg]() {
-            targetCallback(data.c_str());
-        });
-    };
-
-    return PrismaUI::Communication::RegisterJSListener(view, fnName, callbackWrapper);
+    RegisterJSListenerInternal(view, fnName, callback);
 }
 
 bool PluginAPI::PrismaUIInterface::HasFocus(PrismaView view) noexcept
@@ -239,4 +188,118 @@ void PluginAPI::PrismaUIInterface::RegisterConsoleCallback(PrismaView view, PRIS
 	} else {
 		PrismaUI::ViewManager::RegisterConsoleCallback(view, nullptr);
 	}
+}
+
+PrismaView PluginAPI::PrismaUIInterface::CreateViewV2(
+    const char* htmlPath, PRISMA_UI_API::OnDomReadyCallbackWithState onDomReadyCallback, void* callbackState) noexcept
+{
+    auto callback = onDomReadyCallback
+        ? std::function<void(PrismaUI::Core::PrismaViewId)>([onDomReadyCallback, callbackState](auto id) { onDomReadyCallback(id, callbackState); })
+        : nullptr;
+
+    return CreateViewInternal(htmlPath, callback);
+}
+
+void PluginAPI::PrismaUIInterface::InvokeV2(PrismaView view, const char* script,
+    PRISMA_UI_API::JSCallbackWithState callback, void* callbackState) noexcept
+{
+    auto callbackFunc = callback
+        ? std::function<void(const char*)>([callback, callbackState](auto id) { callback(id, callbackState); })
+        : nullptr;
+
+    InvokeInternal(view, script, callbackFunc);
+}
+
+void PluginAPI::PrismaUIInterface::RegisterJSListenerV2(PrismaView view, const char* functionName,
+    PRISMA_UI_API::JSListenerCallbackWithState callback, void* callbackState) noexcept
+{
+    if (!callback) {
+        return;
+    }
+
+    RegisterJSListenerInternal(view, functionName, [callback, callbackState](auto argument) { callback(argument, callbackState); });
+}
+
+void PluginAPI::PrismaUIInterface::RegisterConsoleCallbackV2(
+    PrismaView view, PRISMA_UI_API::ConsoleMessageCallbackWithState callback, void* callbackState) noexcept
+{
+    if (!view || !callback) {
+        return;
+    }
+
+    auto wrappedCallback = [callback, callbackState](PrismaUI::Core::PrismaViewId id, PRISMA_UI_API::ConsoleMessageLevel level, const std::string& msg) {
+        SKSE::GetTaskInterface()->AddTask([callback, id, level, msg, callbackState] {
+            callback(id, level, msg.c_str(), callbackState);
+        });
+    };
+    PrismaUI::ViewManager::RegisterConsoleCallback(view, wrappedCallback);
+}
+
+PrismaView PluginAPI::PrismaUIInterface::CreateViewInternal(
+    const char* htmlPath, std::function<void(PrismaUI::Core::PrismaViewId)> onDomReadyCallback) noexcept
+{
+    if (!htmlPath) {
+        return 0;
+    }
+
+    std::move_only_function<void(PrismaUI::Core::PrismaViewId)> domReadyWrapper = nullptr;
+    if (onDomReadyCallback) {
+        domReadyWrapper = [callback = std::move(onDomReadyCallback)](PrismaUI::Core::PrismaViewId viewId) {
+            SKSE::GetTaskInterface()->AddTask([callback = std::move(callback), id = viewId] {
+                std::invoke(callback, id);
+            });
+        };
+    }
+
+    return PrismaUI::ViewManager::Create(htmlPath, std::move(domReadyWrapper));
+}
+
+void PluginAPI::PrismaUIInterface::InvokeInternal(PrismaView view, const char* script,
+    std::function<void(const char*)> callback) noexcept
+{
+    if (!view || !script) {
+        return;
+    }
+
+    std::string processedScript;
+
+    if (isValidUTF8(script)) {
+        processedScript = script;
+    }
+    else {
+        processedScript = convertFromANSIToUTF8(script);
+        if (processedScript.empty()) {
+            return;  // Conversion failed, cannot safely invoke
+        }
+    }
+
+    ultralight::String _script(processedScript.c_str());
+
+    std::move_only_function<void(std::string)> callbackWrapper = nullptr;
+
+    if (callback) {
+        callbackWrapper = [callback = std::move(callback)](const std::string& result) {
+            SKSE::GetTaskInterface()->AddTask([targetCallback = std::move(callback), data = result] {
+                targetCallback(data.c_str());
+            });
+        };
+    }
+
+    return PrismaUI::Communication::Invoke(view, _script, std::move(callbackWrapper));
+}
+
+void PluginAPI::PrismaUIInterface::RegisterJSListenerInternal(PrismaView view, const char* functionName,
+    std::function<void(const char*)> callback) noexcept
+{
+    if (!view || !functionName || !callback) {
+        return;
+    }
+
+    PrismaUI::Core::SimpleJSCallback callbackWrapper = [callback = std::move(callback)](const std::string& arg) {
+        SKSE::GetTaskInterface()->AddTask([targetCallback = std::move(callback), data = arg] {
+            targetCallback(data.c_str());
+        });
+    };
+
+    return PrismaUI::Communication::RegisterJSListener(view, functionName, callbackWrapper);
 }

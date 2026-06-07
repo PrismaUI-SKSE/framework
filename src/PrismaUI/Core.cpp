@@ -167,13 +167,9 @@ namespace PrismaUI::Core {
         Cef::CefRuntime::GetSingleton().BeginFrame();
         Cef::CefRuntime::GetSingleton().UpdateOverlayTexture(d3dDevice, d3dContext);
 
-
         // Process pending operations and queued input for all views.
         ViewOperationQueue::ProcessAllViewOperations();
         ProcessEvents();
-
-
-        // Per-view texture upload loop retired in Step 6 — CEF overlay is the single drawn surface.
 
         DrawViews();
         DrawCursor();

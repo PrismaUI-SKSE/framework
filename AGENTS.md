@@ -18,12 +18,12 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
 ## Build And Packaging
 
 - Use direct CMake preset commands from a VS 2022 Developer PowerShell or Developer Command Prompt.
+- Debug configure/build (default):
+  - `cmake -S . --preset=debug`
+  - `cmake --build --preset=debug --parallel 8`
 - Release configure/build:
   - `cmake -S . --preset=release`
   - `cmake --build --preset=release --parallel 8`
-- Debug configure/build:
-  - `cmake -S . --preset=debug`
-  - `cmake --build --preset=debug --parallel 8`
 - `BuildRelease.ps1` exists as a convenience wrapper, but do not use it as the default build instruction.
 - Requires `VCPKG_ROOT`, Ninja, VS 2022 C++ tooling, Node.js with `npm` on `PATH` (CMake `find_program(... npm ... REQUIRED)` fails configure without it), and `external/cef_binary_147.0.14+g76d2442+chromium-147.0.7727.138_windows64.tar.bz2` (or `PRISMAUI_CEF_ARCHIVE` pointing at an equivalent local archive).
 - CMake extracts CEF to `build/external_builds/cef/<cef_binary_root>/`.
@@ -181,8 +181,8 @@ There is no C++ per-view rectangle, transform, or clipping system. Positioning i
 
 There is no dedicated test suite in this repository. For code changes:
 
-- At minimum, run `cmake -S . --preset=release` and `cmake --build --preset=release --parallel 8` when the local environment has VS, vcpkg, Ninja, and the CEF binary archive.
-- For debug/runtime-sensitive work, also build `debug`.
+- At minimum, run `cmake -S . --preset=debug` and `cmake --build --preset=debug --parallel 8` when the local environment has VS, vcpkg, Ninja, and the CEF binary archive.
+- For release/perf-sensitive work, also build `release`.
 - For rendering/input/IME/DevTools/CEF-lifecycle changes, static build success is not enough; verify in-game when possible. Look for `CefInitialize` success, subprocess path, shell browser creation, selected GPU/CPU paint path, and clean `CefShutdown` in logs.
 - If the CEF archive or external tooling is missing, state that verification was not possible and mention the missing prerequisite.
 
@@ -190,11 +190,11 @@ There is no dedicated test suite in this repository. For code changes:
 
 Use `RunSmokeTest.ps1` for runtime/API checks. It builds PrismaUI and `test_plugin`, copies the distributions into Mod Organizer mods, launches Skyrim through SKSE, waits for the `PRISMAUI_SMOKE_TEST_PASS` marker in `PrismaUITest.log`, lets the test plugin request game exit, then checks the PrismaUI and PrismaUITest logs.
 
-- Default release smoke run:
+- Default debug smoke run:
   ```powershell
   .\RunSmokeTest.ps1
   ```
-- Useful options: `-Preset debug`, `-SkipBuild`, `-NoLaunch`, `-SmokeTimeoutSeconds <seconds>`, `-ExitTimeoutSeconds <seconds>`, and `-ForceExitOnTimeout`.
+- Useful options: `-Preset release`, `-SkipBuild`, `-NoLaunch`, `-SmokeTimeoutSeconds <seconds>`, `-ExitTimeoutSeconds <seconds>`, and `-ForceExitOnTimeout`.
 - The script copies PrismaUI to `{MO_dir}\mods\PrismaUI` and the test plugin to `{MO_dir}\mods\test_plugin`.
 - Normal exit is automatic: the script sets `PRISMAUI_SMOKE_AUTO_EXIT=1`, and `test_plugin` sets `RE::Main::quitGame` only after the API smoke callbacks have passed.
 - Logs checked/printed by the script:

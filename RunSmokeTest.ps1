@@ -1,6 +1,6 @@
 param(
     [string]$ModOrganizerDir,
-    [string]$Preset = "release",
+    [string]$Preset = "debug",
     [int]$Threads = 8,
     [int]$SmokeTimeoutSeconds = 180,
     [int]$ExitTimeoutSeconds = 30,

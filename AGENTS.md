@@ -5,7 +5,7 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
 ## Working Rules
 
 - Keep changes scoped. This plugin runs inside Skyrim's process, so avoid broad refactors unless the task explicitly calls for them.
-- Preserve the public ABI in `src/PrismaUI_API.h` and the matching vtable method order in `src/API/API.h`. Supported `InterfaceVersion` values are `V1 = 4`, `V2 = 5`, `V3 = 6`. Legacy numeric requests `0`, `1`, `2` are the old Ultralight-inspector ABI and must keep returning `nullptr`.
+- Preserve the public ABI in `src/PrismaUI_API.h` and the matching vtable method order in `src/API/API.h`. Supported `InterfaceVersion` values are `V1 = 0`, `V2 = 1`, `V3 = 2`. Any other requested version (3 and up) must keep returning `nullptr`.
 - Treat CEF browser/frame/V8 objects as CEF-UI-thread-owned. Route work through `Cef::CefRuntime` and `CefPostTask(TID_UI, ...)`; CEF renderer-process V8 work belongs in `PrismaCefRenderApp` on `TID_RENDERER`.
 - Treat D3D11 texture/resource work as render-thread work. Texture creation, mapping, drawing, and release happen on the present/render path; the only drawn surface is the CEF overlay texture (plus the Prisma cursor).
 - Public API callbacks into mods must be scheduled with `SKSE::GetTaskInterface()->AddTask`/`AddUITask` — do not call mod code directly from CEF UI/renderer threads.
@@ -75,7 +75,7 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
 
 No CEF DLLs are loaded here; CEF is brought up lazily on first view creation. On `kDataLoaded`, `CursorMenuEx::InstallHook()` hooks Skyrim's cursor menu.
 
-`RequestPluginAPI` returns one of `IVPrismaUI1`, `IVPrismaUI2`, or `IVPrismaUI3` implemented by `PluginAPI::PrismaUIInterface`. Numeric values `0`, `1`, `2` are rejected with `nullptr`.
+`RequestPluginAPI` returns one of `IVPrismaUI1`, `IVPrismaUI2`, or `IVPrismaUI3` implemented by `PluginAPI::PrismaUIInterface`. `InterfaceVersion` `V1` (0), `V2` (1), and `V3` (2) return the matching interface; any other numeric value is rejected with `nullptr`.
 
 ### Core Initialization
 
@@ -131,9 +131,9 @@ There is no C++ per-view rectangle, transform, or clipping system. Positioning i
 ## Public API Notes
 
 - `PrismaView` is a `uint64_t` ID, not a pointer.
-- V1 API (`InterfaceVersion::V1 = 4`): create/destroy, invoke JS, interop call, JS listener registration, focus, visibility, scroll size, order, DevTools control, active-focus query.
-- V2 API (`InterfaceVersion::V2 = 5`) adds `RegisterConsoleCallback`.
-- V3 API (`InterfaceVersion::V3 = 6`) adds state-aware callback variants. The caller owns `callbackState`; PrismaUI stores and passes it back unchanged.
+- V1 API (`InterfaceVersion::V1 = 0`): create/destroy, invoke JS, interop call, JS listener registration, focus, visibility, scroll size, order, DevTools control, active-focus query.
+- V2 API (`InterfaceVersion::V2 = 1`) adds `RegisterConsoleCallback`.
+- V3 API (`InterfaceVersion::V3 = 2`) adds state-aware callback variants. The caller owns `callbackState`; PrismaUI stores and passes it back unchanged.
 - `CreateView` accepts `http://` and `https://` URLs directly. Other paths become `file:///views/<htmlPath>` and are resolved by CEF against the shell base, rooted at `Data/PrismaUI`.
 - `Invoke` evaluates a JS string in the target iframe and optionally returns a string result via the CEF result bridge.
 - `InteropCall` calls a named global JS function with one string argument inside the target iframe and avoids script construction overhead.
@@ -188,10 +188,9 @@ There is no dedicated test suite in this repository. For code changes:
 
 Use `RunSmokeTest.ps1` for runtime/API checks. It builds PrismaUI and `test_plugin`, copies the distributions into Mod Organizer mods, launches Skyrim through SKSE, waits for the `PRISMAUI_SMOKE_TEST_PASS` marker in `PrismaUITest.log`, lets the test plugin request game exit, then checks the PrismaUI and PrismaUITest logs.
 
-- Configure Mod Organizer with `-ModOrganizerDir`, `PRISMAUI_MO_DIR`, or `$smokeTestModOrganizerDir` in `Build_Config_Local.ps1`.
 - Default release smoke run:
   ```powershell
-  .\RunSmokeTest.ps1 -ModOrganizerDir "C:\Path\To\ModOrganizer"
+  .\RunSmokeTest.ps1
   ```
 - Useful options: `-Preset debug`, `-SkipBuild`, `-NoLaunch`, `-SmokeTimeoutSeconds <seconds>`, `-ExitTimeoutSeconds <seconds>`, and `-ForceExitOnTimeout`.
 - The script copies PrismaUI to `{MO_dir}\mods\PrismaUI` and the test plugin to `{MO_dir}\mods\test_plugin`.

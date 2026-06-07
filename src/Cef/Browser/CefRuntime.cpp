@@ -1535,19 +1535,13 @@ namespace PrismaUI::Cef
                 return true;
             }
             Impl::InvokeEntry entry;
-            bool have = false;
             {
                 std::lock_guard lock(impl_->invokeMutex);
                 auto it = impl_->pendingInvokes.find(requestId);
                 if (it != impl_->pendingInvokes.end()) {
                     entry = std::move(it->second);
                     impl_->pendingInvokes.erase(it);
-                    have = true;
                 }
-            }
-            if (!have) {
-                logger::warn("OnRendererMessage: invokeResult for unknown requestId {}.", requestId);
-                return true;
             }
             if (entry.callback) {
                 entry.callback(payload[2]);

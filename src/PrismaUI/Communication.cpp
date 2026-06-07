@@ -147,6 +147,21 @@ namespace PrismaUI::Communication {
         viewData->iframeReady.store(true, std::memory_order_release);
         logger::info("DispatchDomReady: view [{}] iframe DOM ready.", viewId);
 
+        std::vector<std::string> listenerNames;
+        {
+            std::lock_guard<std::mutex> lock(jsCallbacksMutex);
+            for (const auto& [key, data] : jsCallbacks) {
+                if (key.first == viewId) {
+                    listenerNames.push_back(data.name);
+                }
+            }
+        }
+
+        for (const auto& name : listenerNames) {
+            Cef::CefRuntime::GetSingleton().RegisterListener(viewId, name, /*unused*/ nullptr);
+        }
+
+
         if (viewData->domReadyCallback) {
             try {
                 viewData->domReadyCallback(static_cast<Core::PrismaViewId>(viewId));

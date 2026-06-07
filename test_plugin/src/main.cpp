@@ -2,6 +2,9 @@
 
 #include "PrismaUI_API.h"
 
+#include <chrono>
+#include <thread>
+
 namespace {
     constexpr const char* kViewPath = "prismaui_api_test.html";
     constexpr std::uint8_t kRawVersionProbeFirst = 0;
@@ -23,6 +26,15 @@ namespace {
     PRISMA_UI_API::IVPrismaUI3* g_apiV3 = nullptr;
     PrismaView g_testView = 0;
     std::atomic_bool g_startedLifecycleTest = false;
+    constexpr const char* kSmokePassMarker = "PRISMAUI_SMOKE_TEST_PASS";
+    constexpr unsigned int kSmokeExitWatchdogSeconds = 8;
+
+    std::atomic_bool g_domReadySeen = false;
+    std::atomic_bool g_domInvokeSeen = false;
+    std::atomic_bool g_listenerSeen = false;
+    std::atomic_bool g_consoleSeen = false;
+    std::atomic_bool g_smokePassLogged = false;
+    std::atomic_bool g_autoExitScheduled = false;
 
     [[nodiscard]] const char* BoolText(const bool value) noexcept {
         return value ? "true" : "false";
@@ -68,6 +80,84 @@ namespace {
         return "Unknown";
     }
 
+    [[nodiscard]] bool ContainsText(const char* value, const std::string_view needle) noexcept {
+        return value && std::string_view(value).find(needle) != std::string_view::npos;
+    }
+
+    [[nodiscard]] bool SmokeAutoExitEnabled() noexcept {
+        char value[8]{};
+        const DWORD length =
+            GetEnvironmentVariableA("PRISMAUI_SMOKE_AUTO_EXIT", value, static_cast<DWORD>(sizeof(value)));
+        return length > 0 && value[0] != '0';
+    }
+
+    void RequestCleanQuit() {
+        auto* main = RE::Main::GetSingleton();
+        if (!main) {
+            logger::error("Smoke auto-exit clean quit skipped: RE::Main singleton is unavailable");
+            return;
+        }
+
+        logger::info("Smoke auto-exit: requesting clean quit (RE::Main::quitGame + WM_CLOSE)");
+        main->quitGame = true;
+
+        if (auto* wnd = reinterpret_cast<HWND>(main->wnd)) {
+            ::PostMessageW(wnd, WM_CLOSE, 0, 0);
+        }
+    }
+
+    void StartQuitWatchdog() {
+        logger::info("Smoke auto-exit: arming hard-termination watchdog ({}s)", kSmokeExitWatchdogSeconds);
+        std::thread([]() {
+            std::this_thread::sleep_for(std::chrono::seconds(kSmokeExitWatchdogSeconds));
+            logger::warn("Smoke auto-exit watchdog: process still alive after {}s; calling TerminateProcess",
+                kSmokeExitWatchdogSeconds);
+            ::TerminateProcess(::GetCurrentProcess(), 0);
+        }).detach();
+    }
+
+    void RequestGameQuitAfterSmokePass() {
+        bool expected = false;
+        if (!g_autoExitScheduled.compare_exchange_strong(expected, true)) {
+            return;
+        }
+
+        // At the Main Menu (no save loaded) RE::Main::quitGame is ignored by the menu loop, so the watchdog
+        // is the load-bearing terminator. The clean attempt below wins when the engine honors it (in-gameplay
+        // or if WM_CLOSE quits at the menu); otherwise the watchdog guarantees the process dies for the harness.
+        StartQuitWatchdog();
+
+        auto* taskInterface = SKSE::GetTaskInterface();
+        if (!taskInterface) {
+            logger::warn("Smoke auto-exit: SKSE task interface unavailable; requesting clean quit inline");
+            RequestCleanQuit();
+            return;
+        }
+
+        logger::info("Smoke auto-exit: scheduling clean quit on the SKSE task interface");
+        taskInterface->AddTask([]() { RequestCleanQuit(); });
+    }
+
+    void CheckSmokeCompletion() {
+        if (!g_domReadySeen.load(std::memory_order_acquire) ||
+            !g_domInvokeSeen.load(std::memory_order_acquire) ||
+            !g_listenerSeen.load(std::memory_order_acquire) ||
+            !g_consoleSeen.load(std::memory_order_acquire)) {
+            return;
+        }
+
+        bool expected = false;
+        if (!g_smokePassLogged.compare_exchange_strong(expected, true)) {
+            return;
+        }
+
+        logger::info("{}: domReady=true, domInvoke=true, listener=true, console=true", kSmokePassMarker);
+
+        if (SmokeAutoExitEnabled()) {
+            RequestGameQuitAfterSmokePass();
+        }
+    }
+
     [[nodiscard]] CallbackState* AsState(void* state) noexcept {
         return static_cast<CallbackState*>(state);
     }
@@ -91,11 +181,19 @@ namespace {
     void DomInvokeCallback(const char* result, void* state) {
         LogState("DOM-ready InvokeV2", state);
         logger::info("DOM-ready InvokeV2 result: {}", result ? result : "<null>");
+        if (ContainsText(result, "readyState=")) {
+            g_domInvokeSeen.store(true, std::memory_order_release);
+            CheckSmokeCompletion();
+        }
     }
 
     void ListenerCallback(const char* argument, void* state) {
         LogState("RegisterJSListenerV2", state);
         logger::info("RegisterJSListenerV2 argument: {}", argument ? argument : "<null>");
+        if (ContainsText(argument, "listener-payload")) {
+            g_listenerSeen.store(true, std::memory_order_release);
+            CheckSmokeCompletion();
+        }
     }
 
     void ConsoleCallback(
@@ -103,6 +201,10 @@ namespace {
         LogState("RegisterConsoleCallbackV2", state);
         logger::info("Console callback: view={}, level={}, message={}", view, ConsoleLevelName(level),
             message ? message : "<null>");
+        if (ContainsText(message, "[PrismaUITest]")) {
+            g_consoleSeen.store(true, std::memory_order_release);
+            CheckSmokeCompletion();
+        }
     }
 
     void RunDomReadyScript(const PrismaView view) {
@@ -129,6 +231,8 @@ namespace {
         LogState("CreateViewV2 DOM-ready", state);
         logger::info("CreateViewV2 DOM-ready view={}, expectedCurrentView={}", view, g_testView);
         logger::info("DOM-ready IsValid({})={}", view, BoolText(g_apiV3 && g_apiV3->IsValid(view)));
+        g_domReadySeen.store(true, std::memory_order_release);
+        CheckSmokeCompletion();
         RunDomReadyScript(view);
     }
 

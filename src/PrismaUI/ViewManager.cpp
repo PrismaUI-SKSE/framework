@@ -142,8 +142,10 @@ namespace PrismaUI::ViewManager {
             const bool ok =
                 Cef::CefRuntime::GetSingleton().CreateShellView(newViewId, htmlPathCopy, order, /*hidden=*/false);
             if (!ok) {
-                logger::error("Create: CefRuntime::CreateShellView returned false for View [{}] (iframe={}).",
-                              newViewId, view->iframeName);
+                logger::warn(
+                    "Create: CefRuntime::CreateShellView returned false for View [{}] (iframe={}); shell replay "
+                    "should attach it once the CEF browser is ready.",
+                    newViewId, view->iframeName);
             } else {
                 logger::info("Create: View [{}] iframe={} dispatched to CEF shell.", newViewId, view->iframeName);
             }

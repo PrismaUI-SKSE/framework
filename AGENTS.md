@@ -183,3 +183,20 @@ There is no dedicated test suite in this repository. For code changes:
 - For debug/runtime-sensitive work, also build `debug`.
 - For rendering/input/IME/DevTools/CEF-lifecycle changes, static build success is not enough; verify in-game when possible. Look for `CefInitialize` success, subprocess path, shell browser creation, selected GPU/CPU paint path, and clean `CefShutdown` in logs.
 - If the CEF archive or external tooling is missing, state that verification was not possible and mention the missing prerequisite.
+
+### Smoke Test
+
+Use `RunSmokeTest.ps1` for runtime/API checks. It builds PrismaUI and `test_plugin`, copies the distributions into Mod Organizer mods, launches Skyrim through SKSE, waits for the `PRISMAUI_SMOKE_TEST_PASS` marker in `PrismaUITest.log`, lets the test plugin request game exit, then checks the PrismaUI and PrismaUITest logs.
+
+- Configure Mod Organizer with `-ModOrganizerDir`, `PRISMAUI_MO_DIR`, or `$smokeTestModOrganizerDir` in `Build_Config_Local.ps1`.
+- Default release smoke run:
+  ```powershell
+  .\RunSmokeTest.ps1 -ModOrganizerDir "C:\Path\To\ModOrganizer"
+  ```
+- Useful options: `-Preset debug`, `-SkipBuild`, `-NoLaunch`, `-SmokeTimeoutSeconds <seconds>`, `-ExitTimeoutSeconds <seconds>`, and `-ForceExitOnTimeout`.
+- The script copies PrismaUI to `{MO_dir}\mods\PrismaUI` and the test plugin to `{MO_dir}\mods\test_plugin`.
+- Normal exit is automatic: the script sets `PRISMAUI_SMOKE_AUTO_EXIT=1`, and `test_plugin` sets `RE::Main::quitGame` only after the API smoke callbacks have passed.
+- Logs checked/printed by the script:
+  - CEF: `{MO_dir}\overwrite\PrismaUI\logs\cef.log`
+  - PrismaUI: `%USERPROFILE%\Documents\My Games\Skyrim Special Edition\SKSE\PrismaUI.log`
+  - test plugin: `%USERPROFILE%\Documents\My Games\Skyrim Special Edition\SKSE\PrismaUITest.log`

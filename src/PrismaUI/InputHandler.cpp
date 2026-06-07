@@ -600,7 +600,7 @@ namespace PrismaUI::InputHandler {
 
         if (!SetWindowSubclass(g_hWnd, SubclassProc, SUBCLASS_ID, 0)) {
             DWORD err = GetLastError();
-            logger::error("Failed to install WndProc subclass. Error: {} (0x{:X})", err, err);
+            logger::warn("Failed to install WndProc subclass. Error: {} (0x{:X})", err, err);
             return false;
         }
 

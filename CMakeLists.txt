@@ -26,6 +26,8 @@ set(BUILD_ROOT "${CMAKE_SOURCE_DIR}/build")
 
 set(PRISMAUI_SHELL_APP_DIR "${CMAKE_SOURCE_DIR}/shell/app")
 set(PRISMAUI_SHELL_DIST_DIR "${CMAKE_SOURCE_DIR}/shell/dist")
+set(PRISMAUI_BOOTSTRAP_JS "${CMAKE_SOURCE_DIR}/shell/dist-bootstrap/bootstrap.js")
+set(PRISMAUI_BOOTSTRAP_HEADER "${CMAKE_BINARY_DIR}/generated/PrismaBootstrapScript.generated.h")
 find_program(PRISMAUI_NPM_EXECUTABLE NAMES npm npm.cmd REQUIRED DOC "npm executable required to build the PrismaUI CEF shell")
 
 file(GLOB PRISMAUI_SHELL_SOURCES CONFIGURE_DEPENDS
@@ -37,7 +39,7 @@ file(GLOB PRISMAUI_SHELL_SOURCES CONFIGURE_DEPENDS
 )
 
 add_custom_command(
-    OUTPUT "${PRISMAUI_SHELL_DIST_DIR}/index.html"
+    OUTPUT "${PRISMAUI_SHELL_DIST_DIR}/index.html" "${PRISMAUI_BOOTSTRAP_JS}"
     COMMAND "${PRISMAUI_NPM_EXECUTABLE}" ci
     COMMAND "${PRISMAUI_NPM_EXECUTABLE}" run build
     WORKING_DIRECTORY "${PRISMAUI_SHELL_APP_DIR}"
@@ -47,6 +49,20 @@ add_custom_command(
 )
 
 add_custom_target(PrismaUIShell DEPENDS "${PRISMAUI_SHELL_DIST_DIR}/index.html")
+
+# Embed the iframe bootstrap script (built by PrismaUIShell) into a generated
+# C++ header that the renderer TU includes. Shared by both targets.
+add_custom_command(
+    OUTPUT "${PRISMAUI_BOOTSTRAP_HEADER}"
+    COMMAND "${CMAKE_COMMAND}"
+        "-DBOOTSTRAP_JS=${PRISMAUI_BOOTSTRAP_JS}"
+        "-DOUTPUT_HEADER=${PRISMAUI_BOOTSTRAP_HEADER}"
+        -P "${CMAKE_SOURCE_DIR}/cmake/EmbedBootstrap.cmake"
+    DEPENDS "${PRISMAUI_BOOTSTRAP_JS}" "${CMAKE_SOURCE_DIR}/cmake/EmbedBootstrap.cmake"
+    COMMENT "Embedding PrismaUI iframe bootstrap script"
+    VERBATIM
+)
+add_custom_target(PrismaUIBootstrapHeader DEPENDS "${PRISMAUI_BOOTSTRAP_HEADER}")
 
 # Include compiler flags configuration
 include(CompilerFlags)
@@ -112,6 +128,7 @@ add_executable(PrismaUICefSubprocess WIN32
 target_include_directories(PrismaUICefSubprocess
     PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_BINARY_DIR}/generated"
 )
 
 target_link_libraries(PrismaUICefSubprocess
@@ -122,7 +139,8 @@ target_link_libraries(PrismaUICefSubprocess
 )
 
 prismaui_configure_cef_executable(PrismaUICefSubprocess)
-add_dependencies(${PROJECT_NAME} PrismaUICefSubprocess PrismaUIShell)
+add_dependencies(${PROJECT_NAME} PrismaUICefSubprocess PrismaUIShell PrismaUIBootstrapHeader)
+add_dependencies(PrismaUICefSubprocess PrismaUIBootstrapHeader)
 
 # Include directories
 target_include_directories(${PROJECT_NAME}
@@ -130,6 +148,7 @@ target_include_directories(${PROJECT_NAME}
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
     "${CEF_ROOT}"
     "${CEF_ROOT}/include"
+    "${CMAKE_BINARY_DIR}/generated"
 )
 
 

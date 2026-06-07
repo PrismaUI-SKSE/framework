@@ -1,6 +1,7 @@
 #include "Cef/Shared/PrismaCefRenderApp.h"
 
 #include "Cef/Shared/ProcessMessageNames.h"
+#include "PrismaBootstrapScript.generated.h"
 #include "include/base/cef_logging.h"
 #include "include/cef_browser.h"
 #include "include/cef_frame.h"
@@ -58,113 +59,6 @@ namespace PrismaUI::Cef {
             return msg;
         }
 
-        // JS source that wraps console.*, installs the DOMContentLoaded dispatcher,
-        // and tracks iframe-local text-input focus for the native IME bridge.
-        const std::string kBootstrapScript = std::string(R"JS((function() {
-  var native = window.__prismaNative;
-  if (!native) return;
-  try {
-    var c = console;
-    var orig = {
-      log: c.log && c.log.bind(c),
-      info: c.info && c.info.bind(c),
-      warn: c.warn && c.warn.bind(c),
-      error: c.error && c.error.bind(c),
-      debug: c.debug && c.debug.bind(c),
-    };
-    function stringifyArgs(args) {
-      var parts = [];
-      for (var i = 0; i < args.length; i++) {
-        var v = args[i];
-        try {
-          if (v && typeof v === 'object') {
-            parts.push(JSON.stringify(v));
-          } else {
-            parts.push(String(v));
-          }
-        } catch (_) {
-          parts.push(String(v));
-        }
-      }
-      return parts.join(' ');
-    }
-    function wrap(level) {
-      return function() {
-        try { if (orig[level]) orig[level].apply(c, arguments); } catch (_) {}
-        try { native.fireConsole(level, stringifyArgs(arguments)); } catch (_) {}
-      };
-    }
-    c.log = wrap('log');
-    c.info = wrap('info');
-    c.warn = wrap('warn');
-    c.error = wrap('error');
-    c.debug = wrap('debug');
-  } catch (_) {}
-
-  try {
-    window.__prismaInstallListener = function(name) {
-      window[name] = function(arg) {
-        try {
-          native.fireListener(name, arg === undefined || arg === null ? '' : String(arg));
-        } catch (_) {}
-      };
-    };
-  } catch (_) {}
-
-  try {
-    function isTextInputElement(el) {
-      if (!el || el.disabled || el.readOnly) return false;
-      if (el.isContentEditable) return true;
-      var tag = (el.tagName || '').toUpperCase();
-      if (tag === 'TEXTAREA') return true;
-      if (tag !== 'INPUT') return false;
-      var type = ((el.type || 'text') + '').toLowerCase();
-      switch (type) {
-        case '':
-        case 'text':
-        case 'search':
-        case 'url':
-        case 'tel':
-        case 'password':
-        case 'email':
-        case 'number':
-          return true;
-        default:
-          return false;
-      }
-    }
-    function notifyImeFocus(element) {
-      try {
-        native.fireListener(')JS") + Messages::kImeFocusListener + R"JS(', isTextInputElement(element) ? '1' : '0');
-      } catch (_) {}
-    }
-    window.__prismaImeFocusNotify = notifyImeFocus;
-    document.addEventListener('focusin', function(event) { notifyImeFocus(event.target); }, true);
-    document.addEventListener('focusout', function() {
-      setTimeout(function() { notifyImeFocus(document.activeElement); }, 0);
-    }, true);
-    notifyImeFocus(document.activeElement);
-  } catch (_) {}
-
-  try {
-    function fireReady() {
-      try { native.fireDomReady(); } catch (_) {}
-      try {
-        if (typeof window.__prismaImeFocusNotify === 'function') {
-          window.__prismaImeFocusNotify(document.activeElement);
-        }
-      } catch (_) {}
-    }
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', function once() {
-        document.removeEventListener('DOMContentLoaded', once);
-        fireReady();
-      });
-    } else {
-      fireReady();
-    }
-  } catch (_) {}
-})();)JS";
     }
 
     // ----- V8 handler that bridges __prismaNative.* calls back to the browser -----
@@ -310,6 +204,9 @@ namespace PrismaUI::Cef {
         native->SetValue("fireConsole",
                          CefV8Value::CreateFunction("fireConsole", handler),
                          V8_PROPERTY_ATTRIBUTE_READONLY);
+        native->SetValue("imeFocusListenerName",
+                         CefV8Value::CreateString(Messages::kImeFocusListener),
+                         V8_PROPERTY_ATTRIBUTE_READONLY);
 
         CefRefPtr<CefV8Value> global = context->GetGlobal();
         global->SetValue("__prismaNative", native,
@@ -320,7 +217,7 @@ namespace PrismaUI::Cef {
         // Run the bootstrap script: console wrappers + DOM-ready dispatch.
         CefRefPtr<CefV8Value> retval;
         CefRefPtr<CefV8Exception> exception;
-        if (!context->Eval(CefString(kBootstrapScript.c_str()),
+        if (!context->Eval(CefString(kBootstrapScript),
                            CefString("prismaui://bootstrap"), 0, retval, exception)) {
             if (exception) {
                 LOG(ERROR) << "PrismaCefRenderApp: bootstrap failed for view " << viewId << ": "

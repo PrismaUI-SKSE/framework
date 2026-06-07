@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && vite build"
+    "build": "npm run typecheck && vite build && vite build --config vite.bootstrap.config.ts"
   },
   "devDependencies": {
     "typescript": "5.9.3",

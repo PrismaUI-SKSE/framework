@@ -17,6 +17,6 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["index.html", "vite.config.ts", "src/**/*.ts"],
+  "include": ["index.html", "vite.config.ts", "vite.bootstrap.config.ts", "src/**/*.ts"],
   "exclude": ["node_modules", "../dist"]
 }

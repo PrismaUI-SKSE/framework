@@ -1289,10 +1289,6 @@ namespace PrismaUI::Cef
 
             host->SetFocus(true);
 
-            // Already on TID_UI inside this PostToCefUi continuation; InvokeShell
-            // short-circuits and executes the focusView script inline.
-            InvokeShell("focusView", viewId, viewId);
-
             logger::debug("CEF input dispatch sending {} event(s) to View [{}].", events.size(), viewId);
             for (const auto& event : events) {
                 std::visit(

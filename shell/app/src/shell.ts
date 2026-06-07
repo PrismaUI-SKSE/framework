@@ -31,24 +31,24 @@ function setHiddenState(frame: HTMLIFrameElement, id: string, hidden: unknown): 
   frame.hidden = isHidden;
   frame.style.visibility = isHidden ? 'hidden' : 'visible';
   frame.style.pointerEvents = isHidden ? 'none' : 'auto';
-  console.info('PrismaUI shell set hidden', { id, iframe: frame.name, hidden: isHidden, url: frame.src });
+  console.info(`PrismaUI shell set hidden id=${id} iframe=${frame.name} hidden=${String(isHidden)} url=${frame.src}`);
 }
 
 function getFrame(views: ReadonlyMap<string, HTMLIFrameElement>, id: PrismaViewId): HTMLIFrameElement | undefined {
   const key = normalizeId(id);
   const frame = views.get(key);
   if (!frame) {
-    console.warn('PrismaUI shell command ignored missing iframe', { id: key, iframe: iframeName(key) });
+    console.warn(`PrismaUI shell command ignored missing iframe id=${key} iframe=${iframeName(key)}`);
   }
   return frame;
 }
 
 function installFrameEvents(frame: HTMLIFrameElement, id: string): void {
   frame.addEventListener('load', () => {
-    console.info('PrismaUI shell iframe load', { id, iframe: frame.name, url: frame.src });
+    console.info(`PrismaUI shell iframe load id=${id} iframe=${frame.name} url=${frame.src}`);
   });
   frame.addEventListener('error', () => {
-    console.error('PrismaUI shell iframe error', { id, iframe: frame.name, url: frame.src });
+    console.error(`PrismaUI shell iframe error id=${id} iframe=${frame.name} url=${frame.src}`);
   });
 }
 
@@ -82,9 +82,9 @@ export function createPrismaShell(root: HTMLElement): PrismaShellApi {
         frame.setAttribute('allowtransparency', 'true');
         installFrameEvents(frame, id);
         views.set(id, frame);
-        console.info('PrismaUI shell iframe created', { id, iframe: name, url, order, hidden });
+        console.info(`PrismaUI shell iframe created id=${id} iframe=${name} url=${url} order=${String(order)} hidden=${String(hidden)}`);
       } else {
-        console.info('PrismaUI shell iframe updated', { id, iframe: name, url, order, hidden });
+        console.info(`PrismaUI shell iframe updated id=${id} iframe=${name} url=${url} order=${String(order)} hidden=${String(hidden)}`);
       }
 
       frame.style.zIndex = String(order);
@@ -101,14 +101,14 @@ export function createPrismaShell(root: HTMLElement): PrismaShellApi {
       const key = normalizeId(id);
       const frame = views.get(key);
       if (!frame) {
-        console.info('PrismaUI shell destroy ignored missing iframe', { id: key, iframe: iframeName(key) });
+        console.info(`PrismaUI shell destroy ignored missing iframe id=${key} iframe=${iframeName(key)}`);
         return false;
       }
 
       const { src: url } = frame;
       frame.remove();
       views.delete(key);
-      console.info('PrismaUI shell iframe destroyed', { id: key, iframe: iframeName(key), url });
+      console.info(`PrismaUI shell iframe destroyed id=${key} iframe=${iframeName(key)} url=${url}`);
       return true;
     },
 
@@ -131,7 +131,7 @@ export function createPrismaShell(root: HTMLElement): PrismaShellApi {
       const zIndex = normalizeOrder(order);
       frame.style.zIndex = String(zIndex);
       frame.dataset.order = String(zIndex);
-      console.info('PrismaUI shell set order', { id: key, iframe: frame.name, order: zIndex, url: frame.src });
+      console.info(`PrismaUI shell set order id=${key} iframe=${frame.name} order=${String(zIndex)} url=${frame.src}`);
       return true;
     },
 
@@ -142,7 +142,7 @@ export function createPrismaShell(root: HTMLElement): PrismaShellApi {
         return false;
       }
       frame.focus();
-      console.info('PrismaUI shell iframe focused', { id: key, iframe: frame.name, url: frame.src });
+      console.info(`PrismaUI shell iframe focused id=${key} iframe=${frame.name} url=${frame.src}`);
       return true;
     },
 
@@ -155,7 +155,7 @@ export function createPrismaShell(root: HTMLElement): PrismaShellApi {
       if (document.activeElement === frame) {
         frame.blur();
       }
-      console.info('PrismaUI shell iframe blurred', { id: key, iframe: frame.name, url: frame.src });
+      console.info(`PrismaUI shell iframe blurred id=${key} iframe=${frame.name} url=${frame.src}`);
       return true;
     },
   });

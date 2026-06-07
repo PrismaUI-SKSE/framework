@@ -3,3 +3,7 @@
 - Check that each prisma view give its own console logs
 - Fix JS interop
 - Create C++ shell API
+- String conversion optimizations
+- std::move_only_function to std::function
+- Investigate many focus logs
+- CEF shutdown???

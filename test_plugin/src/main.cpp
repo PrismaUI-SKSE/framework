@@ -91,19 +91,25 @@ namespace {
         return length > 0 && value[0] != '0';
     }
 
-    void RequestCleanQuit() {
-        auto* main = RE::Main::GetSingleton();
-        if (!main) {
-            logger::error("Smoke auto-exit clean quit skipped: RE::Main singleton is unavailable");
+    void RunConsoleCommand(const char* command) {
+        const auto factory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
+        auto* script = factory ? factory->Create() : nullptr;
+        if (!script) {
+            logger::warn("Smoke auto-exit: could not create Script form for console command '{}'", command);
             return;
         }
 
-        logger::info("Smoke auto-exit: requesting clean quit (RE::Main::quitGame + WM_CLOSE)");
-        main->quitGame = true;
+        logger::info("Smoke auto-exit: running console command '{}'", command);
+        script->SetCommand(command);
+        script->CompileAndRun(nullptr);
+        delete script;
+    }
 
-        if (auto* wnd = reinterpret_cast<HWND>(main->wnd)) {
-            ::PostMessageW(wnd, WM_CLOSE, 0, 0);
-        }
+    void RequestCleanQuit() {
+        // "qqq" (the QuitGame console command) performs a real quit-to-desktop that the engine honors both
+        // in-gameplay and at the Main Menu. Writing RE::Main::quitGame directly is ignored at the Main Menu,
+        // so qqq is the clean exit path here.
+        RunConsoleCommand("qqq");
     }
 
     void StartQuitWatchdog() {
@@ -122,9 +128,8 @@ namespace {
             return;
         }
 
-        // At the Main Menu (no save loaded) RE::Main::quitGame is ignored by the menu loop, so the watchdog
-        // is the load-bearing terminator. The clean attempt below wins when the engine honors it (in-gameplay
-        // or if WM_CLOSE quits at the menu); otherwise the watchdog guarantees the process dies for the harness.
+        // Primary exit is the "qqq" console command (a clean quit-to-desktop honored even at the Main Menu).
+        // The watchdog is a guaranteed fallback if qqq cannot run or shutdown stalls.
         StartQuitWatchdog();
 
         auto* taskInterface = SKSE::GetTaskInterface();

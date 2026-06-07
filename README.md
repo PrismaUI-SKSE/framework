@@ -21,6 +21,8 @@ Skyrim Next-Gen Web UI Framework.
 - C++23 Compiler (MSVC)
 - [Chromium Embedded Framework (CEF) binary distribution](https://cef-builds.spotifycdn.com/index.html) 147.0.14+g76d2442+chromium-147.0.7727.138 for Windows x64
   - place `cef_binary_147.0.14+g76d2442+chromium-147.0.7727.138_windows64.tar.bz2` in the `external` folder, or configure `PRISMAUI_CEF_ARCHIVE`.
+- [Node.js](https://nodejs.org/) with npm for the nested CEF shell Vite build.
+
 ### Getting Started
 
 ```bat
@@ -30,9 +32,23 @@ cd PrismaUI
 
 ### Build with CMake
 
-#### Quick Build (Recommended)
+The CMake preset build is the authoritative build path. It also runs the nested `shell/app` Vite TypeScript build automatically and packages the generated `shell/dist` files into `PrismaUI/shell/`.
 
-Use the helper script to build with optimal settings:
+#### Preset Build (Recommended)
+
+```bat
+# Configure (from VS Developer Command Prompt)
+cmake -S . --preset=release
+
+# Build
+cmake --build --preset=release --parallel 8
+```
+
+Available presets: `debug`, `release`
+
+#### Helper Script (Optional)
+
+The helper script launches the VS Developer Shell and forwards to the CMake presets:
 
 ```powershell
 # Release build (default)
@@ -44,22 +60,6 @@ Use the helper script to build with optimal settings:
 # Customize thread count
 .\BuildRelease.ps1 -preset release -threads 4
 ```
-
-> **_Note:_** The script automatically launches the VS Developer Shell and configures the build environment.
-
-#### Manual Build
-
-If you prefer manual CMake commands:
-
-```bat
-# Configure (from VS Developer Command Prompt)
-cmake -S . --preset=release
-
-# Build
-cmake --build --preset=release --parallel 8
-```
-
-Available presets: `debug`, `release`
 
 ### Build Output
 

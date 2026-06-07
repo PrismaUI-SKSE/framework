@@ -24,6 +24,30 @@ project(PrismaUI VERSION 2.0.0 LANGUAGES CXX)
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 set(BUILD_ROOT "${CMAKE_SOURCE_DIR}/build")
 
+set(PRISMAUI_SHELL_APP_DIR "${CMAKE_SOURCE_DIR}/shell/app")
+set(PRISMAUI_SHELL_DIST_DIR "${CMAKE_SOURCE_DIR}/shell/dist")
+find_program(PRISMAUI_NPM_EXECUTABLE NAMES npm npm.cmd REQUIRED DOC "npm executable required to build the PrismaUI CEF shell")
+
+file(GLOB PRISMAUI_SHELL_SOURCES CONFIGURE_DEPENDS
+    "${PRISMAUI_SHELL_APP_DIR}/index.html"
+    "${PRISMAUI_SHELL_APP_DIR}/package*.json"
+    "${PRISMAUI_SHELL_APP_DIR}/vite.config.ts"
+    "${PRISMAUI_SHELL_APP_DIR}/tsconfig*.json"
+    "${PRISMAUI_SHELL_APP_DIR}/src/*"
+)
+
+add_custom_command(
+    OUTPUT "${PRISMAUI_SHELL_DIST_DIR}/index.html"
+    COMMAND "${PRISMAUI_NPM_EXECUTABLE}" ci
+    COMMAND "${PRISMAUI_NPM_EXECUTABLE}" run build
+    WORKING_DIRECTORY "${PRISMAUI_SHELL_APP_DIR}"
+    DEPENDS ${PRISMAUI_SHELL_SOURCES}
+    COMMENT "Building PrismaUI CEF shell"
+    VERBATIM
+)
+
+add_custom_target(PrismaUIShell DEPENDS "${PRISMAUI_SHELL_DIST_DIR}/index.html")
+
 # Include compiler flags configuration
 include(CompilerFlags)
 include(ExternalDependencies)
@@ -98,7 +122,7 @@ target_link_libraries(PrismaUICefSubprocess
 )
 
 prismaui_configure_cef_executable(PrismaUICefSubprocess)
-add_dependencies(${PROJECT_NAME} PrismaUICefSubprocess)
+add_dependencies(${PROJECT_NAME} PrismaUICefSubprocess PrismaUIShell)
 
 # Include directories
 target_include_directories(${PROJECT_NAME}
@@ -162,6 +186,7 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     
     # Copy assets folder contents to PrismaUI folder
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/assets/" "${DIST_PRISMAUI_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${PRISMAUI_SHELL_DIST_DIR}/" "${DIST_PRISMAUI_DIR}/shell"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/NOTICES.txt" "${DIST_VERSION_DIR}/NOTICES.txt"
     
     # Copy PrismaUI DLL to SKSE/plugins

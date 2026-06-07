@@ -282,6 +282,32 @@ namespace PrismaUI::Cef
         CefRuntime::GetSingleton().CopyAcceleratedFrameDuringCallback(info.shared_texture_handle);
     }
 
+    bool CefOsrClient::OnConsoleMessage(CefRefPtr<CefBrowser> browser, cef_log_severity_t level,
+                                        const CefString& message, const CefString& /*source*/, int /*line*/)
+    {
+        const int browserId = browser ? browser->GetIdentifier() : -1;
+        const std::string text = message.ToString();
+
+        switch (level) {
+            case LOGSEVERITY_ERROR:
+            case LOGSEVERITY_FATAL:
+                logger::error("CEF console browser [{}]: {}", browserId, text);
+                break;
+            case LOGSEVERITY_WARNING:
+                logger::warn("CEF console browser [{}]: {}", browserId, text);
+                break;
+            case LOGSEVERITY_VERBOSE:
+                logger::debug("CEF console browser [{}]: {}", browserId, text);
+                break;
+            case LOGSEVERITY_INFO:
+            default:
+                logger::info("CEF console browser [{}]: {}", browserId, text);
+                break;
+        }
+
+        return true;
+    }
+
     void CefOsrClient::OnLoadingStateChange(CefRefPtr<CefBrowser> browser, bool isLoading, bool canGoBack,
                                             bool canGoForward)
     {

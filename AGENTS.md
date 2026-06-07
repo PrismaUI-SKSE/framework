@@ -25,17 +25,18 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
   - `cmake -S . --preset=debug`
   - `cmake --build --preset=debug --parallel 8`
 - `BuildRelease.ps1` exists as a convenience wrapper, but do not use it as the default build instruction.
-- Requires `VCPKG_ROOT`, Ninja, VS 2022 C++ tooling, and `external/cef_binary_147.0.14+g76d2442+chromium-147.0.7727.138_windows64.tar.bz2` (or `PRISMAUI_CEF_ARCHIVE` pointing at an equivalent local archive).
+- Requires `VCPKG_ROOT`, Ninja, VS 2022 C++ tooling, Node.js with `npm` on `PATH` (CMake `find_program(... npm ... REQUIRED)` fails configure without it), and `external/cef_binary_147.0.14+g76d2442+chromium-147.0.7727.138_windows64.tar.bz2` (or `PRISMAUI_CEF_ARCHIVE` pointing at an equivalent local archive).
 - CMake extracts CEF to `build/external_builds/cef/<cef_binary_root>/`.
 - Two targets are built:
   - `PrismaUI` (the SKSE plugin DLL) → `build/<preset>/bin/PrismaUI.dll`.
   - `PrismaUICefSubprocess` (the CEF helper executable) → `build/<preset>/bin/PrismaUICefSubprocess.exe`.
 - Distribution output: `dist/PrismaUI_<version>[_Debug]/`:
   - `PrismaUI/libs/` — `libcef.dll`, `chrome_elf.dll`, `icudtl.dat`, `v8_context_snapshot.bin`, resource `.pak`s, `locales/`, ANGLE/SwiftShader/D3D support DLLs, and `PrismaUICefSubprocess.exe`.
-  - `PrismaUI/shell/` and other CEF-facing assets copied from `assets/`.
+  - `PrismaUI/shell/` — the CEF shell page, built from the `shell/app` TypeScript/Vite project into `shell/dist` and copied from there (NOT from `assets/`).
   - `SKSE/plugins/PrismaUI.dll`.
   - `NOTICES.txt` at the package root.
 - The packaging step calls `cmake -E remove_directory` on the version dir before repopulating it, so stale Ultralight/per-view inspector folders never reappear; do not reintroduce Ultralight copy rules.
+- The CEF shell page is a separate frontend build: the `PrismaUIShell` CMake target runs `npm ci` + `npm run build` (`tsc --noEmit` typecheck then `vite build`) in `shell/app`, emitting to `shell/dist`. Packaging copies `assets/` and `shell/dist/` into the distribution as two distinct steps.
 - `UpdateExternalDeps.ps1` prepares submodules. It can remove/reinitialize submodule folders, so do not run it casually in a dirty tree.
 
 ## Repository Map
@@ -60,8 +61,9 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
 - `src/Menus/FocusMenu/`: hidden Scaleform menu used to capture UI focus and cursor behavior.
 - `src/Menus/CursorMenu/`: hook that hides vanilla cursor menu while PrismaUI has active focus.
 - `src/Utils/`: `DllLoader` (CEF only), encoding helpers, NanoID, `WinKeyHandler` (Win32→`CefKeyEvent`).
-- `assets/`: files copied into the `Data/PrismaUI` distribution (cursor texture, shell page, etc.).
+- `assets/`: static files copied into the `Data/PrismaUI` distribution (cursor texture and other CEF-facing assets). The shell page is NOT here; it is built from `shell/app` (see below).
 - `cmake/`: `commonlibsse.cmake`, `cef.cmake`, `ExternalDependencies.cmake`, `CompilerFlags.cmake`. There is no `ultralight.cmake`.
+- `shell/app/`: the CEF shell page frontend — a standalone TypeScript + Vite project (`prismaui-cef-shell`). `src/main.ts` bootstraps the page; `src/shell.ts` builds the `PrismaShellApi` command bus (`createPrismaShell`) that `CefRuntime` drives to create/show/hide/focus/order the `prisma-view-<id>` iframes; `src/types.ts` holds the shared TS types; `src/style.css` and `index.html` are the page shell. Built via `npm run build` into `shell/dist` (the `PrismaUIShell` target); `shell/dist` is generated output, not source. Edit the shell command bus here, not in `assets/`.
 
 ## Runtime Architecture
 

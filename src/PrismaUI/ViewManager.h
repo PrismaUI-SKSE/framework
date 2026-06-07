@@ -16,7 +16,7 @@ namespace PrismaUI::Core {
 namespace PrismaUI::ViewManager {
 
     Core::PrismaViewId Create(const std::string& htmlPath,
-                              std::move_only_function<void(Core::PrismaViewId)> onDomReadyCallback = nullptr);
+                              std::function<void(Core::PrismaViewId)> onDomReadyCallback = nullptr);
     void Show(const Core::PrismaViewId& viewId);
     void Hide(const Core::PrismaViewId& viewId);
     bool IsHidden(const Core::PrismaViewId& viewId);
@@ -36,5 +36,5 @@ namespace PrismaUI::ViewManager {
     // Console message callback registration
     void RegisterConsoleCallback(
         const Core::PrismaViewId& viewId,
-        std::move_only_function<void(Core::PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> callback);
+        std::function<void(Core::PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> callback);
 }

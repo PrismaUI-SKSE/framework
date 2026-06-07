@@ -45,8 +45,8 @@ namespace PrismaUI::Core {
         std::atomic<bool> isPaused = false;
         int scrollingPixelSize = 28;
         int order = 0;
-        std::move_only_function<void(const PrismaViewId&)> domReadyCallback;
-        std::move_only_function<void(PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> consoleMessageCallback;
+        std::function<void(PrismaViewId)> domReadyCallback;
+        std::function<void(PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> consoleMessageCallback;
 
 
         // Operation queue fields for thread-safe sequential execution

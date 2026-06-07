@@ -2,7 +2,6 @@
 - Fix JS interop
 - Create C++ shell API
 - String conversion optimizations
-- std::move_only_function to std::function
 - Investigate many focus logs
 - CEF shutdown???
 - Remove duplicated code when handle messages

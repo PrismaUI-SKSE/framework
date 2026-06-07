@@ -244,7 +244,7 @@ PrismaView PluginAPI::PrismaUIInterface::CreateViewInternal(
         return 0;
     }
 
-    std::move_only_function<void(PrismaUI::Core::PrismaViewId)> domReadyWrapper = nullptr;
+    std::function<void(PrismaUI::Core::PrismaViewId)> domReadyWrapper = nullptr;
     if (onDomReadyCallback) {
         domReadyWrapper = [callback = std::move(onDomReadyCallback)](PrismaUI::Core::PrismaViewId viewId) {
             SKSE::GetTaskInterface()->AddTask([callback = std::move(callback), id = viewId] {
@@ -275,7 +275,7 @@ void PluginAPI::PrismaUIInterface::InvokeInternal(PrismaView view, const char* s
         }
     }
 
-    std::move_only_function<void(std::string)> callbackWrapper = nullptr;
+    std::function<void(std::string)> callbackWrapper = nullptr;
 
     if (callback) {
         callbackWrapper = [callback = std::move(callback)](const std::string& result) {

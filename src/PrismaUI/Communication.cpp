@@ -19,7 +19,7 @@ namespace PrismaUI::Communication {
     }
 
     void Invoke(const Core::PrismaViewId& viewId, std::string script,
-                std::move_only_function<void(std::string)> callback) {
+                std::function<void(std::string)> callback) {
         {
             std::shared_lock lock(viewsMutex);
             if (views.find(viewId) == views.end()) {
@@ -29,22 +29,8 @@ namespace PrismaUI::Communication {
             }
         }
 
-        // CefRuntime owns the in-flight Invoke registry and fires the callback exactly
-        // once. Wrap the move_only_function in a std::function shim because
-        // CefRuntime's surface uses copyable functions internally.
-        std::function<void(std::string)> shim;
-        if (callback) {
-            auto shared = std::make_shared<std::move_only_function<void(std::string)>>(std::move(callback));
-            shim = [shared](std::string result) {
-                if (shared && *shared) {
-                    (*shared)(std::move(result));
-                    // Single-shot — clear to release any captured state.
-                    *shared = nullptr;
-                }
-            };
-        }
 
-        Cef::CefRuntime::GetSingleton().InvokeScript(viewId, std::move(script), std::move(shim));
+        Cef::CefRuntime::GetSingleton().InvokeScript(viewId, std::move(script), std::move(callback));
     }
 
     void RegisterJSListener(const Core::PrismaViewId& viewId, const std::string& name,

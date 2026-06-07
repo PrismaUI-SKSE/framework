@@ -86,7 +86,7 @@ namespace PrismaUI::ViewManager {
     }  // namespace
 
     Core::PrismaViewId Create(const std::string& htmlPath,
-                              std::move_only_function<void(Core::PrismaViewId)> onDomReadyCallback) {
+                              std::function<void(Core::PrismaViewId)> onDomReadyCallback) {
         bool expected_init = false;
         if (coreInitialized.compare_exchange_strong(expected_init, true)) {
             Core::InitializeCoreSystem();
@@ -450,7 +450,7 @@ namespace PrismaUI::ViewManager {
 
     void RegisterConsoleCallback(
         const Core::PrismaViewId& viewId,
-        std::move_only_function<void(PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> callback) {
+        std::function<void(PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> callback) {
         std::unique_lock lock(viewsMutex);
         auto it = views.find(viewId);
         if (it != views.end() && it->second) {

@@ -15,7 +15,7 @@ namespace PrismaUI::Communication {
     // view unknown, iframe not yet attached, JS exception, view destroyed mid-flight —
     // the callback fires with an empty string.
     void Invoke(const Core::PrismaViewId& viewId, std::string script,
-                std::move_only_function<void(std::string)> callback = nullptr);
+                std::function<void(std::string)> callback = nullptr);
 
     // Register a string-valued JS listener. The renderer installs window[name] so the
     // iframe can call it like a regular function; the call comes back into `callback`

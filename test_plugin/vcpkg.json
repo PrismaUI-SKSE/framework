@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "prismaui-test-plugin",
+  "version-string": "1.0.0",
+  "description": "SKSE plugin that exercises the public PrismaUI C API and logs observed behavior.",
+  "dependencies": [
+    "boost-atomic",
+    "boost-stl-interfaces",
+    "directxmath",
+    "directxtk",
+    "fmt",
+    "rapidcsv",
+    {
+      "name": "spdlog",
+      "features": ["wchar"]
+    },
+    "xbyak"
+  ]
+}

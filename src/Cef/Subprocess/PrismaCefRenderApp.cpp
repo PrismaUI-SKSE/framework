@@ -114,7 +114,7 @@ namespace PrismaUI::Cef {
         };
 
         // Keyed by frame identifier (stable across the frame's lifetime).
-        std::unordered_map<CefString, FrameState, CefUtils::CefStringHash> frames;
+        std::map<CefString, FrameState> frames;
     };
 
     PrismaCefRenderApp::PrismaCefRenderApp() : impl_(new Impl()) {}

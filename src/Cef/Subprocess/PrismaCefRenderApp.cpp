@@ -11,6 +11,7 @@
 #include "Cef/Shared/CefUtils.h"
 #include "Cef/Shared/ProcessMessageNames.h"
 #include "Cef/Shared/RendererToBrowserMessages.h"
+#include "Cef/Shared/ViewUtils.h"
 #include "PrismaBootstrapScript.generated.h"
 #include "Utils/VariantUtils.h"
 #include "include/base/cef_logging.h"
@@ -148,17 +149,20 @@ namespace PrismaUI::Cef {
         }
 
         const CefString frameIdentifier = frame->GetIdentifier();
+        const CefString frameName = frame->GetName();
+
         std::vector<CefString> pending;
         {
             auto& state = impl_->frames[frameIdentifier];
-            state.viewId = frameIdentifier;
+            state.viewId = frameName;
             state.context = context;
             pending.swap(state.pendingListeners);
         }
 
-        CefUtils::EnterContext(context, [&frameIdentifier, &pending](const CefRefPtr<CefV8Context>& context) {
+        CefUtils::EnterContext(context, [&frameIdentifier, &frameName,
+                                         &pending](const CefRefPtr<CefV8Context>& context) {
             // Install the __prismaNative global with three native functions.
-            CefRefPtr handler = new PrismaNativeHandler(frameIdentifier);
+            CefRefPtr handler = new PrismaNativeHandler(frameName);
             CefRefPtr<CefV8Value> native = CefV8Value::CreateObject(nullptr, nullptr);
             native->SetValue("fireListener", CefV8Value::CreateFunction("fireListener", handler),
                              V8_PROPERTY_ATTRIBUTE_READONLY);
@@ -190,8 +194,8 @@ namespace PrismaUI::Cef {
                 InstallListenerTrampoline(context, name);
             }
 
-            LOG(INFO) << "PrismaCefRenderApp: bridge installed for view " << frameIdentifier << " (frame "
-                      << frameIdentifier << ")";
+            LOG(INFO) << "PrismaCefRenderApp: bridge installed for view " << frameName << " (frame " << frameIdentifier
+                      << ")";
         });
     }
 

@@ -173,8 +173,4 @@ namespace PrismaUI::Cef::Messages {
                 return "<unknown>";
         }
     }
-
-    // Iframe frame-name prefix used to correlate process messages back to a
-    // PrismaUI view id ("prisma-view-<id>").
-    inline constexpr const char* kIframeNamePrefix = "prisma-view-";
 }

@@ -29,9 +29,9 @@ Suggested DOM shape:
 ```html
 <div id="prisma-root">
   <iframe
-    id="prisma-view-123"
-    name="prisma-view-123"
-    data-prisma-view-id="123"
+    id="123"
+    name="123"
+    data-view-id="123"
     src="file:///..."
   ></iframe>
 </div>
@@ -67,7 +67,7 @@ background: transparent;
    - `window.__prismaShell.focusView(id)`
    - `window.__prismaShell.blurView(id)`
 3. Resolve the CEF frame for a view:
-   - use iframe `name = prisma-view-<id>`
+   - use iframe `name = <id>`
    - use `browser->GetFrameByName(name)` for script execution
    - maintain a frame-id cache from load events if needed
 4. Log shell/view operations:

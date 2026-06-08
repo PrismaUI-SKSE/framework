@@ -19,7 +19,7 @@ body {
     pointer-events: none;
 }
 
-.prisma-view-frame {
+.prisma-shell-frame {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -31,12 +31,12 @@ body {
     color-scheme: normal;
 }
 
-.prisma-view-frame[data-hidden="true"] {
+.prisma-shell-frame[data-hidden="true"] {
     visibility: hidden;
     pointer-events: none;
 }
 
-.prisma-view-frame[data-hidden="false"] {
+.prisma-shell-frame[data-hidden="false"] {
     visibility: visible;
     pointer-events: auto;
 }

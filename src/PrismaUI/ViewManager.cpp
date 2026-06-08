@@ -104,7 +104,7 @@ namespace PrismaUI::ViewManager {
 
         auto viewData = std::make_shared<Core::PrismaView>();
         viewData->id = newViewId;
-        viewData->iframeName = "prisma-view-" + std::to_string(newViewId);
+        viewData->iframeName = std::to_string(newViewId);
         viewData->resolvedUrl = resolvedUrl;
         viewData->originalUrl = resolvedUrl;  // retained for Step 11 recovery policy
         viewData->isHidden = false;

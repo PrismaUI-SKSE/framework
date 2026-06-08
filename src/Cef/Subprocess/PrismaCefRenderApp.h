@@ -6,7 +6,7 @@ namespace PrismaUI::Cef {
     // CefRenderProcessHandler implementation that runs inside CEF renderer
     // subprocesses. Hosts the V8 bridge that powers Invoke / InteropCall /
     // RegisterJSListener / DOM-ready / console-message routing for any iframe
-    // whose name matches "prisma-view-<id>".
+    // whose name is a decimal PrismaUI view id.
     //
     // Instances of this class are constructed in the plugin DLL too (since
     // PrismaCefApp::GetRenderProcessHandler() returns one unconditionally) but

@@ -30,7 +30,7 @@ namespace PrismaUI::Core {
 
     struct PrismaView {
         PrismaViewId id;
-        // CEF shell iframe naming and resolved URL (native source of truth for CEF rewire — Step 6).
+        // CEF shell iframe name and resolved URL.
         std::string iframeName;
         std::string resolvedUrl;
         std::string originalUrl;

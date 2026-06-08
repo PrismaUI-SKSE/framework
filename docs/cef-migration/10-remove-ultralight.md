@@ -119,7 +119,7 @@ Do not start this step while the runtime still has a supported Ultralight fallba
 3. Create a local HTML view and confirm it renders transparently over the game.
 4. Focus the view and verify mouse, wheel, keyboard, text input, clipboard, and IME behavior.
 5. Create multiple views, change order, hide/show, and destroy while the shell remains alive.
-6. Open DevTools and inspect at least one `prisma-view-<PrismaView>` iframe.
+6. Open DevTools and inspect at least one iframe named with the decimal `PrismaView` id.
 7. Exit the game and confirm browser close, DevTools close if open, and `CefShutdown` complete without hanging.
 
 ## Acceptance Criteria

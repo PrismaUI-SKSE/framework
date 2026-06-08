@@ -72,7 +72,7 @@ cmake --build --preset=debug --parallel 8
    - confirm the removed inspector methods cannot be called from code compiled against the updated header
    - call `IsDevToolsOpen()` before opening, after `OpenDevTools()`, after user-closing the DevTools window, and after `CloseDevTools()`
    - open DevTools for the CEF shell browser and confirm logs include the request, target shell browser ID, tracked DevTools browser ID, and that remote debugging is disabled
-   - confirm all Prisma iframe views are visible in the frame tree as `prisma-view-<PrismaView>`
+   - confirm all Prisma iframe views are visible in the frame tree under their decimal `PrismaView` ids
    - inspect DOM and console output for at least one iframe-backed view
 
 ## Performance Checks

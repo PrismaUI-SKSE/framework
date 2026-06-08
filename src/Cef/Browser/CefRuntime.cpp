@@ -23,8 +23,9 @@
 #include "Cef/Browser/CefOsrClient.h"
 #include "Cef/Browser/CefRuntime.h"
 #include "Cef/Browser/OverlayTexture.h"
-#include "Cef/Subprocess/PrismaCefApp.h"
 #include "Cef/Shared/ProcessMessageNames.h"
+#include "Cef/Shared/ViewUtils.h"
+#include "Cef/Subprocess/PrismaCefApp.h"
 #include "PrismaUI/Communication.h"
 #include "Utils/DllLoader.h"
 #include "include/cef_app.h"
@@ -54,7 +55,7 @@ namespace {
         return result;
     }
 
-    std::string MakeIframeName(uint64_t viewId) { return "prisma-view-" + std::to_string(viewId); }
+    std::string MakeIframeName(uint64_t viewId) { return std::to_string(viewId); }
 
     bool StartsWithInsensitive(std::string_view value, std::string_view prefix) {
         if (value.size() < prefix.size()) {
@@ -136,27 +137,6 @@ namespace {
         return escaped;
     }
 
-    bool TryParseIframeViewId(std::string_view frameName, uint64_t& viewId) {
-        constexpr std::string_view kPrefix = "prisma-view-";
-        if (frameName.size() <= kPrefix.size() || frameName.substr(0, kPrefix.size()) != kPrefix) {
-            return false;
-        }
-
-        uint64_t value = 0;
-        for (const char ch : frameName.substr(kPrefix.size())) {
-            if (ch < '0' || ch > '9') {
-                return false;
-            }
-            const uint64_t digit = static_cast<uint64_t>(ch - '0');
-            if (value > (std::numeric_limits<uint64_t>::max() - digit) / 10U) {
-                return false;
-            }
-            value = value * 10U + digit;
-        }
-
-        viewId = value;
-        return true;
-    }
 
     class FunctionTask final : public CefTask {
     public:
@@ -934,7 +914,7 @@ namespace PrismaUI::Cef {
     void CefRuntime::NotifyShellFrameLoadStart(const std::string& frameName, const std::string& frameIdentifier,
                                                const std::string& url) {
         uint64_t viewId = 0;
-        if (!TryParseIframeViewId(frameName, viewId)) {
+        if (!ViewUtils::TryParseViewIdFromFrameName(frameName, viewId)) {
             logger::warn("CEF shell could not correlate iframe load start: frame='{}', id='{}', url='{}'.", frameName,
                          frameIdentifier, url);
             return;
@@ -956,7 +936,7 @@ namespace PrismaUI::Cef {
     void CefRuntime::NotifyShellFrameLoadEnd(const std::string& frameName, const std::string& frameIdentifier,
                                              const std::string& url, int httpStatusCode) {
         uint64_t viewId = 0;
-        if (!TryParseIframeViewId(frameName, viewId)) {
+        if (!ViewUtils::TryParseViewIdFromFrameName(frameName, viewId)) {
             logger::warn("CEF shell could not correlate iframe load end: frame='{}', id='{}', status {}, url='{}'.",
                          frameName, frameIdentifier, httpStatusCode, url);
             return;
@@ -981,7 +961,7 @@ namespace PrismaUI::Cef {
                                                const std::string& url, int errorCode, const std::string& errorText,
                                                const std::string& failedUrl) {
         uint64_t viewId = 0;
-        if (!TryParseIframeViewId(frameName, viewId)) {
+        if (!ViewUtils::TryParseViewIdFromFrameName(frameName, viewId)) {
             logger::warn(
                 "CEF shell could not correlate iframe load error: frame='{}', id='{}', code={}, failedUrl='{}'.",
                 frameName, frameIdentifier, errorCode, failedUrl);
@@ -1254,8 +1234,6 @@ namespace PrismaUI::Cef {
         });
     }
 
-    // ============== Step 7 JS bridge ==============
-
     namespace {
 
         CefRefPtr<CefProcessMessage> MakeStringListMessage(Messages::BrowserToRendererMessage name,
@@ -1274,7 +1252,7 @@ namespace PrismaUI::Cef {
         // does not (yet) exist — caller is responsible for logging.
         CefRefPtr<CefFrame> FindIframeFrame(CefRefPtr<CefOsrClient> client, uint64_t viewId) {
             if (!client) return nullptr;
-            const std::string iframeName = "prisma-view-" + std::to_string(viewId);
+            const std::string iframeName = MakeIframeName(viewId);
             CefString frameName;
             frameName.FromString(iframeName);
             return client->GetFrameByNameOnUiThread(frameName);
@@ -1420,20 +1398,11 @@ namespace PrismaUI::Cef {
 
     bool CefRuntime::OnRendererMessage(const std::string& frameName, Messages::RendererToBrowserMessage message,
                                        const std::vector<std::string>& payload) {
-        // Pull viewId out of either the frame name ("prisma-view-<id>") or the
-        // first payload column, depending on which message kind we're handling.
+        // Pull viewId out of either the numeric frame name or the first payload
+        // column, depending on which message kind we're handling.
         auto parseViewIdFromFrame = [&]() -> uint64_t {
-            constexpr std::string_view kPrefix = "prisma-view-";
-            if (frameName.size() <= kPrefix.size() || frameName.compare(0, kPrefix.size(), kPrefix) != 0) {
-                return 0;
-            }
-            uint64_t value = 0;
-            for (size_t i = kPrefix.size(); i < frameName.size(); ++i) {
-                const char c = frameName[i];
-                if (c < '0' || c > '9') return 0;
-                value = value * 10U + static_cast<uint64_t>(c - '0');
-            }
-            return value;
+            uint64_t viewId = 0;
+            return ViewUtils::TryParseViewIdFromFrameName(frameName, viewId) ? viewId : 0;
         };
 
         if (message == Messages::RendererToBrowserMessage::InvokeResult) {

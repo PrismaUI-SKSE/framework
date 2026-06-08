@@ -21,7 +21,7 @@ Port `Invoke`, `InteropCall`, and `RegisterJSListener` from JavaScriptCore/Ultra
 ## CEF Design
 
 1. Execute JS in the target iframe's CEF frame:
-   - resolve frame by `prisma-view-<id>`
+   - resolve frame by decimal view id iframe name
    - use `CefFrame::ExecuteJavaScript` for fire-and-forget calls
    - for `Invoke` with result, use an injected async result bridge because `ExecuteJavaScript` does not synchronously return a value like Ultralight's `EvaluateScript`
 2. Add a renderer-process bridge:

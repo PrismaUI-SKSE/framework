@@ -55,7 +55,7 @@ Do not implement embedded OSR DevTools. It would recreate a second rendering/inp
 
 1. Request the recompiled API (`InterfaceVersion::V1`, `V2`, or `V3` from the current header) and call `OpenDevTools()`.
 2. In Chromium DevTools, inspect the main PrismaUI shell browser.
-3. Select the frame named `prisma-view-<PrismaView>` in the frame tree, or inspect the iframe element with `data-prisma-view-id="<PrismaView>"`.
+3. Select the frame named with the decimal `PrismaView` id in the frame tree, or inspect the iframe element with `data-view-id="<PrismaView>"`.
 4. Use that frame context for DOM, console, and script inspection for the corresponding Prisma view.
 
 ## Migration Tasks

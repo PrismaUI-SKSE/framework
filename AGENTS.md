@@ -64,7 +64,7 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
 - `src/Utils/`: `DllLoader` (CEF only), encoding helpers, NanoID, `WinKeyHandler` (Win32→`CefKeyEvent`).
 - `assets/`: static files copied into the `Data/PrismaUI` distribution (cursor texture and other CEF-facing assets). The shell page is NOT here; it is built from `shell/app` (see below).
 - `cmake/`: `commonlibsse.cmake`, `cef.cmake`, `ExternalDependencies.cmake`, `CompilerFlags.cmake`. There is no `ultralight.cmake`.
-- `shell/app/`: the CEF shell page frontend — a standalone TypeScript + Vite project (`prismaui-cef-shell`). `src/main.ts` bootstraps the page; `src/shell.ts` builds the `PrismaShellApi` command bus (`createPrismaShell`) that `CefRuntime` drives to create/show/hide/focus/order the `prisma-view-<id>` iframes; `src/types.ts` holds the shared TS types; `src/style.css` and `index.html` are the page shell. Built via `npm run build` into `shell/dist` (the `PrismaUIShell` target); `shell/dist` is generated output, not source. Edit the shell command bus here, not in `assets/`.
+- `shell/app/`: the CEF shell page frontend — a standalone TypeScript + Vite project (`prismaui-cef-shell`). `src/main.ts` bootstraps the page; `src/shell.ts` builds the `PrismaShellApi` command bus (`createPrismaShell`) that `CefRuntime` drives to create/show/hide/focus/order iframes named with decimal `PrismaView` ids; `src/types.ts` holds the shared TS types; `src/style.css` and `index.html` are the page shell. Built via `npm run build` into `shell/dist` (the `PrismaUIShell` target); `shell/dist` is generated output, not source. Edit the shell command bus here, not in `assets/`.
 
 ## Runtime Architecture
 
@@ -109,7 +109,7 @@ All Prisma views are iframes inside the single CEF shell browser. The browser re
 
 Shell view rules:
 
-- Each `PrismaView` has a stable `iframeName = "prisma-view-<id>"` and a resolved URL.
+- Each `PrismaView` has a stable `iframeName` equal to its decimal view id and a resolved URL.
 - `ViewManager` issues shell commands (create/show/hide/focus/blur/order/destroy) through `Cef::CefRuntime` which marshals them to the shell page's JS as a command bus.
 - Visibility, order, and focus are DOM/CSS state on the shell page. Native side keeps the source-of-truth flags in `Core::PrismaView`.
 
@@ -141,7 +141,7 @@ There is no C++ per-view rectangle, transform, or clipping system. Positioning i
 - `Invoke` evaluates a JS string in the target iframe and optionally returns a string result via the CEF result bridge.
 - `InteropCall` calls a named global JS function with one string argument inside the target iframe and avoids script construction overhead.
 - `RegisterJSListener` exposes a global JS function with the requested name inside the target iframe; JS should call it with a string argument.
-- `OpenDevTools`/`CloseDevTools`/`IsDevToolsOpen` operate on the single shell browser; individual Prisma views show up as `prisma-view-<id>` iframes in the DevTools frame tree.
+- `OpenDevTools`/`CloseDevTools`/`IsDevToolsOpen` operate on the single shell browser; individual Prisma views show up as iframes named with their decimal `PrismaView` ids in the DevTools frame tree.
 - API string inputs are validated as UTF-8 and converted from the system ANSI code page as fallback.
 
 ## Input And Focus
@@ -164,7 +164,7 @@ There is no C++ per-view rectangle, transform, or clipping system. Positioning i
 ## DevTools
 
 - DevTools is browser-wide: there is exactly one DevTools window for the PrismaUI shell browser, opened via `IVPrismaUI1::OpenDevTools`.
-- All Prisma views are visible in the DevTools frame tree as iframes named `prisma-view-<PrismaView>`.
+- All Prisma views are visible in the DevTools frame tree as iframes named with their decimal `PrismaView` ids.
 - There is no per-view inspector, no embedded inspector surface, and no per-view inspector texture. The old `CreateInspectorView`/`SetInspectorVisibility`/`IsInspectorVisible`/`SetInspectorBounds` methods are intentionally absent from the public header.
 
 ## Common Pitfalls

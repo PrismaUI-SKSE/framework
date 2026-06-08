@@ -1,7 +1,6 @@
 import type { CreateViewOptions, PrismaShellApi, PrismaViewId } from './types';
 
 const VIEW_ID_PATTERN = /^\d+$/;
-const FRAME_PREFIX = 'prisma-view-';
 
 function normalizeId(id: PrismaViewId): string {
   if (typeof id === 'bigint') {
@@ -14,10 +13,6 @@ function normalizeId(id: PrismaViewId): string {
     return id;
   }
   throw new TypeError(`Invalid Prisma view id: ${String(id)}`);
-}
-
-function iframeName(id: string): string {
-  return `${FRAME_PREFIX}${id}`;
 }
 
 function normalizeOrder(order: unknown): number {
@@ -38,7 +33,7 @@ function getFrame(views: ReadonlyMap<string, HTMLIFrameElement>, id: PrismaViewI
   const key = normalizeId(id);
   const frame = views.get(key);
   if (!frame) {
-    console.warn(`PrismaUI shell command ignored missing iframe id=${key} iframe=${iframeName(key)}`);
+    console.warn(`PrismaUI shell command ignored missing iframe id=${key} iframe=${key}`);
   }
   return frame;
 }
@@ -66,7 +61,6 @@ export function createPrismaShell(root: HTMLElement): PrismaShellApi {
       }
 
       const id = normalizeId(options.id);
-      const name = iframeName(id);
       const url = String(options.url ?? 'about:blank');
       const order = normalizeOrder(options.order);
       const hidden = Boolean(options.hidden);
@@ -74,17 +68,17 @@ export function createPrismaShell(root: HTMLElement): PrismaShellApi {
 
       if (!frame) {
         frame = document.createElement('iframe');
-        frame.className = 'prisma-view-frame';
-        frame.id = name;
-        frame.name = name;
-        frame.dataset.prismaViewId = id;
+        frame.className = 'prisma-shell-frame';
+        frame.id = id;
+        frame.name = id;
+        frame.dataset.viewId = id;
         frame.allow = 'clipboard-read; clipboard-write';
         frame.setAttribute('allowtransparency', 'true');
         installFrameEvents(frame, id);
         views.set(id, frame);
-        console.info(`PrismaUI shell iframe created id=${id} iframe=${name} url=${url} order=${String(order)} hidden=${String(hidden)}`);
+        console.info(`PrismaUI shell iframe created id=${id} iframe=${id} url=${url} order=${String(order)} hidden=${String(hidden)}`);
       } else {
-        console.info(`PrismaUI shell iframe updated id=${id} iframe=${name} url=${url} order=${String(order)} hidden=${String(hidden)}`);
+        console.info(`PrismaUI shell iframe updated id=${id} iframe=${id} url=${url} order=${String(order)} hidden=${String(hidden)}`);
       }
 
       frame.style.zIndex = String(order);
@@ -101,14 +95,14 @@ export function createPrismaShell(root: HTMLElement): PrismaShellApi {
       const key = normalizeId(id);
       const frame = views.get(key);
       if (!frame) {
-        console.info(`PrismaUI shell destroy ignored missing iframe id=${key} iframe=${iframeName(key)}`);
+        console.info(`PrismaUI shell destroy ignored missing iframe id=${key} iframe=${key}`);
         return false;
       }
 
       const { src: url } = frame;
       frame.remove();
       views.delete(key);
-      console.info(`PrismaUI shell iframe destroyed id=${key} iframe=${iframeName(key)} url=${url}`);
+      console.info(`PrismaUI shell iframe destroyed id=${key} iframe=${key} url=${url}`);
       return true;
     },
 

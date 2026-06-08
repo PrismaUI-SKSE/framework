@@ -73,7 +73,7 @@ The CEF migration intentionally breaks the old Ultralight-inspector ABI. Mods mu
 - Supported `InterfaceVersion` values are now `V1 = 4`, `V2 = 5`, and `V3 = 6`.
 - Legacy binary requests using numeric interface values `0`, `1`, or `2` are rejected with `nullptr` instead of receiving a mismatched vtable.
 - `CreateInspectorView`, `SetInspectorVisibility`, `IsInspectorVisible`, and `SetInspectorBounds` were removed.
-- Use `OpenDevTools()`, `CloseDevTools()`, and `IsDevToolsOpen()` to inspect the single PrismaUI CEF shell browser. Individual Prisma views appear as iframes named `prisma-view-<PrismaView>`.
+- Use `OpenDevTools()`, `CloseDevTools()`, and `IsDevToolsOpen()` to inspect the single PrismaUI CEF shell browser. Individual Prisma views appear as iframes named with the decimal `PrismaView` id.
 
 ### Upgrading Packages (Optional)
 

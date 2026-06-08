@@ -1,6 +1,5 @@
 #include "Cef/Subprocess/PrismaCefRenderApp.h"
 
-#include <cstring>
 #include <map>
 #include <mutex>
 #include <string>
@@ -8,6 +7,7 @@
 #include <vector>
 
 #include "Cef/Shared/ProcessMessageNames.h"
+#include "Cef/Shared/ViewUtils.h"
 #include "PrismaBootstrapScript.generated.h"
 #include "include/base/cef_logging.h"
 #include "include/cef_browser.h"
@@ -20,21 +20,6 @@ namespace PrismaUI::Cef {
     namespace {
         // ----- helpers -----
 
-        bool TryParseViewIdFromFrameName(const std::string& frameName, std::string& outViewId) {
-            const char* prefix = Messages::kIframeNamePrefix;
-            const size_t prefixLen = std::strlen(prefix);
-            if (frameName.size() <= prefixLen || frameName.compare(0, prefixLen, prefix) != 0) {
-                return false;
-            }
-            for (size_t i = prefixLen; i < frameName.size(); ++i) {
-                const char ch = frameName[i];
-                if (ch < '0' || ch > '9') {
-                    return false;
-                }
-            }
-            outViewId.assign(frameName, prefixLen, std::string::npos);
-            return true;
-        }
 
         std::string V8ToString(CefRefPtr<CefV8Value> value) {
             if (!value) {
@@ -179,13 +164,14 @@ namespace PrismaUI::Cef {
         }
 
         const std::string frameName = frame->GetName().ToString();
-        std::string viewId;
-        if (!TryParseViewIdFromFrameName(frameName, viewId)) {
+        std::uint64_t parsedViewId = 0;
+        if (!ViewUtils::TryParseViewIdFromFrameName(frameName, parsedViewId)) {
             // Not one of our iframes — leave the context untouched. The shell
             // frame and other helpers do not need the bridge.
             return;
         }
 
+        const std::string viewId = frameName;
         const std::string frameIdentifier = frame->GetIdentifier().ToString();
 
         std::vector<std::string> pending;

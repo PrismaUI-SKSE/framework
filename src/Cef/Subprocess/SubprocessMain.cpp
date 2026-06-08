@@ -1,6 +1,6 @@
 #include <windows.h>
 
-#include "Cef/Shared/PrismaCefApp.h"
+#include "Cef/Subprocess/PrismaCefApp.h"
 #include "include/cef_app.h"
 
 namespace {

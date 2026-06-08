@@ -23,7 +23,7 @@
 #include "Cef/Browser/CefOsrClient.h"
 #include "Cef/Browser/CefRuntime.h"
 #include "Cef/Browser/OverlayTexture.h"
-#include "Cef/Shared/PrismaCefApp.h"
+#include "Cef/Subprocess/PrismaCefApp.h"
 #include "Cef/Shared/ProcessMessageNames.h"
 #include "PrismaUI/Communication.h"
 #include "Utils/DllLoader.h"

@@ -74,17 +74,9 @@ file(GLOB_RECURSE SOURCES
     "src/*.h"
 )
 
-set(PRISMAUI_CEF_SHARED_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Shared/PrismaCefApp.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Shared/PrismaCefApp.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Shared/PrismaCefRenderApp.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Shared/PrismaCefRenderApp.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Shared/ProcessMessageNames.h"
-)
-
-set(PRISMAUI_CEF_SUBPROCESS_SOURCES
-    ${PRISMAUI_CEF_SHARED_SOURCES}
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Subprocess/SubprocessMain.cpp"
+file(GLOB PRISMAUI_CEF_SUBPROCESS_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Subprocess/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Subprocess/*.cpp"
 )
 
 list(REMOVE_ITEM SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Subprocess/SubprocessMain.cpp")
@@ -114,8 +106,8 @@ add_commonlibsse_plugin(${PROJECT_NAME}
 )
 
 set_source_files_properties(
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Shared/PrismaCefApp.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Shared/PrismaCefRenderApp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Subprocess/PrismaCefApp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Subprocess/PrismaCefRenderApp.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Browser/CefRuntime.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Cef/Browser/CefOsrClient.cpp"
     PROPERTIES SKIP_PRECOMPILE_HEADERS ON
@@ -202,15 +194,15 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     # Create distribution directories
     COMMAND ${CMAKE_COMMAND} -E make_directory "${DIST_PRISMAUI_DIR}/libs"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${DIST_SKSE_PLUGINS_DIR}"
-    
+
     # Copy assets folder contents to PrismaUI folder
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/assets/" "${DIST_PRISMAUI_DIR}"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${PRISMAUI_SHELL_DIST_DIR}/" "${DIST_PRISMAUI_DIR}/shell"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/NOTICES.txt" "${DIST_VERSION_DIR}/NOTICES.txt"
-    
+
     # Copy PrismaUI DLL to SKSE/plugins
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:${PROJECT_NAME}>" "${DIST_SKSE_PLUGINS_DIR}/"
-    
+
     # Copy PrismaUI PDB to SKSE/plugins (if exists)
     COMMAND ${CMAKE_COMMAND} -E $<IF:$<BOOL:$<TARGET_PDB_FILE:${PROJECT_NAME}>>,copy,true>
         "$<$<BOOL:$<TARGET_PDB_FILE:${PROJECT_NAME}>>:$<TARGET_PDB_FILE:${PROJECT_NAME}>>"
@@ -223,7 +215,7 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E $<IF:$<BOOL:$<TARGET_PDB_FILE:PrismaUICefSubprocess>>,copy,true>
         "$<$<BOOL:$<TARGET_PDB_FILE:PrismaUICefSubprocess>>:$<TARGET_PDB_FILE:PrismaUICefSubprocess>>"
         "${DIST_PRISMAUI_DIR}/libs/"
-    
+
     COMMAND "${CMAKE_COMMAND}" -E echo "Creating distribution folder: ${DIST_VERSION_DIR}"
 )
 

@@ -286,9 +286,7 @@ namespace PrismaUI::InputHandler {
         return modifiers;
     }
 
-    bool IsSystemKeyMessage(UINT uMsg) {
-        return uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP || uMsg == WM_SYSCHAR;
-    }
+    bool IsSystemKeyMessage(UINT uMsg) { return uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP || uMsg == WM_SYSCHAR; }
 
     void QueueCommittedCharEvent(const std::wstring& utf16Text, LPARAM lParam) {
         if (utf16Text.empty()) {
@@ -467,17 +465,17 @@ namespace PrismaUI::InputHandler {
                 switch (uMsg) {
                     case WM_KEYDOWN:
                     case WM_SYSKEYDOWN: {
-                        QueueInputEvent(WinKeyHandler::CreateKeyEvent(Cef::CefInputKeyType::RawKeyDown, wParam,
-                                                                       lParam, IsSystemKeyMessage(uMsg),
-                                                                       g_isFocusedTextInputActive.load()));
+                        QueueInputEvent(WinKeyHandler::CreateKeyEvent(Cef::CefInputKeyType::RawKeyDown, wParam, lParam,
+                                                                      IsSystemKeyMessage(uMsg),
+                                                                      g_isFocusedTextInputActive.load()));
                         handledByUI = true;
                         break;
                     }
                     case WM_KEYUP:
                     case WM_SYSKEYUP: {
                         QueueInputEvent(WinKeyHandler::CreateKeyEvent(Cef::CefInputKeyType::KeyUp, wParam, lParam,
-                                                                       IsSystemKeyMessage(uMsg),
-                                                                       g_isFocusedTextInputActive.load()));
+                                                                      IsSystemKeyMessage(uMsg),
+                                                                      g_isFocusedTextInputActive.load()));
                         handledByUI = true;
                         break;
                     }
@@ -557,12 +555,11 @@ namespace PrismaUI::InputHandler {
 
         logger::info("PrismaUI::InputHandler Initialized with HWND: {}", (void*)g_hWnd);
 
-        g_imeHelper.SetCallbacks(
-            [](const std::string& s) { return EscapeForJS(s); },
-            [](const std::wstring& ws, LPARAM lp) { QueueCommittedCharEvent(ws, lp); },
-            [](const wchar_t* p, int len) { return ConvertUtf16ToUtf8(p, len); });
-        g_imeHelper.SetContext({g_hWnd, g_viewsMap, g_viewsMapMutex, &g_focusedViewIdMutex,
-                                &g_currentlyFocusedViewId, &g_isAnyInputCaptureActive, &g_isFocusedTextInputActive});
+        g_imeHelper.SetCallbacks([](const std::string& s) { return EscapeForJS(s); },
+                                 [](const std::wstring& ws, LPARAM lp) { QueueCommittedCharEvent(ws, lp); },
+                                 [](const wchar_t* p, int len) { return ConvertUtf16ToUtf8(p, len); });
+        g_imeHelper.SetContext({g_hWnd, g_viewsMap, g_viewsMapMutex, &g_focusedViewIdMutex, &g_currentlyFocusedViewId,
+                                &g_isAnyInputCaptureActive, &g_isFocusedTextInputActive});
         g_imeHelper.Initialize(g_hWnd);
 
         auto inputEventSource = RE::BSInputDeviceManager::GetSingleton();
@@ -770,14 +767,14 @@ namespace PrismaUI::InputHandler {
         }
 
         if (!targetViewData) {
-            logger::warn("Dropping {} queued input event(s): focused View [{}] is missing.",
-                         eventsToProcess.size(), focusedViewIdCopy);
+            logger::warn("Dropping {} queued input event(s): focused View [{}] is missing.", eventsToProcess.size(),
+                         focusedViewIdCopy);
             return;
         }
 
         if (targetViewData->isHidden.load()) {
-            logger::debug("Dropping {} queued input event(s): focused View [{}] is hidden.",
-                          eventsToProcess.size(), focusedViewIdCopy);
+            logger::debug("Dropping {} queued input event(s): focused View [{}] is hidden.", eventsToProcess.size(),
+                          focusedViewIdCopy);
             return;
         }
 

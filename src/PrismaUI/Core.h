@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <DirectXTK/CommonStates.h>
 #include <DirectXTK/SpriteBatch.h>
 #include <d3d11.h>
@@ -25,7 +24,6 @@ namespace PRISMA_UI_API {
     enum class ConsoleMessageLevel : uint8_t;
 }
 
-
 namespace PrismaUI::Core {
 
     typedef uint64_t PrismaViewId;
@@ -40,14 +38,14 @@ namespace PrismaUI::Core {
         std::atomic<bool> isHidden = false;
         std::atomic<bool> isFocused = false;
         std::atomic<bool> iframeCreateRequested = false;
-        std::atomic<bool> iframeReady = false;    // Set by CEF shell load callbacks (wired in Step 5/7).
+        std::atomic<bool> iframeReady = false;  // Set by CEF shell load callbacks (wired in Step 5/7).
         std::atomic<bool> destroyRequested = false;
         std::atomic<bool> isPaused = false;
         int scrollingPixelSize = 28;
         int order = 0;
         std::function<void(PrismaViewId)> domReadyCallback;
-        std::function<void(PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> consoleMessageCallback;
-
+        std::function<void(PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)>
+            consoleMessageCallback;
 
         // Operation queue fields for thread-safe sequential execution
         std::mutex operationMutex;

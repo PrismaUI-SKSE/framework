@@ -3,15 +3,13 @@
 #pragma warning(push)
 #include <RE/Skyrim.h>
 #include <SKSE/SKSE.h>
-
 #include <Windows.h>
+#include <spdlog/sinks/basic_file_sink.h>
 
 #include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string_view>
-
-#include <spdlog/sinks/basic_file_sink.h>
 #pragma warning(pop)
 
 using namespace std::literals;

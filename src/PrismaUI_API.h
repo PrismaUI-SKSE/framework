@@ -34,7 +34,8 @@ namespace PRISMA_UI_API {
 
     // Console message callback.
     typedef void (*ConsoleMessageCallback)(PrismaView view, ConsoleMessageLevel level, const char* message);
-    typedef void (*ConsoleMessageCallbackWithState)(PrismaView view, ConsoleMessageLevel level, const char* message, void* state);
+    typedef void (*ConsoleMessageCallbackWithState)(PrismaView view, ConsoleMessageLevel level, const char* message,
+                                                    void* state);
 
     // PrismaUI modder interface v1
     class IVPrismaUI1 {
@@ -130,24 +131,24 @@ namespace PRISMA_UI_API {
     public:
         // Create view and receive callbackState in the DOM-ready callback.
         // callbackState may be nullptr.
-        virtual PrismaView CreateViewV2(
-            const char* htmlPath, OnDomReadyCallbackWithState onDomReadyCallback = nullptr,
-            void* callbackState = nullptr) noexcept = 0;
+        virtual PrismaView CreateViewV2(const char* htmlPath, OnDomReadyCallbackWithState onDomReadyCallback = nullptr,
+                                        void* callbackState = nullptr) noexcept = 0;
 
         // Send JS code to UI and receive callbackState in the result callback.
         // callbackState may be nullptr.
         virtual void InvokeV2(PrismaView view, const char* script, JSCallbackWithState callback = nullptr,
-            void* callbackState = nullptr) noexcept = 0;
+                              void* callbackState = nullptr) noexcept = 0;
 
         // Register a JS listener and receive callbackState each time JavaScript calls it.
         // callbackState may be nullptr.
         virtual void RegisterJSListenerV2(PrismaView view, const char* functionName,
-            JSListenerCallbackWithState callback, void* callbackState = nullptr) noexcept = 0;
+                                          JSListenerCallbackWithState callback,
+                                          void* callbackState = nullptr) noexcept = 0;
 
         // Register a callback to receive JavaScript console messages with callbackState.
         // callbackState may be nullptr.
         virtual void RegisterConsoleCallbackV2(PrismaView view, ConsoleMessageCallbackWithState callback,
-            void* callbackState = nullptr) noexcept = 0;
+                                               void* callbackState = nullptr) noexcept = 0;
 
         // Open Chromium DevTools for the PrismaUI shell browser.
         virtual void OpenDevTools() noexcept = 0;

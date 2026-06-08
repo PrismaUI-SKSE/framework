@@ -9,26 +9,18 @@
 
 // Note: This header depends on 'logger' namespace from PCH.h (SKSE::log)
 
-namespace PrismaUI::Utils
-{
+namespace PrismaUI::Utils {
     // Common base path for PrismaUI data files
-    inline std::filesystem::path GetBasePath()
-    {
-        return std::filesystem::current_path() / "Data" / "PrismaUI";
-    }
+    inline std::filesystem::path GetBasePath() { return std::filesystem::current_path() / "Data" / "PrismaUI"; }
 
-    class DllLoader
-    {
+    class DllLoader {
     public:
-        static DllLoader& GetSingleton()
-        {
+        static DllLoader& GetSingleton() {
             static DllLoader instance;
             return instance;
         }
 
-
-        bool LoadCefLibraries()
-        {
+        bool LoadCefLibraries() {
             std::lock_guard<std::mutex> lock(m_mutex);
 
             if (m_cefLoaded) {
@@ -44,7 +36,7 @@ namespace PrismaUI::Utils
             }
 
             const std::array requiredFiles = {L"libcef.dll", L"chrome_elf.dll", L"PrismaUICefSubprocess.exe",
-                                             L"icudtl.dat"};
+                                              L"icudtl.dat"};
             for (const auto* requiredFile : requiredFiles) {
                 const auto requiredPath = libsPath / requiredFile;
                 logger::info("CEF dependency path: {}", requiredPath.string());
@@ -69,9 +61,9 @@ namespace PrismaUI::Utils
             }
 
             const auto libcefPath = libsPath / "libcef.dll";
-            m_cefModule = LoadLibraryExW(libcefPath.wstring().c_str(), nullptr,
-                                         LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
-                                             LOAD_LIBRARY_SEARCH_USER_DIRS);
+            m_cefModule = LoadLibraryExW(
+                libcefPath.wstring().c_str(), nullptr,
+                LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_USER_DIRS);
             if (!m_cefModule) {
                 const DWORD error = GetLastError();
                 logger::error("Failed to load CEF DLL: {} (Error: {})", libcefPath.string(), error);
@@ -86,8 +78,7 @@ namespace PrismaUI::Utils
         }
 
         // Unload all loaded CEF DLL state.
-        void UnloadAll()
-        {
+        void UnloadAll() {
             std::lock_guard<std::mutex> lock(m_mutex);
             UnloadAllInternal();
         }
@@ -101,9 +92,7 @@ namespace PrismaUI::Utils
         DllLoader(const DllLoader&) = delete;
         DllLoader& operator=(const DllLoader&) = delete;
 
-
-        void UnloadCefInternal()
-        {
+        void UnloadCefInternal() {
             if (m_cefModule) {
                 FreeLibrary(m_cefModule);
                 m_cefModule = nullptr;

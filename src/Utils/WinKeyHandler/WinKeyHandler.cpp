@@ -72,8 +72,7 @@ namespace WinKeyHandler {
         return event;
     }
 
-    PrismaUI::Cef::CefInputKey CreateCharEvent(wchar_t ch, LPARAM lParam, bool isSystemKey,
-                                               bool focusOnEditableField) {
+    PrismaUI::Cef::CefInputKey CreateCharEvent(wchar_t ch, LPARAM lParam, bool isSystemKey, bool focusOnEditableField) {
         PrismaUI::Cef::CefInputKey event;
         event.type = PrismaUI::Cef::CefInputKeyType::Char;
         event.modifiers = GetCefModifiers();

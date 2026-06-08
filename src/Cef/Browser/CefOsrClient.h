@@ -1,27 +1,25 @@
 #pragma once
 
 #include <atomic>
-#include <cstddef>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <mutex>
-
 #include <vector>
+
 #include "include/cef_client.h"
 #include "include/cef_display_handler.h"
 #include "include/cef_life_span_handler.h"
 #include "include/cef_load_handler.h"
 #include "include/cef_render_handler.h"
 
-namespace PrismaUI::Cef
-{
+namespace PrismaUI::Cef {
     class CefOsrClient final : public CefClient,
                                public CefRenderHandler,
                                public CefLifeSpanHandler,
                                public CefLoadHandler,
-                               public CefDisplayHandler
-    {
+                               public CefDisplayHandler {
     public:
         CefOsrClient(uint32_t width, uint32_t height);
 
@@ -63,8 +61,7 @@ namespace PrismaUI::Cef
                          const CefString& errorText, const CefString& failedUrl) override;
         // CefClient (process-message routing) — Step 7.
         bool OnProcessMessageReceived(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
-                                      CefProcessId source_process,
-                                      CefRefPtr<CefProcessMessage> message) override;
+                                      CefProcessId source_process, CefRefPtr<CefProcessMessage> message) override;
 
     private:
         void SignalCloseComplete();

@@ -1,11 +1,11 @@
 ﻿#pragma once
 
-#include <string>
-#include <vector>
 #include <windows.h>
 
-inline bool isValidUTF8(const char* str)
-{
+#include <string>
+#include <vector>
+
+inline bool isValidUTF8(const char* str) {
     if (!str) {
         return true;
     }
@@ -13,8 +13,7 @@ inline bool isValidUTF8(const char* str)
     return len != 0;
 }
 
-inline std::string convertFromANSIToUTF8(const char* str)
-{
+inline std::string convertFromANSIToUTF8(const char* str) {
     if (!str) {
         return "";
     }

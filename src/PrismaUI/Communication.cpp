@@ -18,8 +18,7 @@ namespace PrismaUI::Communication {
         }
     }
 
-    void Invoke(const Core::PrismaViewId& viewId, std::string script,
-                std::function<void(std::string)> callback) {
+    void Invoke(const Core::PrismaViewId& viewId, std::string script, std::function<void(std::string)> callback) {
         {
             std::shared_lock lock(viewsMutex);
             if (views.find(viewId) == views.end()) {
@@ -28,7 +27,6 @@ namespace PrismaUI::Communication {
                 return;
             }
         }
-
 
         Cef::CefRuntime::GetSingleton().InvokeScript(viewId, std::move(script), std::move(callback));
     }
@@ -56,8 +54,7 @@ namespace PrismaUI::Communication {
         Cef::CefRuntime::GetSingleton().RegisterListener(viewId, name, /*unused*/ nullptr);
     }
 
-    void InteropCall(const Core::PrismaViewId& viewId, const std::string& functionName,
-                     const std::string& argument) {
+    void InteropCall(const Core::PrismaViewId& viewId, const std::string& functionName, const std::string& argument) {
         {
             std::shared_lock lock(viewsMutex);
             if (views.find(viewId) == views.end()) {
@@ -92,8 +89,8 @@ namespace PrismaUI::Communication {
         } catch (const std::exception& e) {
             logger::error("DispatchListenerInvoke: callback for view [{}] / '{}' threw: {}", viewId, name, e.what());
         } catch (...) {
-            logger::error("DispatchListenerInvoke: callback for view [{}] / '{}' threw an unknown exception.",
-                          viewId, name);
+            logger::error("DispatchListenerInvoke: callback for view [{}] / '{}' threw an unknown exception.", viewId,
+                          name);
         }
     }
 
@@ -146,7 +143,6 @@ namespace PrismaUI::Communication {
         for (const auto& name : listenerNames) {
             Cef::CefRuntime::GetSingleton().RegisterListener(viewId, name, /*unused*/ nullptr);
         }
-
 
         if (viewData->domReadyCallback) {
             try {

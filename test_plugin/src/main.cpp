@@ -1,9 +1,8 @@
-#include "PCH.h"
-
-#include "PrismaUI_API.h"
-
 #include <chrono>
 #include <thread>
+
+#include "PCH.h"
+#include "PrismaUI_API.h"
 
 namespace {
     constexpr const char* kViewPath = "prismaui_api_test.html";
@@ -36,9 +35,7 @@ namespace {
     std::atomic_bool g_smokePassLogged = false;
     std::atomic_bool g_autoExitScheduled = false;
 
-    [[nodiscard]] const char* BoolText(const bool value) noexcept {
-        return value ? "true" : "false";
-    }
+    [[nodiscard]] const char* BoolText(const bool value) noexcept { return value ? "true" : "false"; }
 
     [[nodiscard]] const char* ConsoleLevelName(const PRISMA_UI_API::ConsoleMessageLevel level) noexcept {
         switch (level) {
@@ -117,7 +114,7 @@ namespace {
         std::thread([]() {
             std::this_thread::sleep_for(std::chrono::seconds(kSmokeExitWatchdogSeconds));
             logger::warn("Smoke auto-exit watchdog: process still alive after {}s; calling TerminateProcess",
-                kSmokeExitWatchdogSeconds);
+                         kSmokeExitWatchdogSeconds);
             ::TerminateProcess(::GetCurrentProcess(), 0);
         }).detach();
     }
@@ -144,10 +141,8 @@ namespace {
     }
 
     void CheckSmokeCompletion() {
-        if (!g_domReadySeen.load(std::memory_order_acquire) ||
-            !g_domInvokeSeen.load(std::memory_order_acquire) ||
-            !g_listenerSeen.load(std::memory_order_acquire) ||
-            !g_consoleSeen.load(std::memory_order_acquire)) {
+        if (!g_domReadySeen.load(std::memory_order_acquire) || !g_domInvokeSeen.load(std::memory_order_acquire) ||
+            !g_listenerSeen.load(std::memory_order_acquire) || !g_consoleSeen.load(std::memory_order_acquire)) {
             return;
         }
 
@@ -163,9 +158,7 @@ namespace {
         }
     }
 
-    [[nodiscard]] CallbackState* AsState(void* state) noexcept {
-        return static_cast<CallbackState*>(state);
-    }
+    [[nodiscard]] CallbackState* AsState(void* state) noexcept { return static_cast<CallbackState*>(state); }
 
     void LogState(const char* callbackName, void* state) {
         const auto* callbackState = AsState(state);
@@ -175,7 +168,7 @@ namespace {
         }
 
         logger::info("{} callback state: name={}, marker=0x{:08X}", callbackName, callbackState->name,
-            callbackState->marker);
+                     callbackState->marker);
     }
 
     void InvokeCallback(const char* result, void* state) {
@@ -201,11 +194,10 @@ namespace {
         }
     }
 
-    void ConsoleCallback(
-        PrismaView view, PRISMA_UI_API::ConsoleMessageLevel level, const char* message, void* state) {
+    void ConsoleCallback(PrismaView view, PRISMA_UI_API::ConsoleMessageLevel level, const char* message, void* state) {
         LogState("RegisterConsoleCallbackV2", state);
         logger::info("Console callback: view={}, level={}, message={}", view, ConsoleLevelName(level),
-            message ? message : "<null>");
+                     message ? message : "<null>");
         if (ContainsText(message, "[PrismaUITest]")) {
             g_consoleSeen.store(true, std::memory_order_release);
             CheckSmokeCompletion();
@@ -219,7 +211,7 @@ namespace {
         }
 
         g_apiV3->InvokeV2(view,
-            R"JS((() => {
+                          R"JS((() => {
     console.info('[PrismaUITest] DOM-ready InvokeV2 running');
     const listenerType = typeof window.prismaApiTestEcho;
     if (listenerType === 'function') {
@@ -227,7 +219,7 @@ namespace {
     }
     return 'readyState=' + document.readyState + '; listener=' + listenerType + '; interop=' + typeof window.prismaApiTestFunction;
 })())JS",
-            DomInvokeCallback, &g_domInvokeState);
+                          DomInvokeCallback, &g_domInvokeState);
 
         g_apiV3->InteropCall(view, "prismaApiTestFunction", "interop-payload-from-native");
     }
@@ -274,7 +266,7 @@ namespace {
         }
 
         logger::info("Typed PrismaUI API pointers: V1={}, V2={}, V3={}", static_cast<void*>(g_apiV1),
-            static_cast<void*>(g_apiV2), static_cast<void*>(g_apiV3));
+                     static_cast<void*>(g_apiV2), static_cast<void*>(g_apiV3));
     }
 
     void RunNullInputTests() {
@@ -340,18 +332,20 @@ namespace {
 
         g_apiV3->SetScrollingPixelSize(g_testView, 48);
         logger::info("After SetScrollingPixelSize(48), GetScrollingPixelSize({})={}", g_testView,
-            g_apiV3->GetScrollingPixelSize(g_testView));
+                     g_apiV3->GetScrollingPixelSize(g_testView));
 
         g_apiV3->SetOrder(g_testView, 42);
         logger::info("After SetOrder(42), GetOrder({})={}", g_testView, g_apiV3->GetOrder(g_testView));
 
         g_apiV3->Hide(g_testView);
-        logger::info("Hide({}) called; IsHidden is operation-queue backed and may update on the next present", g_testView);
+        logger::info("Hide({}) called; IsHidden is operation-queue backed and may update on the next present",
+                     g_testView);
         g_apiV3->Show(g_testView);
         logger::info("Show({}) called", g_testView);
 
         const bool focusResult = g_apiV3->Focus(g_testView, false, true);
-        logger::info("Focus({}, pauseGame=false, disableFocusMenu=true) returned {}", g_testView, BoolText(focusResult));
+        logger::info("Focus({}, pauseGame=false, disableFocusMenu=true) returned {}", g_testView,
+                     BoolText(focusResult));
         logger::info("HasFocus({}) immediately after Focus={}", g_testView, BoolText(g_apiV3->HasFocus(g_testView)));
         g_apiV3->Unfocus(g_testView);
         logger::info("Unfocus({}) called", g_testView);
@@ -360,7 +354,7 @@ namespace {
         g_apiV3->SetInspectorVisibility(g_testView, true);
         g_apiV3->SetInspectorBounds(g_testView, 16.0F, 16.0F, 640U, 360U);
         logger::info("Legacy inspector IsInspectorVisible({})={}", g_testView,
-            BoolText(g_apiV3->IsInspectorVisible(g_testView)));
+                     BoolText(g_apiV3->IsInspectorVisible(g_testView)));
 
         logger::info("DevTools initially open={}", BoolText(g_apiV3->IsDevToolsOpen()));
         g_apiV3->OpenDevTools();
@@ -369,11 +363,11 @@ namespace {
         logger::info("CloseDevTools() called");
 
         g_apiV3->InvokeV2(g_testView,
-            R"JS((() => {
+                          R"JS((() => {
     console.log('[PrismaUITest] initial InvokeV2 running');
     return 'initial-readyState=' + document.readyState;
 })())JS",
-            InvokeCallback, &g_invokeState);
+                          InvokeCallback, &g_invokeState);
     }
 
     void HandleMessage(SKSE::MessagingInterface::Message* message) {
@@ -381,7 +375,8 @@ namespace {
             return;
         }
 
-        logger::info("SKSE message received: {} ({})", MessageName(message->type), static_cast<std::uint32_t>(message->type));
+        logger::info("SKSE message received: {} ({})", MessageName(message->type),
+                     static_cast<std::uint32_t>(message->type));
 
         switch (message->type) {
             case SKSE::MessagingInterface::kPostLoad:

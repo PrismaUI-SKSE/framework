@@ -20,12 +20,10 @@ namespace PrismaUI::Communication {
     // Register a string-valued JS listener. The renderer installs window[name] so the
     // iframe can call it like a regular function; the call comes back into `callback`
     // with the argument coerced to string.
-    void RegisterJSListener(const Core::PrismaViewId& viewId, const std::string& name,
-                            Core::SimpleJSCallback callback);
+    void RegisterJSListener(const Core::PrismaViewId& viewId, const std::string& name, Core::SimpleJSCallback callback);
 
     // Fire-and-forget call into the iframe's window[functionName](argument).
-    void InteropCall(const Core::PrismaViewId& viewId, const std::string& functionName,
-                     const std::string& argument);
+    void InteropCall(const Core::PrismaViewId& viewId, const std::string& functionName, const std::string& argument);
 
     // -------------------------------------------------------------------------
     // Dispatch helpers called by CefRuntime when a renderer-process message

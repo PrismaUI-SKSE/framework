@@ -4,7 +4,6 @@
 #include <functional>
 #include <string>
 
-
 namespace PRISMA_UI_API {
     enum class ConsoleMessageLevel : uint8_t;
 }

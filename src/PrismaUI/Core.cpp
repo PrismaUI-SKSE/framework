@@ -12,7 +12,6 @@
 #include "ViewOperationQueue.h"
 #include "ViewRenderer.h"
 
-
 namespace PrismaUI::Core {
     using namespace PrismaUI::ViewRenderer;
     using namespace PrismaUI::ViewManager;
@@ -43,7 +42,6 @@ namespace PrismaUI::Core {
     void InitializeCoreSystem() {
         logger::info("Initializing PrismaUI Core System...");
         InitHooks();
-
 
         auto ui = RE::UI::GetSingleton();
         ui->Register(FocusMenu::MENU_NAME, FocusMenu::Creator);

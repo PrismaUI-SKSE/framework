@@ -17,16 +17,12 @@ namespace PrismaUI::Cef {
         PrismaCefRenderApp();
         ~PrismaCefRenderApp() override;
 
-        void OnContextCreated(CefRefPtr<CefBrowser> browser,
-                              CefRefPtr<CefFrame> frame,
+        void OnContextCreated(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                               CefRefPtr<CefV8Context> context) override;
-        void OnContextReleased(CefRefPtr<CefBrowser> browser,
-                               CefRefPtr<CefFrame> frame,
+        void OnContextReleased(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                                CefRefPtr<CefV8Context> context) override;
-        bool OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
-                                      CefRefPtr<CefFrame> frame,
-                                      CefProcessId source_process,
-                                      CefRefPtr<CefProcessMessage> message) override;
+        bool OnProcessMessageReceived(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
+                                      CefProcessId source_process, CefRefPtr<CefProcessMessage> message) override;
 
     private:
         struct Impl;

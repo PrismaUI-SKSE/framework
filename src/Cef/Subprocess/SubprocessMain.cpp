@@ -3,10 +3,8 @@
 #include "Cef/Shared/PrismaCefApp.h"
 #include "include/cef_app.h"
 
-namespace
-{
-    int RunCefSubprocess(HINSTANCE instance)
-    {
+namespace {
+    int RunCefSubprocess(HINSTANCE instance) {
         CefMainArgs mainArgs(instance);
         CefRefPtr<CefApp> app = PrismaUI::Cef::CreatePrismaCefApp();
 
@@ -15,7 +13,4 @@ namespace
     }
 }
 
-int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
-{
-    return RunCefSubprocess(instance);
-}
+int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) { return RunCefSubprocess(instance); }

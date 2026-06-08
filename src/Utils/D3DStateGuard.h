@@ -2,8 +2,7 @@
 
 #include <d3d11.h>
 
-namespace PrismaUI::Utils
-{
+namespace PrismaUI::Utils {
     // RAII guard that snapshots and restores the OM blend state, OM depth-stencil
     // state, and RS rasterizer state of a D3D11 immediate context. Wrap any
     // SpriteBatch (or otherwise pipeline-mutating) pass with one of these so the
@@ -11,19 +10,16 @@ namespace PrismaUI::Utils
     //
     // The guard takes ownership of the COM references returned by OMGetBlendState /
     // OMGetDepthStencilState / RSGetState and releases them in its destructor.
-    class D3DStateGuard
-    {
+    class D3DStateGuard {
     public:
-        explicit D3DStateGuard(ID3D11DeviceContext* context) : context_(context)
-        {
+        explicit D3DStateGuard(ID3D11DeviceContext* context) : context_(context) {
             if (!context_) return;
             context_->OMGetBlendState(&blendState_, blendFactor_, &sampleMask_);
             context_->OMGetDepthStencilState(&depthStencilState_, &stencilRef_);
             context_->RSGetState(&rasterizerState_);
         }
 
-        ~D3DStateGuard()
-        {
+        ~D3DStateGuard() {
             if (!context_) return;
             context_->OMSetBlendState(blendState_, blendFactor_, sampleMask_);
             context_->OMSetDepthStencilState(depthStencilState_, stencilRef_);

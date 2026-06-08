@@ -1,7 +1,7 @@
 #pragma once
 
-#include "PrismaUI_API.h"
 #include "PrismaUI/ViewManager.h"
+#include "PrismaUI_API.h"
 
 class PluginAPI {
     using LatestInterface = PRISMA_UI_API::IVPrismaUI3;
@@ -9,11 +9,9 @@ class PluginAPI {
 public:
     class PrismaUIInterface : public LatestInterface {
     private:
-        PrismaUIInterface() noexcept {
-        };
+        PrismaUIInterface() noexcept {};
 
-        virtual ~PrismaUIInterface() noexcept {
-        };
+        virtual ~PrismaUIInterface() noexcept {};
 
     public:
         static PrismaUIInterface* GetSingleton() noexcept {
@@ -46,7 +44,7 @@ public:
         void SetInspectorVisibility(PrismaView view, bool visible) noexcept override;
         bool IsInspectorVisible(PrismaView view) noexcept override;
         void SetInspectorBounds(PrismaView view, float topLeftX, float topLeftY, unsigned width,
-            unsigned height) noexcept override;
+                                unsigned height) noexcept override;
         bool HasAnyActiveFocus() noexcept override;
 
         // IVPrismaUI2
@@ -55,14 +53,15 @@ public:
 
         // IVPrismaUI3
 
-        PrismaView CreateViewV2(
-            const char* htmlPath, PRISMA_UI_API::OnDomReadyCallbackWithState onDomReadyCallback, void* callbackState) noexcept override;
+        PrismaView CreateViewV2(const char* htmlPath, PRISMA_UI_API::OnDomReadyCallbackWithState onDomReadyCallback,
+                                void* callbackState) noexcept override;
         void InvokeV2(PrismaView view, const char* script, PRISMA_UI_API::JSCallbackWithState callback,
-            void* callbackState) noexcept override;
+                      void* callbackState) noexcept override;
         void RegisterJSListenerV2(PrismaView view, const char* functionName,
-            PRISMA_UI_API::JSListenerCallbackWithState callback, void* callbackState) noexcept override;
+                                  PRISMA_UI_API::JSListenerCallbackWithState callback,
+                                  void* callbackState) noexcept override;
         void RegisterConsoleCallbackV2(PrismaView view, PRISMA_UI_API::ConsoleMessageCallbackWithState callback,
-            void* callbackState) noexcept override;
+                                       void* callbackState) noexcept override;
         void OpenDevTools() noexcept override;
         void CloseDevTools() noexcept override;
         bool IsDevToolsOpen() noexcept override;
@@ -70,10 +69,10 @@ public:
     private:
         static PrismaView CreateViewInternal(
             const char* htmlPath, std::function<void(PrismaUI::Core::PrismaViewId)> onDomReadyCallback) noexcept;
-        static void InvokeInternal(
-            PrismaView view, const char* script, std::function<void(const char*)> callback) noexcept;
+        static void InvokeInternal(PrismaView view, const char* script,
+                                   std::function<void(const char*)> callback) noexcept;
         static void RegisterJSListenerInternal(PrismaView view, const char* functionName,
-            std::function<void(const char*)> callback) noexcept;
+                                               std::function<void(const char*)> callback) noexcept;
 
     private:
         unsigned long apiTID = 0;

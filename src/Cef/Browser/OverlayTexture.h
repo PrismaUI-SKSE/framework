@@ -4,15 +4,13 @@
 #include <d3d11.h>
 #include <d3d11_1.h>
 #include <d3d11_4.h>
-
 #include <wrl/client.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
 
-namespace PrismaUI::Cef
-{
+namespace PrismaUI::Cef {
     // Owns the D3D11 surface that backs CEF's OSR output (accelerated shared-texture
     // copy and CPU OnPaint fallback). The browser-process CefRuntime hands it raw
     // device/context pointers and either a CEF shared HANDLE (accelerated) or a BGRA32
@@ -23,15 +21,9 @@ namespace PrismaUI::Cef
     // responsible for invoking them from a thread that is legal for D3D11 work --
     // resource creation/upload from the render (D3D Present) thread, and accelerated
     // shared-handle copies from the CEF UI thread inside OnAcceleratedPaint.
-    class OverlayTexture final
-    {
+    class OverlayTexture final {
     public:
-        enum class Mode : std::uint8_t
-        {
-            None,
-            Accelerated,
-            Cpu
-        };
+        enum class Mode : std::uint8_t { None, Accelerated, Cpu };
 
         OverlayTexture() = default;
         ~OverlayTexture() = default;
@@ -61,8 +53,7 @@ namespace PrismaUI::Cef
         // underlying texture when dimensions or mode change. `srcStride` is the byte
         // stride of the source buffer and must be >= width * 4. Returns true on
         // success.
-        bool UploadBgra32(const std::byte* pixels, std::uint32_t width, std::uint32_t height,
-                          std::uint32_t srcStride);
+        bool UploadBgra32(const std::byte* pixels, std::uint32_t width, std::uint32_t height, std::uint32_t srcStride);
 
         // Render-thread: drop the texture, SRV, and cached device/context references.
         void ReleaseResources();
@@ -74,14 +65,12 @@ namespace PrismaUI::Cef
         Mode GetActiveMode() const;
 
     private:
-        struct Desc
-        {
+        struct Desc {
             std::uint32_t width = 0;
             std::uint32_t height = 0;
             DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
 
-            bool Matches(const D3D11_TEXTURE2D_DESC& other) const
-            {
+            bool Matches(const D3D11_TEXTURE2D_DESC& other) const {
                 return width == other.Width && height == other.Height && format == other.Format;
             }
         };

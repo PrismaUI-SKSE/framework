@@ -3,10 +3,8 @@
 #include "Cef/Shared/PrismaCefRenderApp.h"
 #include "include/cef_app.h"
 
-namespace PrismaUI::Cef
-{
-    class PrismaCefApp final : public CefApp
-    {
+namespace PrismaUI::Cef {
+    class PrismaCefApp final : public CefApp {
     public:
         PrismaCefApp();
         void OnBeforeCommandLineProcessing(const CefString& process_type,

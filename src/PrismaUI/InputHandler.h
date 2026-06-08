@@ -6,7 +6,6 @@
 #include <memory>
 #include <shared_mutex>
 
-
 namespace PrismaUI::Core {
     typedef uint64_t PrismaViewId;
     struct PrismaView;

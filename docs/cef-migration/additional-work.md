@@ -1,4 +1,3 @@
 - Create C++ shell API
-- String conversion optimizations
 - CEF shutdown???
 - Remove duplicated code when handle messages

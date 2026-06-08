@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <optional>
 
 #include "Cef/Browser/CefOsrClient.h"
 #include "Cef/Browser/CefRuntime.h"
@@ -369,23 +370,13 @@ namespace PrismaUI::Cef {
             return false;
         }
 
-        const auto messageKind = Messages::ClassifyRendererToBrowserMessage(message->GetName());
-        if (messageKind == Messages::RendererToBrowserMessage::Unknown) {
+        std::optional<Messages::RendererToBrowserMessage> parsedMessage =
+            Messages::ParseRendererToBrowserMessage(message);
+        if (!parsedMessage) {
             return false;
         }
 
-        const std::string frameName = frame->GetName().ToString();
-
-        std::vector<std::string> payload;
-        if (CefRefPtr<CefListValue> args = message->GetArgumentList()) {
-            const size_t size = args->GetSize();
-            payload.reserve(size);
-            for (size_t i = 0; i < size; ++i) {
-                payload.push_back(args->GetString(i).ToString());
-            }
-        }
-
-        return CefRuntime::GetSingleton().OnRendererMessage(frameName, messageKind, payload);
+        return CefRuntime::GetSingleton().OnRendererMessage(frame->GetName(), *parsedMessage);
     }
 
     void CefOsrClient::SignalCloseComplete() {

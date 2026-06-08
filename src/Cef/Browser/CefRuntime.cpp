@@ -29,6 +29,7 @@
 #include "Cef/Subprocess/PrismaCefApp.h"
 #include "PrismaUI/Communication.h"
 #include "Utils/DllLoader.h"
+#include "Utils/VariantUtils.h"
 #include "include/cef_app.h"
 #include "include/cef_browser.h"
 #include "include/cef_process_message.h"
@@ -1269,20 +1270,19 @@ namespace PrismaUI::Cef {
             client = impl_->client;
         }
 
-        const std::string requestIdStr = std::to_string(requestId);
         const std::string scriptCopy = std::move(script);
 
-        PostToCefUi([this, client, viewId, requestIdStr, scriptCopy]() {
+        PostToCefUi([this, client, viewId, requestId, scriptCopy]() {
             CefRefPtr<CefFrame> frame = FindIframeFrame(client, viewId);
             if (!frame) {
                 logger::warn("InvokeScript: iframe for view [{}] not yet attached; failing request {}.", viewId,
-                             requestIdStr);
+                             requestId);
                 // Fire the queued callback with an empty string and remove the entry.
                 Impl::InvokeEntry drained;
                 bool have = false;
                 {
                     std::lock_guard lock(impl_->invokeMutex);
-                    auto it = impl_->pendingInvokes.find(std::stoull(requestIdStr));
+                    auto it = impl_->pendingInvokes.find(requestId);
                     if (it != impl_->pendingInvokes.end()) {
                         drained = std::move(it->second);
                         impl_->pendingInvokes.erase(it);
@@ -1292,8 +1292,8 @@ namespace PrismaUI::Cef {
                 if (have && drained.callback) drained.callback(std::string());
                 return;
             }
-            logger::debug("InvokeScript: dispatching request {} to view [{}].", requestIdStr, viewId);
-            frame->SendProcessMessage(PID_RENDERER, Messages::CreateInvokeRequestMessage(requestIdStr, scriptCopy));
+            logger::debug("InvokeScript: dispatching request {} to view [{}].", requestId, viewId);
+            frame->SendProcessMessage(PID_RENDERER, Messages::CreateInvokeRequestMessage(requestId, scriptCopy));
         });
     }
 
@@ -1378,105 +1378,53 @@ namespace PrismaUI::Cef {
         }
     }
 
-    bool CefRuntime::OnRendererMessage(const std::string& frameName, Messages::RendererToBrowserMessage message,
-                                       const std::vector<std::string>& payload) {
-        // Pull viewId out of either the numeric frame name or the first payload
-        // column, depending on which message kind we're handling.
-        auto parseViewIdFromFrame = [&]() -> uint64_t {
-            uint64_t viewId = 0;
-            return ViewUtils::TryParseViewIdFromFrameName(frameName, viewId) ? viewId : 0;
+    bool CefRuntime::OnRendererMessage(const CefString& frameName, const Messages::RendererToBrowserMessage& message) {
+        std::uint64_t frameViewId = 0;
+        const bool hasFrameViewId = ViewUtils::TryParseViewIdFromFrameName(frameName, frameViewId);
+
+        auto requireFrameView = [&frameName, hasFrameViewId](const char* messageName) {
+            if (!hasFrameViewId) {
+                logger::warn("OnRendererMessage: {} arrived from non-view frame '{}' - refusing.", messageName,
+                             frameName.ToString());
+                return false;
+            }
+
+            return true;
         };
 
-        if (message == Messages::RendererToBrowserMessage::InvokeResult) {
-            if (payload.size() < 3) {
-                logger::error("OnRendererMessage: malformed invokeResult payload (size {}).", payload.size());
-                return true;
-            }
-            uint64_t requestId = 0;
-            try {
-                requestId = std::stoull(payload[0]);
-            } catch (...) {
-                logger::error("OnRendererMessage: invokeResult bad requestId '{}'.", payload[0]);
-                return true;
-            }
-            Impl::InvokeEntry entry;
-            {
-                std::lock_guard lock(impl_->invokeMutex);
-                auto it = impl_->pendingInvokes.find(requestId);
-                if (it != impl_->pendingInvokes.end()) {
-                    entry = std::move(it->second);
-                    impl_->pendingInvokes.erase(it);
+        Match(
+            message,
+            [this](const Messages::InvokeResultMessage& m) {
+                Impl::InvokeEntry entry;
+                {
+                    std::lock_guard lock(impl_->invokeMutex);
+                    auto it = impl_->pendingInvokes.find(m.RequestId);
+                    if (it != impl_->pendingInvokes.end()) {
+                        entry = std::move(it->second);
+                        impl_->pendingInvokes.erase(it);
+                    }
                 }
-            }
-            if (entry.callback) {
-                entry.callback(payload[2]);
-            }
-            return true;
-        }
+                if (entry.callback) {
+                    entry.callback(m.Success ? m.Result.ToString() : std::string());
+                }
+            },
+            [&requireFrameView, frameViewId](const Messages::ListenerInvokeMessage& m) {
+                if (requireFrameView("listenerInvoke")) {
+                    Communication::DispatchListenerInvoke(frameViewId, m.ListenerName.ToString(),
+                                                          m.Argument.ToString());
+                }
+            },
+            [&requireFrameView, frameViewId](const Messages::ConsoleMessage& m) {
+                if (requireFrameView("consoleMessage")) {
+                    Communication::DispatchConsoleMessage(frameViewId, m.Level.ToString(), m.Text.ToString());
+                }
+            },
+            [&requireFrameView, frameViewId](const Messages::DomReadyMessage&) {
+                if (requireFrameView("domReady")) {
+                    Communication::DispatchDomReady(frameViewId);
+                }
+            });
 
-        if (message == Messages::RendererToBrowserMessage::ListenerInvoke) {
-            if (payload.size() < 3) {
-                logger::error("OnRendererMessage: malformed listenerInvoke payload (size {}).", payload.size());
-                return true;
-            }
-            uint64_t viewId = 0;
-            try {
-                viewId = std::stoull(payload[0]);
-            } catch (...) {
-                logger::error("OnRendererMessage: listenerInvoke bad viewId '{}'.", payload[0]);
-                return true;
-            }
-            if (parseViewIdFromFrame() != viewId) {
-                logger::warn("OnRendererMessage: listenerInvoke viewId {} disagrees with frame '{}' — refusing.",
-                             viewId, frameName);
-                return true;
-            }
-            Communication::DispatchListenerInvoke(viewId, payload[1], payload[2]);
-            return true;
-        }
-
-        if (message == Messages::RendererToBrowserMessage::ConsoleMessage) {
-            if (payload.size() < 3) {
-                logger::error("OnRendererMessage: malformed consoleMessage payload (size {}).", payload.size());
-                return true;
-            }
-            uint64_t viewId = 0;
-            try {
-                viewId = std::stoull(payload[0]);
-            } catch (...) {
-                logger::error("OnRendererMessage: consoleMessage bad viewId '{}'.", payload[0]);
-                return true;
-            }
-            if (parseViewIdFromFrame() != viewId) {
-                logger::warn("OnRendererMessage: consoleMessage viewId {} disagrees with frame '{}' — refusing.",
-                             viewId, frameName);
-                return true;
-            }
-            Communication::DispatchConsoleMessage(viewId, payload[1], payload[2]);
-            return true;
-        }
-
-        if (message == Messages::RendererToBrowserMessage::DomReady) {
-            if (payload.size() < 1) {
-                logger::error("OnRendererMessage: malformed domReady payload (size {}).", payload.size());
-                return true;
-            }
-            uint64_t viewId = 0;
-            try {
-                viewId = std::stoull(payload[0]);
-            } catch (...) {
-                logger::error("OnRendererMessage: domReady bad viewId '{}'.", payload[0]);
-                return true;
-            }
-            if (parseViewIdFromFrame() != viewId) {
-                logger::warn("OnRendererMessage: domReady viewId {} disagrees with frame '{}' — refusing.", viewId,
-                             frameName);
-                return true;
-            }
-            Communication::DispatchDomReady(viewId);
-            return true;
-        }
-
-        return false;
+        return true;
     }
 }

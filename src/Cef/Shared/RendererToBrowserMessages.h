@@ -1,8 +1,12 @@
 #pragma once
 
 #include <cstdint>
-#include <string_view>
+#include <optional>
+#include <variant>
 
+#include "CefUtils.h"
+#include "cef_process_message.h"
+#include "cef_values.h"
 #include "include/internal/cef_string.h"
 
 // Stable IPC message names sent from the CEF renderer subprocess
@@ -10,84 +14,117 @@
 // strings MUST NOT change without updating both sides.
 
 namespace PrismaUI::Cef::Messages {
-    namespace Detail {
-        inline constexpr const char* kInvokeResult = "prisma.invokeResult";
-        inline constexpr const char* kListenerInvoke = "prisma.listenerInvoke";
-        inline constexpr const char* kConsoleMessage = "prisma.consoleMessage";
-        inline constexpr const char* kDomReady = "prisma.domReady";
-    }
-
-    enum class RendererToBrowserMessage : std::uint8_t {
-        Unknown,
-        InvokeResult,
-        ListenerInvoke,
-        ConsoleMessage,
-        DomReady
-    };
-
     inline const CefString& InvokeResultName() {
-        static const CefString value(Detail::kInvokeResult);
+        static const CefString value("prisma.invokeResult");
         return value;
     }
 
     inline const CefString& ListenerInvokeName() {
-        static const CefString value(Detail::kListenerInvoke);
+        static const CefString value("prisma.listenerInvoke");
         return value;
     }
 
     inline const CefString& ConsoleMessageName() {
-        static const CefString value(Detail::kConsoleMessage);
+        static const CefString value("prisma.consoleMessage");
         return value;
     }
 
     inline const CefString& DomReadyName() {
-        static const CefString value(Detail::kDomReady);
+        static const CefString value("prisma.domReady");
         return value;
     }
 
-    inline RendererToBrowserMessage ClassifyRendererToBrowserMessage(const CefString& name) {
+    inline CefRefPtr<CefProcessMessage> CreateInvokeResultMessage(std::uint64_t requestId, bool success,
+                                                                  const CefString& result) {
+        return CefUtils::MakeListMessage(InvokeResultName(), requestId, success, result);
+    }
+
+    inline CefRefPtr<CefProcessMessage> CreateListenerInvokeMessage(const CefString& listenerName,
+                                                                    const CefString& argument) {
+        return CefUtils::MakeListMessage(ListenerInvokeName(), listenerName, argument);
+    }
+
+    inline CefRefPtr<CefProcessMessage> CreateConsoleMessage(const CefString& level, const CefString& text) {
+        return CefUtils::MakeListMessage(ConsoleMessageName(), level, text);
+    }
+
+    inline CefRefPtr<CefProcessMessage> CreateDomReadyMessage() { return CefUtils::MakeListMessage(DomReadyName()); }
+
+    struct InvokeResultMessage {
+        CefString Result;
+        std::uint64_t RequestId = 0;
+        bool Success = false;
+    };
+
+    struct ListenerInvokeMessage {
+        CefString ListenerName;
+        CefString Argument;
+    };
+
+    struct ConsoleMessage {
+        CefString Level;
+        CefString Text;
+    };
+
+    struct DomReadyMessage {};
+
+    using RendererToBrowserMessage =
+        std::variant<InvokeResultMessage, ListenerInvokeMessage, ConsoleMessage, DomReadyMessage>;
+
+    inline std::optional<RendererToBrowserMessage> ParseRendererToBrowserMessage(
+        const CefRefPtr<CefProcessMessage>& message) {
+        const CefString name = message->GetName();
+        CefRefPtr<CefListValue> args = message->GetArgumentList();
+        if (!args) {
+            LOG(ERROR) << "ParseRendererToBrowserMessage: " << name << " args pointer is null";
+            return std::nullopt;
+        }
+
+        auto validateArgs = [](const CefRefPtr<CefListValue>& args, const CefString& name, int requiredCount) {
+            if (args->GetSize() < requiredCount) {
+                LOG(ERROR) << "ParseRendererToBrowserMessage: " << name << " missing args";
+                return false;
+            }
+
+            return true;
+        };
+
         if (name == InvokeResultName()) {
-            return RendererToBrowserMessage::InvokeResult;
+            if (!validateArgs(args, name, 3)) {
+                return std::nullopt;
+            }
+
+            return InvokeResultMessage{
+                .Result = args->GetString(2),
+                .RequestId = CefUtils::GetValueFromCefList<std::uint64_t>(args, 0),
+                .Success = CefUtils::GetValueFromCefList<bool>(args, 1),
+            };
         }
         if (name == ListenerInvokeName()) {
-            return RendererToBrowserMessage::ListenerInvoke;
+            if (!validateArgs(args, name, 2)) {
+                return std::nullopt;
+            }
+
+            return ListenerInvokeMessage{
+                .ListenerName = args->GetString(0),
+                .Argument = args->GetString(1),
+            };
         }
         if (name == ConsoleMessageName()) {
-            return RendererToBrowserMessage::ConsoleMessage;
+            if (!validateArgs(args, name, 2)) {
+                return std::nullopt;
+            }
+
+            return ConsoleMessage{
+                .Level = args->GetString(0),
+                .Text = args->GetString(1),
+            };
         }
         if (name == DomReadyName()) {
-            return RendererToBrowserMessage::DomReady;
+            return DomReadyMessage{};
         }
-        return RendererToBrowserMessage::Unknown;
-    }
 
-    inline const CefString& ToCefString(RendererToBrowserMessage message) {
-        switch (message) {
-            case RendererToBrowserMessage::InvokeResult:
-                return InvokeResultName();
-            case RendererToBrowserMessage::ListenerInvoke:
-                return ListenerInvokeName();
-            case RendererToBrowserMessage::ConsoleMessage:
-                return ConsoleMessageName();
-            case RendererToBrowserMessage::DomReady:
-                return DomReadyName();
-            default:
-                return DomReadyName();
-        }
-    }
-
-    constexpr std::string_view ToStringView(RendererToBrowserMessage message) noexcept {
-        switch (message) {
-            case RendererToBrowserMessage::InvokeResult:
-                return Detail::kInvokeResult;
-            case RendererToBrowserMessage::ListenerInvoke:
-                return Detail::kListenerInvoke;
-            case RendererToBrowserMessage::ConsoleMessage:
-                return Detail::kConsoleMessage;
-            case RendererToBrowserMessage::DomReady:
-                return Detail::kDomReady;
-            default:
-                return "<unknown>";
-        }
+        LOG(ERROR) << "ParseRendererToBrowserMessage: " << name << " message name not found";
+        return std::nullopt;
     }
 }

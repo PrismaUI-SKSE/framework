@@ -2,9 +2,12 @@
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
+#include <limits>
 #include <source_location>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 #include "include/cef_process_message.h"
@@ -72,8 +75,48 @@ namespace PrismaUI::Cef::CefUtils {
         CefRefPtr<CefListValue> list = msg->GetArgumentList();
         list->SetSize(sizeof...(Args));
         size_t i = 0;
-        (list->SetString(i++, args), ...);
+        (
+            [&] {
+                using T = std::decay_t<Args>;
+                const size_t index = i++;
+                if constexpr (std::is_convertible_v<T, CefString>) {
+                    list->SetString(index, args);
+                } else if constexpr (std::is_same_v<T, bool>) {
+                    list->SetBool(index, args);
+                } else if constexpr (std::is_integral_v<T>) {
+                    if constexpr (sizeof(T) <= sizeof(int)) {
+                        list->SetInt(index, static_cast<int>(args));
+                    } else {
+                        list->SetDouble(index, static_cast<double>(args));
+                    }
+                } else if constexpr (std::is_floating_point_v<T>) {
+                    list->SetDouble(index, static_cast<double>(args));
+                } else {
+                    static_assert(!sizeof(T), "Unsupported type");
+                }
+            }(),
+            ...);
 
         return msg;
+    }
+
+    template <class T>
+    T GetValueFromCefList(const CefRefPtr<CefListValue>& list, size_t index) {
+        if constexpr (std::is_convertible_v<CefString, T>) {
+            return list->GetString(index);
+        } else if constexpr (std::is_same_v<T, bool>) {
+            return list->GetBool(index);
+        } else if constexpr (std::is_integral_v<T>) {
+            if constexpr (sizeof(T) <= sizeof(int)) {
+                return static_cast<T>(list->GetInt(index));
+            } else {
+                return static_cast<T>(list->GetDouble(index));
+            }
+        } else if constexpr (std::is_floating_point_v<T>) {
+            return static_cast<T>(list->GetDouble(index));
+        } else {
+            static_assert(!sizeof(T), "Unsupported type");
+            return T{};
+        }
     }
 }

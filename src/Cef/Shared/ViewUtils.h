@@ -2,6 +2,7 @@
 
 #include <charconv>
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <system_error>
 
@@ -21,5 +22,9 @@ namespace PrismaUI::Cef::ViewUtils {
 
         viewId = value;
         return true;
+    }
+
+    inline bool TryParseViewIdFromFrameName(const std::string& frameName, std::uint64_t& viewId) {
+        return TryParseViewIdFromFrameName(std::string_view(frameName), viewId);
     }
 }

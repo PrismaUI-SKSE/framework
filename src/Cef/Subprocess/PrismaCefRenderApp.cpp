@@ -25,14 +25,14 @@ namespace PrismaUI::Cef {
     namespace {
         // ----- helpers -----
 
-        std::string V8ToString(CefRefPtr<CefV8Value> value) {
+        CefString V8ToCefString(CefRefPtr<CefV8Value> value) {
             if (!value) {
-                return std::string();
+                return CefString();
             }
             if (value->IsUndefined() || value->IsNull()) {
-                return std::string();
+                return CefString();
             }
-            return value->GetStringValue().ToString();
+            return value->GetStringValue();
         }
 
         const CefString& FireListenerName() {
@@ -54,8 +54,6 @@ namespace PrismaUI::Cef {
     // ----- V8 handler that bridges __prismaNative.* calls back to the browser -----
     class PrismaNativeHandler : public CefV8Handler {
     public:
-        explicit PrismaNativeHandler(const CefString& viewId) : viewId_(viewId) {}
-
         bool Execute(const CefString& name, CefRefPtr<CefV8Value> /*object*/, const CefV8ValueList& arguments,
                      CefRefPtr<CefV8Value>& retval, CefString& /*exception*/) override {
             CefRefPtr<CefV8Context> ctx = CefV8Context::GetCurrentContext();
@@ -70,27 +68,19 @@ namespace PrismaUI::Cef {
                     retval = CefV8Value::CreateUndefined();
                     return true;
                 }
-                const std::string listenerName = V8ToString(arguments[0]);
-                const std::string arg = arguments.size() >= 2 ? V8ToString(arguments[1]) : std::string();
-                frame->SendProcessMessage(
-                    PID_BROWSER,
-                    CefUtils::MakeListMessage(Messages::ToCefString(Messages::RendererToBrowserMessage::ListenerInvoke),
-                                              viewId_, listenerName, arg));
+                const CefString listenerName = V8ToCefString(arguments[0]);
+                const CefString arg = arguments.size() >= 2 ? V8ToCefString(arguments[1]) : CefString();
+                frame->SendProcessMessage(PID_BROWSER, Messages::CreateListenerInvokeMessage(listenerName, arg));
             } else if (name == FireDomReadyName()) {
-                frame->SendProcessMessage(
-                    PID_BROWSER, CefUtils::MakeListMessage(
-                                     Messages::ToCefString(Messages::RendererToBrowserMessage::DomReady), viewId_));
+                frame->SendProcessMessage(PID_BROWSER, Messages::CreateDomReadyMessage());
             } else if (name == FireConsoleName()) {
                 if (arguments.size() < 2) {
                     retval = CefV8Value::CreateUndefined();
                     return true;
                 }
-                const std::string level = V8ToString(arguments[0]);
-                const std::string text = V8ToString(arguments[1]);
-                frame->SendProcessMessage(
-                    PID_BROWSER,
-                    CefUtils::MakeListMessage(Messages::ToCefString(Messages::RendererToBrowserMessage::ConsoleMessage),
-                                              viewId_, level, text));
+                const CefString level = V8ToCefString(arguments[0]);
+                const CefString text = V8ToCefString(arguments[1]);
+                frame->SendProcessMessage(PID_BROWSER, Messages::CreateConsoleMessage(level, text));
             } else {
                 LOG(WARNING) << "PrismaCefRenderApp: unknown __prismaNative call '" << name.ToString() << "'";
             }
@@ -99,8 +89,6 @@ namespace PrismaUI::Cef {
             return true;
         }
 
-    private:
-        const CefString viewId_;
         IMPLEMENT_REFCOUNTING(PrismaNativeHandler);
     };
 
@@ -151,6 +139,10 @@ namespace PrismaUI::Cef {
         const CefString frameIdentifier = frame->GetIdentifier();
         const CefString frameName = frame->GetName();
 
+        if (frameName.empty()) {
+            return;
+        }
+
         std::vector<CefString> pending;
         {
             auto& state = impl_->frames[frameIdentifier];
@@ -162,7 +154,7 @@ namespace PrismaUI::Cef {
         CefUtils::EnterContext(context, [&frameIdentifier, &frameName,
                                          &pending](const CefRefPtr<CefV8Context>& context) {
             // Install the __prismaNative global with three native functions.
-            CefRefPtr handler = new PrismaNativeHandler(frameName);
+            CefRefPtr handler = new PrismaNativeHandler();
             CefRefPtr<CefV8Value> native = CefV8Value::CreateObject(nullptr, nullptr);
             native->SetValue("fireListener", CefV8Value::CreateFunction("fireListener", handler),
                              V8_PROPERTY_ATTRIBUTE_READONLY);
@@ -262,7 +254,7 @@ namespace PrismaUI::Cef {
                 [&context, &frame](const Messages::InvokeRequestMessage& m) {
                     CefRefPtr<CefV8Value> retval;
                     CefRefPtr<CefV8Exception> exception;
-                    CefString okStr = "0";
+                    bool success = false;
                     CefString resultStr;
                     const bool ok = context->Eval(m.Script, CefString("prismaui://invoke"), 0, retval, exception);
 
@@ -288,15 +280,13 @@ namespace PrismaUI::Cef {
                                 }
                             }
                         }
-                        okStr = "1";
+                        success = true;
                     } else if (exception) {
                         LOG(WARNING) << "PrismaCefRenderApp: Invoke exception: " << exception->GetMessage();
                     }
 
-                    frame->SendProcessMessage(
-                        PID_BROWSER, CefUtils::MakeListMessage(
-                                         Messages::ToCefString(Messages::RendererToBrowserMessage::InvokeResult),
-                                         m.RequestId, okStr, resultStr));
+                    frame->SendProcessMessage(PID_BROWSER,
+                                              Messages::CreateInvokeResultMessage(m.RequestId, success, resultStr));
                 },
                 [&context](const Messages::InteropCallMessage& m) {
                     CefRefPtr<CefV8Value> global = context->GetGlobal();

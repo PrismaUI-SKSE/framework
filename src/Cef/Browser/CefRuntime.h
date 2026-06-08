@@ -11,9 +11,7 @@
 #include <variant>
 #include <vector>
 
-namespace PrismaUI::Cef::Messages {
-    enum class RendererToBrowserMessage : std::uint8_t;
-}
+#include "Cef/Shared/RendererToBrowserMessages.h"
 
 namespace PrismaUI::Cef {
     enum class CefInputMouseButton : uint8_t { Left, Middle, Right };
@@ -129,8 +127,7 @@ namespace PrismaUI::Cef {
         // Routes a process message received from a renderer subprocess to the
         // matching listener / Invoke / console / DOM-ready dispatcher. Returns true
         // if the message was recognised.
-        bool OnRendererMessage(const std::string& frameName, Messages::RendererToBrowserMessage message,
-                               const std::vector<std::string>& payload);
+        bool OnRendererMessage(const CefString& frameName, const Messages::RendererToBrowserMessage& message);
 
     private:
         CefRuntime();

@@ -40,8 +40,7 @@ namespace PrismaUI::Cef::Messages {
         return CefUtils::MakeListMessage(RemoveListenerName(), listenerName);
     }
 
-    inline CefRefPtr<CefProcessMessage> CreateInvokeRequestMessage(const CefString& requestId,
-                                                                   const CefString& script) {
+    inline CefRefPtr<CefProcessMessage> CreateInvokeRequestMessage(std::uint64_t requestId, const CefString& script) {
         return CefUtils::MakeListMessage(InvokeRequestName(), requestId, script);
     }
 
@@ -59,7 +58,7 @@ namespace PrismaUI::Cef::Messages {
     };
 
     struct InvokeRequestMessage {
-        CefString RequestId;
+        std::uint64_t RequestId;
         CefString Script;
     };
 
@@ -113,7 +112,7 @@ namespace PrismaUI::Cef::Messages {
             }
 
             return InvokeRequestMessage{
-                .RequestId = args->GetString(0),
+                .RequestId = CefUtils::GetValueFromCefList<std::uint64_t>(args, 0),
                 .Script = args->GetString(1),
             };
         }

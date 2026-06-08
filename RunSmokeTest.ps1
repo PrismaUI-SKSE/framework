@@ -2,8 +2,8 @@ param(
     [string]$ModOrganizerDir,
     [string]$Preset = "debug",
     [int]$Threads = 8,
-    [int]$SmokeTimeoutSeconds = 180,
-    [int]$ExitTimeoutSeconds = 30,
+    [int]$SmokeTimeoutSeconds = 30,
+    [int]$ExitTimeoutSeconds = 15,
     [switch]$SkipBuild,
     [switch]$NoLaunch,
     [switch]$ForceExitOnTimeout

@@ -1,8 +1,10 @@
 #pragma once
+#include <optional>
+#include <variant>
 
-#include <cstdint>
-#include <string_view>
-
+#include "CefUtils.h"
+#include "cef_process_message.h"
+#include "cef_values.h"
 #include "include/internal/cef_string.h"
 
 // Stable IPC message names sent from the browser process (PrismaUI.dll)
@@ -10,84 +12,123 @@
 // MUST NOT change without updating both sides.
 
 namespace PrismaUI::Cef::Messages {
-    namespace Detail {
-        inline constexpr const char* kInstallListener = "prisma.installListener";
-        inline constexpr const char* kRemoveListener = "prisma.removeListener";
-        inline constexpr const char* kInvokeRequest = "prisma.invokeRequest";
-        inline constexpr const char* kInteropCall = "prisma.interopCall";
-    }
-
-    enum class BrowserToRendererMessage : std::uint8_t {
-        Unknown,
-        InstallListener,
-        RemoveListener,
-        InvokeRequest,
-        InteropCall
-    };
-
     inline const CefString& InstallListenerName() {
-        static const CefString value(Detail::kInstallListener);
+        static const CefString value("prisma.installListener");
         return value;
     }
 
     inline const CefString& RemoveListenerName() {
-        static const CefString value(Detail::kRemoveListener);
+        static const CefString value("prisma.removeListener");
         return value;
     }
 
     inline const CefString& InvokeRequestName() {
-        static const CefString value(Detail::kInvokeRequest);
+        static const CefString value("prisma.invokeRequest");
         return value;
     }
 
     inline const CefString& InteropCallName() {
-        static const CefString value(Detail::kInteropCall);
+        static const CefString value("prisma.interopCall");
         return value;
     }
 
-    inline BrowserToRendererMessage ClassifyBrowserToRendererMessage(const CefString& name) {
+    inline CefRefPtr<CefProcessMessage> CreateInstallListenerMessage(const CefString& listenerName) {
+        return CefUtils::MakeListMessage(InstallListenerName(), listenerName);
+    }
+
+    inline CefRefPtr<CefProcessMessage> CreateRemoveListenerMessage(const CefString& listenerName) {
+        return CefUtils::MakeListMessage(RemoveListenerName(), listenerName);
+    }
+
+    inline CefRefPtr<CefProcessMessage> CreateInvokeRequestMessage(const CefString& requestId,
+                                                                   const CefString& script) {
+        return CefUtils::MakeListMessage(InvokeRequestName(), requestId, script);
+    }
+
+    inline CefRefPtr<CefProcessMessage> CreateInteropCallMessage(const CefString& functionName,
+                                                                 const CefString& argument) {
+        return CefUtils::MakeListMessage(InteropCallName(), functionName, argument);
+    }
+
+    struct InstallListenerMessage {
+        CefString ListenerName;
+    };
+
+    struct RemoveListenerMessage {
+        CefString ListenerName;
+    };
+
+    struct InvokeRequestMessage {
+        CefString RequestId;
+        CefString Script;
+    };
+
+    struct InteropCallMessage {
+        CefString FunctionName;
+        CefString Argument;
+    };
+
+    using BrowserToRendererMessage =
+        std::variant<InstallListenerMessage, RemoveListenerMessage, InvokeRequestMessage, InteropCallMessage>;
+
+    inline std::optional<BrowserToRendererMessage> ParseBrowserToRendererMessage(
+        const CefRefPtr<CefProcessMessage>& message) {
+        const CefString name = message->GetName();
+        CefRefPtr<CefListValue> args = message->GetArgumentList();
+        if (!args) {
+            LOG(ERROR) << "ParseBrowserToRendererMessage: " << name << " args pointer is null";
+            return std::nullopt;
+        }
+
+        auto validateArgs = [](const CefRefPtr<CefListValue>& args, const CefString& name, int requiredCount) {
+            if (args->GetSize() < requiredCount) {
+                LOG(ERROR) << "ParseBrowserToRendererMessage: " << name << " missing args";
+                return false;
+            }
+
+            return true;
+        };
+
         if (name == InstallListenerName()) {
-            return BrowserToRendererMessage::InstallListener;
+            if (!validateArgs(args, name, 1)) {
+                return std::nullopt;
+            }
+
+            return InstallListenerMessage{
+                .ListenerName = args->GetString(0),
+            };
         }
         if (name == RemoveListenerName()) {
-            return BrowserToRendererMessage::RemoveListener;
+            if (!validateArgs(args, name, 1)) {
+                return std::nullopt;
+            }
+
+            return RemoveListenerMessage{
+                .ListenerName = args->GetString(0),
+            };
         }
         if (name == InvokeRequestName()) {
-            return BrowserToRendererMessage::InvokeRequest;
+            if (!validateArgs(args, name, 2)) {
+                return std::nullopt;
+            }
+
+            return InvokeRequestMessage{
+                .RequestId = args->GetString(0),
+                .Script = args->GetString(1),
+            };
         }
         if (name == InteropCallName()) {
-            return BrowserToRendererMessage::InteropCall;
-        }
-        return BrowserToRendererMessage::Unknown;
-    }
+            if (!validateArgs(args, name, 2)) {
+                return std::nullopt;
+            }
 
-    inline const CefString& ToCefString(BrowserToRendererMessage message) {
-        switch (message) {
-            case BrowserToRendererMessage::InstallListener:
-                return InstallListenerName();
-            case BrowserToRendererMessage::RemoveListener:
-                return RemoveListenerName();
-            case BrowserToRendererMessage::InvokeRequest:
-                return InvokeRequestName();
-            case BrowserToRendererMessage::InteropCall:
-                return InteropCallName();
-            default:
-                return InvokeRequestName();
+            return InteropCallMessage{
+                .FunctionName = args->GetString(0),
+                .Argument = args->GetString(1),
+            };
         }
-    }
 
-    constexpr std::string_view ToStringView(BrowserToRendererMessage message) noexcept {
-        switch (message) {
-            case BrowserToRendererMessage::InstallListener:
-                return Detail::kInstallListener;
-            case BrowserToRendererMessage::RemoveListener:
-                return Detail::kRemoveListener;
-            case BrowserToRendererMessage::InvokeRequest:
-                return Detail::kInvokeRequest;
-            case BrowserToRendererMessage::InteropCall:
-                return Detail::kInteropCall;
-            default:
-                return "<unknown>";
-        }
+        LOG(ERROR) << "ParseBrowserToRendererMessage: " << name << " message name not found";
+        return std::nullopt;
     }
 }

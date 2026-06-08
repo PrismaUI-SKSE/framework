@@ -1235,19 +1235,6 @@ namespace PrismaUI::Cef {
     }
 
     namespace {
-
-        CefRefPtr<CefProcessMessage> MakeStringListMessage(Messages::BrowserToRendererMessage name,
-                                                           std::initializer_list<std::string> args) {
-            CefRefPtr<CefProcessMessage> msg = CefProcessMessage::Create(Messages::ToCefString(name));
-            CefRefPtr<CefListValue> list = msg->GetArgumentList();
-            list->SetSize(args.size());
-            size_t i = 0;
-            for (const auto& a : args) {
-                list->SetString(i++, a);
-            }
-            return msg;
-        }
-
         // Find the iframe frame on the CEF UI thread. Returns nullptr if the iframe
         // does not (yet) exist — caller is responsible for logging.
         CefRefPtr<CefFrame> FindIframeFrame(CefRefPtr<CefOsrClient> client, uint64_t viewId) {
@@ -1306,9 +1293,7 @@ namespace PrismaUI::Cef {
                 return;
             }
             logger::debug("InvokeScript: dispatching request {} to view [{}].", requestIdStr, viewId);
-            frame->SendProcessMessage(
-                PID_RENDERER,
-                MakeStringListMessage(Messages::BrowserToRendererMessage::InvokeRequest, {requestIdStr, scriptCopy}));
+            frame->SendProcessMessage(PID_RENDERER, Messages::CreateInvokeRequestMessage(requestIdStr, scriptCopy));
         });
     }
 
@@ -1330,8 +1315,8 @@ namespace PrismaUI::Cef {
                 logger::warn("InteropCall: iframe for view [{}] is not attached; dropping call to '{}'.", viewId, fn);
                 return;
             }
-            frame->SendProcessMessage(
-                PID_RENDERER, MakeStringListMessage(Messages::BrowserToRendererMessage::InteropCall, {fn, arg}));
+
+            frame->SendProcessMessage(PID_RENDERER, Messages::CreateInteropCallMessage(fn, arg));
         });
     }
 
@@ -1353,10 +1338,9 @@ namespace PrismaUI::Cef {
             client = impl_->client;
         }
 
-        const std::string viewIdStr = std::to_string(viewId);
         const std::string nameCopy = std::move(name);
 
-        PostToCefUi([client, viewId, viewIdStr, nameCopy]() {
+        PostToCefUi([client, viewId, nameCopy]() {
             CefRefPtr<CefFrame> frame = FindIframeFrame(client, viewId);
             if (!frame) {
                 // No frame yet — renderer will queue installs at OnContextCreated once
@@ -1368,9 +1352,7 @@ namespace PrismaUI::Cef {
                 return;
             }
             logger::info("RegisterListener: installing '{}' for view [{}].", nameCopy, viewId);
-            frame->SendProcessMessage(
-                PID_RENDERER,
-                MakeStringListMessage(Messages::BrowserToRendererMessage::InstallListener, {viewIdStr, nameCopy}));
+            frame->SendProcessMessage(PID_RENDERER, Messages::CreateInstallListenerMessage(nameCopy));
         });
     }
 

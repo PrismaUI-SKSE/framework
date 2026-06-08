@@ -23,7 +23,8 @@
 #include "Cef/Browser/CefOsrClient.h"
 #include "Cef/Browser/CefRuntime.h"
 #include "Cef/Browser/OverlayTexture.h"
-#include "Cef/Shared/ProcessMessageNames.h"
+#include "Cef/Shared/BrowserToRendererMessages.h"
+#include "Cef/Shared/RendererToBrowserMessages.h"
 #include "Cef/Shared/ViewUtils.h"
 #include "Cef/Subprocess/PrismaCefApp.h"
 #include "PrismaUI/Communication.h"
@@ -136,7 +137,6 @@ namespace {
         escaped.push_back('"');
         return escaped;
     }
-
 
     class FunctionTask final : public CefTask {
     public:

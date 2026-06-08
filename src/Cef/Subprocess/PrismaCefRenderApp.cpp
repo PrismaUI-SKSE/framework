@@ -6,7 +6,9 @@
 #include <utility>
 #include <vector>
 
+#include "Cef/Shared/BrowserToRendererMessages.h"
 #include "Cef/Shared/ProcessMessageNames.h"
+#include "Cef/Shared/RendererToBrowserMessages.h"
 #include "Cef/Shared/ViewUtils.h"
 #include "PrismaBootstrapScript.generated.h"
 #include "include/base/cef_logging.h"
@@ -19,7 +21,6 @@
 namespace PrismaUI::Cef {
     namespace {
         // ----- helpers -----
-
 
         std::string V8ToString(CefRefPtr<CefV8Value> value) {
             if (!value) {

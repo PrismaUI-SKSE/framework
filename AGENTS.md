@@ -45,12 +45,15 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
 - `src/main.cpp`: SKSE entry point, logger setup, SKSE messaging, API export. No DLL preloading — CEF is loaded lazily by `Cef::CefRuntime` through `DllLoader::LoadCefLibraries()`.
 - `src/PrismaUI_API.h`: public modder-facing API. Mods may copy this header.
 - `src/API/`: implementation of the exported PrismaUI API singleton; DevTools methods (`OpenDevTools`/`CloseDevTools`/`IsDevToolsOpen`) live in `IVPrismaUI1` after `GetOrder` and before `HasAnyActiveFocus`.
-- `src/Cef/Browser/CefRuntime.*`: CEF process/runtime lifecycle, OSR browser, shell-page command bus, JS invoke result bridge, DevTools control, GPU/CPU paint upload. Linked into `PrismaUI.dll` only.
+- `src/Cef/Browser/CefRuntime.*`: CEF process/runtime lifecycle, OSR shell browser, shell-page command bus, JS invoke result bridge, and DevTools control. Linked into `PrismaUI.dll` only.
 - `src/Cef/Browser/CefOsrClient.*`: `CefClient` for the shell browser; OSR `OnPaint`/`OnAcceleratedPaint`, load/render-handler glue. Linked into `PrismaUI.dll` only.
-- `src/Cef/Shared/PrismaCefApp.*`: `CefApp` returned in both processes. Linked into `PrismaUI.dll` and `PrismaUICefSubprocess.exe`.
-- `src/Cef/Shared/PrismaCefRenderApp.*`: renderer-process `CefRenderProcessHandler`; owns V8 bindings for `Invoke`/`InteropCall`/`RegisterJSListener`/DOM-ready/console. Linked into both processes; only executes in the renderer subprocess.
-- `src/Cef/Shared/ProcessMessageNames.h`: stable IPC message names shared between browser and renderer.
+- `src/Cef/Browser/OverlayTexture.*`: D3D11 overlay texture owner for CEF accelerated shared-texture copies and CPU `OnPaint` BGRA uploads. Linked into `PrismaUI.dll` only.
+- `src/Cef/Subprocess/PrismaCefApp.*`: `CefApp` returned in both processes. Linked into `PrismaUI.dll` and `PrismaUICefSubprocess.exe`.
+- `src/Cef/Subprocess/PrismaCefRenderApp.*`: renderer-process `CefRenderProcessHandler`; owns V8 bindings for `Invoke`/`InteropCall`/`RegisterJSListener`/DOM-ready/console. Linked into both processes; only executes in the renderer subprocess.
 - `src/Cef/Subprocess/SubprocessMain.cpp`: entry point for `PrismaUICefSubprocess.exe`.
+- `src/Cef/Shared/BrowserToRendererMessages.h` / `RendererToBrowserMessages.h`: stable CEF IPC message names plus typed factories/parsers for browser-to-renderer and renderer-to-browser traffic.
+- `src/Cef/Shared/ProcessMessageNames.h`: non-process-message bridge constants shared between browser and renderer.
+- `src/Cef/Shared/CefUtils.h` / `ViewUtils.h`: shared CEF/V8/process-message helpers and iframe-name view-id parsing.
 - `src/PrismaUI/Core.*`: global runtime state, D3D present hook, CEF lifecycle wiring, render loop, shutdown.
 - `src/PrismaUI/ViewManager.*`: view lifecycle, show/hide/focus/unfocus, order, destroy, console callbacks; routes through `CefRuntime` shell commands.
 - `src/PrismaUI/ViewRenderer.*`: CEF overlay draw + cursor draw on the present path. No per-view textures.

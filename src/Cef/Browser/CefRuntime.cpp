@@ -1,12 +1,8 @@
 #include "PCH.h"
 
 #ifdef GetNextSibling
-#    undef GetNextSibling
+    #undef GetNextSibling
 #endif
-
-#include "Cef/Browser/CefRuntime.h"
-
-#include "Cef/Browser/OverlayTexture.h"
 
 #include <algorithm>
 #include <atomic>
@@ -15,16 +11,18 @@
 #include <cstring>
 #include <filesystem>
 #include <limits>
-#include <mutex>
 #include <map>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <utility>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "Cef/Browser/CefOsrClient.h"
+#include "Cef/Browser/CefRuntime.h"
+#include "Cef/Browser/OverlayTexture.h"
 #include "Cef/Shared/PrismaCefApp.h"
 #include "Cef/Shared/ProcessMessageNames.h"
 #include "PrismaUI/Communication.h"
@@ -36,12 +34,10 @@
 #include "include/cef_values.h"
 #include "include/wrapper/cef_helpers.h"
 
-namespace
-{
+namespace {
     constexpr int kCefWindowlessFrameRate = 120;
     constexpr std::chrono::milliseconds kBrowserCloseTimeout{5000};
-    std::wstring ToFileUrl(const std::filesystem::path& path)
-    {
+    std::wstring ToFileUrl(const std::filesystem::path& path) {
         std::wstring generic = std::filesystem::absolute(path).generic_wstring();
         if (!generic.empty() && generic.front() != L'/') {
             generic.insert(generic.begin(), L'/');
@@ -49,8 +45,7 @@ namespace
         return L"file://" + generic;
     }
 
-    std::string NarrowAscii(const std::wstring& value)
-    {
+    std::string NarrowAscii(const std::wstring& value) {
         std::string result;
         result.reserve(value.size());
         for (const wchar_t ch : value) {
@@ -59,13 +54,9 @@ namespace
         return result;
     }
 
-    std::string MakeIframeName(uint64_t viewId)
-    {
-        return "prisma-view-" + std::to_string(viewId);
-    }
+    std::string MakeIframeName(uint64_t viewId) { return "prisma-view-" + std::to_string(viewId); }
 
-    bool StartsWithInsensitive(std::string_view value, std::string_view prefix)
-    {
+    bool StartsWithInsensitive(std::string_view value, std::string_view prefix) {
         if (value.size() < prefix.size()) {
             return false;
         }
@@ -84,15 +75,13 @@ namespace
         return true;
     }
 
-    bool IsAbsoluteBrowserUrl(std::string_view value)
-    {
+    bool IsAbsoluteBrowserUrl(std::string_view value) {
         return StartsWithInsensitive(value, "http://") || StartsWithInsensitive(value, "https://") ||
                StartsWithInsensitive(value, "file://") || StartsWithInsensitive(value, "about:") ||
                StartsWithInsensitive(value, "data:");
     }
 
-    std::string ResolveViewUrl(std::string_view urlOrPath)
-    {
+    std::string ResolveViewUrl(std::string_view urlOrPath) {
         if (IsAbsoluteBrowserUrl(urlOrPath)) {
             return std::string(urlOrPath);
         }
@@ -104,8 +93,7 @@ namespace
         return NarrowAscii(ToFileUrl(path));
     }
 
-    std::string JsLiteralString(std::string_view value)
-    {
+    std::string JsLiteralString(std::string_view value) {
         std::string escaped;
         escaped.reserve(value.size() + 2);
         escaped.push_back('"');
@@ -148,8 +136,7 @@ namespace
         return escaped;
     }
 
-    bool TryParseIframeViewId(std::string_view frameName, uint64_t& viewId)
-    {
+    bool TryParseIframeViewId(std::string_view frameName, uint64_t& viewId) {
         constexpr std::string_view kPrefix = "prisma-view-";
         if (frameName.size() <= kPrefix.size() || frameName.substr(0, kPrefix.size()) != kPrefix) {
             return false;
@@ -171,13 +158,11 @@ namespace
         return true;
     }
 
-    class FunctionTask final : public CefTask
-    {
+    class FunctionTask final : public CefTask {
     public:
         explicit FunctionTask(std::function<void()> task) : task_(std::move(task)) {}
 
-        void Execute() override
-        {
+        void Execute() override {
             try {
                 if (task_) {
                     task_();
@@ -195,23 +180,16 @@ namespace
         IMPLEMENT_REFCOUNTING(FunctionTask);
     };
 
-    class DevToolsClient final : public CefClient, public CefLifeSpanHandler
-    {
+    class DevToolsClient final : public CefClient, public CefLifeSpanHandler {
     public:
         using BrowserCallback = std::function<void(CefRefPtr<CefBrowser>)>;
 
-        DevToolsClient(BrowserCallback onCreated, BrowserCallback onClosed) :
-            onCreated_(std::move(onCreated)),
-            onClosed_(std::move(onClosed))
-        {}
+        DevToolsClient(BrowserCallback onCreated, BrowserCallback onClosed)
+            : onCreated_(std::move(onCreated)), onClosed_(std::move(onClosed)) {}
 
-        CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override
-        {
-            return this;
-        }
+        CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
 
-        void OnAfterCreated(CefRefPtr<CefBrowser> browser) override
-        {
+        void OnAfterCreated(CefRefPtr<CefBrowser> browser) override {
             CEF_REQUIRE_UI_THREAD();
             if (browser) {
                 logger::info("CEF DevTools OnAfterCreated browser [{}].", browser->GetIdentifier());
@@ -223,15 +201,13 @@ namespace
             }
         }
 
-        bool DoClose(CefRefPtr<CefBrowser> browser) override
-        {
+        bool DoClose(CefRefPtr<CefBrowser> browser) override {
             CEF_REQUIRE_UI_THREAD();
             logger::info("CEF DevTools DoClose browser [{}].", browser ? browser->GetIdentifier() : -1);
             return false;
         }
 
-        void OnBeforeClose(CefRefPtr<CefBrowser> browser) override
-        {
+        void OnBeforeClose(CefRefPtr<CefBrowser> browser) override {
             CEF_REQUIRE_UI_THREAD();
             logger::info("CEF DevTools OnBeforeClose browser [{}].", browser ? browser->GetIdentifier() : -1);
             if (onClosed_) {
@@ -247,10 +223,8 @@ namespace
     };
 }
 
-namespace PrismaUI::Cef
-{
-    struct CefRuntime::Impl
-    {
+namespace PrismaUI::Cef {
+    struct CefRuntime::Impl {
         mutable std::mutex stateMutex;
         CefRefPtr<CefApp> app;
         CefRefPtr<CefOsrClient> client;
@@ -268,8 +242,7 @@ namespace PrismaUI::Cef
         std::atomic<int> devToolsTargetBrowserId = -1;
         std::atomic<int> devToolsBrowserId = -1;
 
-        struct ShellViewState
-        {
+        struct ShellViewState {
             uint64_t viewId = 0;
             std::string iframeName;
             std::string resolvedUrl;
@@ -291,8 +264,7 @@ namespace PrismaUI::Cef
         bool missingD3DLogged = false;
 
         // ---- Step 7 JS bridge state ----
-        struct InvokeEntry
-        {
+        struct InvokeEntry {
             uint64_t viewId = 0;
             std::function<void(std::string)> callback;
         };
@@ -305,15 +277,13 @@ namespace PrismaUI::Cef
 
     CefRuntime::~CefRuntime() = default;
 
-    CefRuntime& CefRuntime::GetSingleton()
-    {
+    CefRuntime& CefRuntime::GetSingleton() {
         static CefRuntime instance;
         return instance;
     }
 
     bool CefRuntime::Initialize(HWND hwnd, ID3D11Device* device, ID3D11DeviceContext* context, uint32_t width,
-                                uint32_t height)
-    {
+                                uint32_t height) {
         std::lock_guard lock(impl_->stateMutex);
 
         if (impl_->initialized.load(std::memory_order_acquire)) {
@@ -326,8 +296,8 @@ namespace PrismaUI::Cef
         }
 
         if (!hwnd || !device || !context || width == 0 || height == 0) {
-            logger::error("CEF initialization skipped: hwnd={}, device={}, context={}, size={}x{}", hwnd ? "set" : "null",
-                          device ? "set" : "null", context ? "set" : "null", width, height);
+            logger::error("CEF initialization skipped: hwnd={}, device={}, context={}, size={}x{}",
+                          hwnd ? "set" : "null", device ? "set" : "null", context ? "set" : "null", width, height);
             return false;
         }
 
@@ -410,7 +380,8 @@ namespace PrismaUI::Cef
             CefString url;
             url.FromWString(shellUrl);
             logger::info("Requesting CEF OSR browser creation for shell URL.");
-            const bool requested = CefBrowserHost::CreateBrowser(windowInfo, client, url, browserSettings, nullptr, nullptr);
+            const bool requested =
+                CefBrowserHost::CreateBrowser(windowInfo, client, url, browserSettings, nullptr, nullptr);
             if (!requested) {
                 logger::error("CefBrowserHost::CreateBrowser returned false.");
             }
@@ -419,8 +390,7 @@ namespace PrismaUI::Cef
         return true;
     }
 
-    void CefRuntime::Resize(uint32_t width, uint32_t height)
-    {
+    void CefRuntime::Resize(uint32_t width, uint32_t height) {
         if (!impl_->initialized.load(std::memory_order_acquire) || width == 0 || height == 0) {
             return;
         }
@@ -443,8 +413,7 @@ namespace PrismaUI::Cef
         PostToCefUi([client, width, height]() { client->SetSize(width, height); });
     }
 
-    void CefRuntime::BeginFrame()
-    {
+    void CefRuntime::BeginFrame() {
         if (!impl_->initialized.load(std::memory_order_acquire)) {
             return;
         }
@@ -462,8 +431,7 @@ namespace PrismaUI::Cef
         PostToCefUi([client]() { client->SendExternalBeginFrame(); });
     }
 
-    void CefRuntime::UpdateOverlayTexture(ID3D11Device* device, ID3D11DeviceContext* context)
-    {
+    void CefRuntime::UpdateOverlayTexture(ID3D11Device* device, ID3D11DeviceContext* context) {
         if (!impl_->initialized.load(std::memory_order_acquire)) {
             return;
         }
@@ -524,57 +492,35 @@ namespace PrismaUI::Cef
         impl_->overlay.UploadBgra32(cpuFrame.data(), cpuWidth, cpuHeight, cpuStride);
     }
 
-    ID3D11ShaderResourceView* CefRuntime::GetOverlaySrv() const
-    {
-        return impl_->overlay.GetSrv();
-    }
+    ID3D11ShaderResourceView* CefRuntime::GetOverlaySrv() const { return impl_->overlay.GetSrv(); }
 
-    uint32_t CefRuntime::GetOverlayWidth() const
-    {
-        return impl_->overlay.GetWidth();
-    }
+    uint32_t CefRuntime::GetOverlayWidth() const { return impl_->overlay.GetWidth(); }
 
-    uint32_t CefRuntime::GetOverlayHeight() const
-    {
-        return impl_->overlay.GetHeight();
-    }
+    uint32_t CefRuntime::GetOverlayHeight() const { return impl_->overlay.GetHeight(); }
 
-    void CefRuntime::ReleaseRenderResources()
-    {
+    void CefRuntime::ReleaseRenderResources() {
         impl_->overlay.ReleaseResources();
         impl_->missingD3DLogged = false;
     }
 
-    bool CefRuntime::CopyAcceleratedFrameDuringCallback(HANDLE sharedTextureHandle)
-    {
+    bool CefRuntime::CopyAcceleratedFrameDuringCallback(HANDLE sharedTextureHandle) {
         return impl_->overlay.CopyFromSharedHandle(sharedTextureHandle);
     }
 
-    void CefRuntime::AppendShellArg(std::string& out, uint64_t value)
-    {
+    void CefRuntime::AppendShellArg(std::string& out, uint64_t value) {
         // NanoID generates uint64 across the full range; encode as a JS string
         // literal so values above 2^53-1 survive (JS shell `normalizeId` accepts
         // string-of-digits in addition to safe integers).
         out += JsLiteralString(std::to_string(value));
     }
 
-    void CefRuntime::AppendShellArg(std::string& out, int value)
-    {
-        out += std::to_string(value);
-    }
+    void CefRuntime::AppendShellArg(std::string& out, int value) { out += std::to_string(value); }
 
-    void CefRuntime::AppendShellArg(std::string& out, bool value)
-    {
-        out += value ? "true" : "false";
-    }
+    void CefRuntime::AppendShellArg(std::string& out, bool value) { out += value ? "true" : "false"; }
 
-    void CefRuntime::AppendShellArg(std::string& out, std::string_view value)
-    {
-        out += JsLiteralString(value);
-    }
+    void CefRuntime::AppendShellArg(std::string& out, std::string_view value) { out += JsLiteralString(value); }
 
-    void CefRuntime::AppendShellArg(std::string& out, const ShellCreateViewArg& value)
-    {
+    void CefRuntime::AppendShellArg(std::string& out, const ShellCreateViewArg& value) {
         out += "{ id: ";
         AppendShellArg(out, value.id);
         out += ", url: ";
@@ -586,8 +532,7 @@ namespace PrismaUI::Cef
         out += " }";
     }
 
-    bool CefRuntime::RunShellScript(std::string_view method, uint64_t viewId, std::string script)
-    {
+    bool CefRuntime::RunShellScript(std::string_view method, uint64_t viewId, std::string script) {
         if (!impl_->initialized.load(std::memory_order_acquire)) {
             logger::warn("CEF shell '{}' (view={}) ignored: CEF is not initialized.", method, viewId);
             return false;
@@ -651,8 +596,7 @@ namespace PrismaUI::Cef
         return true;
     }
 
-    void CefRuntime::ReplayShellViews()
-    {
+    void CefRuntime::ReplayShellViews() {
         std::vector<Impl::ShellViewState> views;
         {
             std::lock_guard lock(impl_->shellMutex);
@@ -671,8 +615,7 @@ namespace PrismaUI::Cef
         }
     }
 
-    bool CefRuntime::CreateShellView(uint64_t viewId, std::string_view urlOrPath, int order, bool hidden)
-    {
+    bool CefRuntime::CreateShellView(uint64_t viewId, std::string_view urlOrPath, int order, bool hidden) {
         const std::string iframeName = MakeIframeName(viewId);
         const std::string resolvedUrl = ResolveViewUrl(urlOrPath);
         {
@@ -688,14 +631,13 @@ namespace PrismaUI::Cef
             }
         }
 
-        logger::info("CEF shell create view: id={}, iframe='{}', url='{}', order={}, hidden={}.",
-                     viewId, iframeName, resolvedUrl, order, hidden);
-        return InvokeShell("createView", viewId, ShellCreateViewArg{viewId, resolvedUrl, order, hidden})
-            || (IsInitialized() && HasBrowser() && !IsShellReady());
+        logger::info("CEF shell create view: id={}, iframe='{}', url='{}', order={}, hidden={}.", viewId, iframeName,
+                     resolvedUrl, order, hidden);
+        return InvokeShell("createView", viewId, ShellCreateViewArg{viewId, resolvedUrl, order, hidden}) ||
+               (IsInitialized() && HasBrowser() && !IsShellReady());
     }
 
-    bool CefRuntime::DestroyShellView(uint64_t viewId)
-    {
+    bool CefRuntime::DestroyShellView(uint64_t viewId) {
         const std::string iframeName = MakeIframeName(viewId);
         bool existed = false;
         {
@@ -707,12 +649,10 @@ namespace PrismaUI::Cef
         if (!existed) {
             return true;
         }
-        return InvokeShell("destroyView", viewId, viewId)
-            || (IsInitialized() && HasBrowser() && !IsShellReady());
+        return InvokeShell("destroyView", viewId, viewId) || (IsInitialized() && HasBrowser() && !IsShellReady());
     }
 
-    bool CefRuntime::SetShellViewHidden(uint64_t viewId, bool hidden)
-    {
+    bool CefRuntime::SetShellViewHidden(uint64_t viewId, bool hidden) {
         const std::string iframeName = MakeIframeName(viewId);
         {
             std::lock_guard lock(impl_->shellMutex);
@@ -725,12 +665,10 @@ namespace PrismaUI::Cef
         }
 
         logger::info("CEF shell set hidden: id={}, iframe='{}', hidden={}.", viewId, iframeName, hidden);
-        return InvokeShell("setHidden", viewId, viewId, hidden)
-            || (IsInitialized() && HasBrowser() && !IsShellReady());
+        return InvokeShell("setHidden", viewId, viewId, hidden) || (IsInitialized() && HasBrowser() && !IsShellReady());
     }
 
-    bool CefRuntime::SetShellViewOrder(uint64_t viewId, int order)
-    {
+    bool CefRuntime::SetShellViewOrder(uint64_t viewId, int order) {
         const std::string iframeName = MakeIframeName(viewId);
         {
             std::lock_guard lock(impl_->shellMutex);
@@ -743,12 +681,10 @@ namespace PrismaUI::Cef
         }
 
         logger::info("CEF shell set order: id={}, iframe='{}', order={}.", viewId, iframeName, order);
-        return InvokeShell("setOrder", viewId, viewId, order)
-            || (IsInitialized() && HasBrowser() && !IsShellReady());
+        return InvokeShell("setOrder", viewId, viewId, order) || (IsInitialized() && HasBrowser() && !IsShellReady());
     }
 
-    bool CefRuntime::FocusShellView(uint64_t viewId)
-    {
+    bool CefRuntime::FocusShellView(uint64_t viewId) {
         const std::string iframeName = MakeIframeName(viewId);
         {
             std::lock_guard lock(impl_->shellMutex);
@@ -779,12 +715,10 @@ namespace PrismaUI::Cef
                 }
             });
         }
-        return InvokeShell("focusView", viewId, viewId)
-            || (IsInitialized() && HasBrowser() && !IsShellReady());
+        return InvokeShell("focusView", viewId, viewId) || (IsInitialized() && HasBrowser() && !IsShellReady());
     }
 
-    bool CefRuntime::BlurShellView(uint64_t viewId)
-    {
+    bool CefRuntime::BlurShellView(uint64_t viewId) {
         const std::string iframeName = MakeIframeName(viewId);
         {
             std::lock_guard lock(impl_->shellMutex);
@@ -797,12 +731,10 @@ namespace PrismaUI::Cef
         }
 
         logger::info("CEF shell blur view: id={}, iframe='{}'.", viewId, iframeName);
-        return InvokeShell("blurView", viewId, viewId)
-            || (IsInitialized() && HasBrowser() && !IsShellReady());
+        return InvokeShell("blurView", viewId, viewId) || (IsInitialized() && HasBrowser() && !IsShellReady());
     }
 
-    bool CefRuntime::TryGetShellFrameName(uint64_t viewId, std::string& outName) const
-    {
+    bool CefRuntime::TryGetShellFrameName(uint64_t viewId, std::string& outName) const {
         std::lock_guard lock(impl_->shellMutex);
         const auto it = impl_->shellViews.find(viewId);
         if (it == impl_->shellViews.end()) {
@@ -813,14 +745,12 @@ namespace PrismaUI::Cef
         return true;
     }
 
-    bool CefRuntime::IsShellReady() const
-    {
+    bool CefRuntime::IsShellReady() const {
         std::lock_guard lock(impl_->shellMutex);
         return impl_->shellReady;
     }
 
-    void CefRuntime::OpenDevTools()
-    {
+    void CefRuntime::OpenDevTools() {
         logger::info("CEF DevTools open requested.");
 
         if (!impl_->initialized.load(std::memory_order_acquire)) {
@@ -855,7 +785,8 @@ namespace PrismaUI::Cef
             if (host->HasDevTools()) {
                 impl_->devToolsOpen.store(true, std::memory_order_release);
                 impl_->devToolsTargetBrowserId.store(targetBrowserId, std::memory_order_release);
-                logger::info("CEF DevTools already open for shell browser [{}]; focusing existing DevTools.", targetBrowserId);
+                logger::info("CEF DevTools already open for shell browser [{}]; focusing existing DevTools.",
+                             targetBrowserId);
                 CefWindowInfo ignoredWindowInfo;
                 CefBrowserSettings ignoredSettings;
                 host->ShowDevTools(ignoredWindowInfo, nullptr, ignoredSettings, CefPoint());
@@ -867,7 +798,8 @@ namespace PrismaUI::Cef
                     if (!devToolsBrowser) {
                         impl_->devToolsOpen.store(false, std::memory_order_release);
                         impl_->devToolsBrowserId.store(-1, std::memory_order_release);
-                        logger::error("CEF DevTools failed to report a browser for shell browser [{}].", targetBrowserId);
+                        logger::error("CEF DevTools failed to report a browser for shell browser [{}].",
+                                      targetBrowserId);
                         return;
                     }
 
@@ -911,8 +843,7 @@ namespace PrismaUI::Cef
         });
     }
 
-    void CefRuntime::CloseDevTools()
-    {
+    void CefRuntime::CloseDevTools() {
         logger::info("CEF DevTools close requested.");
 
         if (!impl_->initialized.load(std::memory_order_acquire)) {
@@ -967,13 +898,9 @@ namespace PrismaUI::Cef
         });
     }
 
-    bool CefRuntime::IsDevToolsOpen() const
-    {
-        return impl_->devToolsOpen.load(std::memory_order_acquire);
-    }
+    bool CefRuntime::IsDevToolsOpen() const { return impl_->devToolsOpen.load(std::memory_order_acquire); }
 
-    void CefRuntime::NotifyShellLoadStart(const std::string& frameIdentifier, const std::string& url)
-    {
+    void CefRuntime::NotifyShellLoadStart(const std::string& frameIdentifier, const std::string& url) {
         std::lock_guard lock(impl_->shellMutex);
         impl_->shellReady = false;
         impl_->shellFrameIdentifier = frameIdentifier;
@@ -981,21 +908,21 @@ namespace PrismaUI::Cef
         logger::info("CEF shell state: load start, frame id '{}', url '{}'.", frameIdentifier, url);
     }
 
-    void CefRuntime::NotifyShellLoadEnd(int httpStatusCode, const std::string& frameIdentifier, const std::string& url)
-    {
+    void CefRuntime::NotifyShellLoadEnd(int httpStatusCode, const std::string& frameIdentifier,
+                                        const std::string& url) {
         {
             std::lock_guard lock(impl_->shellMutex);
             impl_->shellReady = true;
             impl_->shellFrameIdentifier = frameIdentifier;
             impl_->shellUrl = url;
         }
-        logger::info("CEF shell state: ready, frame id '{}', status {}, url '{}'.", frameIdentifier, httpStatusCode, url);
+        logger::info("CEF shell state: ready, frame id '{}', status {}, url '{}'.", frameIdentifier, httpStatusCode,
+                     url);
         ReplayShellViews();
     }
 
     void CefRuntime::NotifyShellLoadError(int errorCode, const std::string& errorText, const std::string& failedUrl,
-                                          const std::string& frameIdentifier, const std::string& url)
-    {
+                                          const std::string& frameIdentifier, const std::string& url) {
         std::lock_guard lock(impl_->shellMutex);
         impl_->shellReady = false;
         impl_->shellFrameIdentifier = frameIdentifier;
@@ -1005,12 +932,11 @@ namespace PrismaUI::Cef
     }
 
     void CefRuntime::NotifyShellFrameLoadStart(const std::string& frameName, const std::string& frameIdentifier,
-                                               const std::string& url)
-    {
+                                               const std::string& url) {
         uint64_t viewId = 0;
         if (!TryParseIframeViewId(frameName, viewId)) {
-            logger::warn("CEF shell could not correlate iframe load start: frame='{}', id='{}', url='{}'.",
-                         frameName, frameIdentifier, url);
+            logger::warn("CEF shell could not correlate iframe load start: frame='{}', id='{}', url='{}'.", frameName,
+                         frameIdentifier, url);
             return;
         }
 
@@ -1028,8 +954,7 @@ namespace PrismaUI::Cef
     }
 
     void CefRuntime::NotifyShellFrameLoadEnd(const std::string& frameName, const std::string& frameIdentifier,
-                                             const std::string& url, int httpStatusCode)
-    {
+                                             const std::string& url, int httpStatusCode) {
         uint64_t viewId = 0;
         if (!TryParseIframeViewId(frameName, viewId)) {
             logger::warn("CEF shell could not correlate iframe load end: frame='{}', id='{}', status {}, url='{}'.",
@@ -1040,44 +965,47 @@ namespace PrismaUI::Cef
         std::lock_guard lock(impl_->shellMutex);
         auto it = impl_->shellViews.find(viewId);
         if (it == impl_->shellViews.end()) {
-            logger::warn("CEF shell iframe load end for unknown view: id={}, iframe='{}', frame id '{}', status {}, url='{}'.",
-                         viewId, frameName, frameIdentifier, httpStatusCode, url);
+            logger::warn(
+                "CEF shell iframe load end for unknown view: id={}, iframe='{}', frame id '{}', status {}, url='{}'.",
+                viewId, frameName, frameIdentifier, httpStatusCode, url);
             return;
         }
         it->second.loadState = "loaded";
         it->second.lastFrameIdentifier = frameIdentifier;
         it->second.lastFrameName = frameName;
-        logger::info("CEF shell iframe state: id={}, iframe='{}', loaded status {}, url='{}'.",
-                     viewId, frameName, httpStatusCode, url);
+        logger::info("CEF shell iframe state: id={}, iframe='{}', loaded status {}, url='{}'.", viewId, frameName,
+                     httpStatusCode, url);
     }
 
     void CefRuntime::NotifyShellFrameLoadError(const std::string& frameName, const std::string& frameIdentifier,
                                                const std::string& url, int errorCode, const std::string& errorText,
-                                               const std::string& failedUrl)
-    {
+                                               const std::string& failedUrl) {
         uint64_t viewId = 0;
         if (!TryParseIframeViewId(frameName, viewId)) {
-            logger::warn("CEF shell could not correlate iframe load error: frame='{}', id='{}', code={}, failedUrl='{}'.",
-                         frameName, frameIdentifier, errorCode, failedUrl);
+            logger::warn(
+                "CEF shell could not correlate iframe load error: frame='{}', id='{}', code={}, failedUrl='{}'.",
+                frameName, frameIdentifier, errorCode, failedUrl);
             return;
         }
 
         std::lock_guard lock(impl_->shellMutex);
         auto it = impl_->shellViews.find(viewId);
         if (it == impl_->shellViews.end()) {
-            logger::warn("CEF shell iframe load error for unknown view: id={}, iframe='{}', frame id '{}', code={}, failedUrl='{}'.",
-                         viewId, frameName, frameIdentifier, errorCode, failedUrl);
+            logger::warn(
+                "CEF shell iframe load error for unknown view: id={}, iframe='{}', frame id '{}', code={}, "
+                "failedUrl='{}'.",
+                viewId, frameName, frameIdentifier, errorCode, failedUrl);
             return;
         }
         it->second.loadState = "error";
         it->second.lastFrameIdentifier = frameIdentifier;
         it->second.lastFrameName = frameName;
-        logger::error("CEF shell iframe state: id={}, iframe='{}', load error code={}, error='{}', failedUrl='{}', url='{}'.",
-                      viewId, frameName, errorCode, errorText, failedUrl, url);
+        logger::error(
+            "CEF shell iframe state: id={}, iframe='{}', load error code={}, error='{}', failedUrl='{}', url='{}'.",
+            viewId, frameName, errorCode, errorText, failedUrl, url);
     }
 
-    void CefRuntime::Shutdown()
-    {
+    void CefRuntime::Shutdown() {
         CefRefPtr<CefOsrClient> client;
         {
             std::lock_guard lock(impl_->stateMutex);
@@ -1112,7 +1040,8 @@ namespace PrismaUI::Cef
             if (browserClosed) {
                 logger::info("CEF browser closed before shutdown.");
             } else {
-                logger::error("Timed out waiting for CEF browser close; skipping CefShutdown to avoid a shutdown deadlock.");
+                logger::error(
+                    "Timed out waiting for CEF browser close; skipping CefShutdown to avoid a shutdown deadlock.");
             }
         } else {
             logger::info("CEF shutdown found no live browser.");
@@ -1160,19 +1089,14 @@ namespace PrismaUI::Cef
         }
     }
 
-    bool CefRuntime::IsInitialized() const
-    {
-        return impl_->initialized.load(std::memory_order_acquire);
-    }
+    bool CefRuntime::IsInitialized() const { return impl_->initialized.load(std::memory_order_acquire); }
 
-    bool CefRuntime::HasBrowser() const
-    {
+    bool CefRuntime::HasBrowser() const {
         std::lock_guard lock(impl_->stateMutex);
         return impl_->client && impl_->client->HasBrowser();
     }
 
-    void CefRuntime::PostToCefUi(std::function<void()> task)
-    {
+    void CefRuntime::PostToCefUi(std::function<void()> task) {
         if (!impl_->initialized.load(std::memory_order_acquire)) {
             return;
         }
@@ -1188,8 +1112,7 @@ namespace PrismaUI::Cef
     }
 
     namespace {
-        cef_key_event_type_t ToCefKeyType(CefInputKeyType type)
-        {
+        cef_key_event_type_t ToCefKeyType(CefInputKeyType type) {
             switch (type) {
                 case CefInputKeyType::RawKeyDown:
                     return KEYEVENT_RAWKEYDOWN;
@@ -1202,8 +1125,7 @@ namespace PrismaUI::Cef
             }
         }
 
-        cef_mouse_button_type_t ToCefMouseButton(CefInputMouseButton button)
-        {
+        cef_mouse_button_type_t ToCefMouseButton(CefInputMouseButton button) {
             switch (button) {
                 case CefInputMouseButton::Left:
                     return MBT_LEFT;
@@ -1217,16 +1139,15 @@ namespace PrismaUI::Cef
         }
     }
 
-    void CefRuntime::DispatchInputEvents(uint64_t viewId, std::vector<CefInputEvent> events)
-    {
+    void CefRuntime::DispatchInputEvents(uint64_t viewId, std::vector<CefInputEvent> events) {
         if (events.empty()) {
             logger::debug("CEF input dispatch ignored empty batch for View [{}].", viewId);
             return;
         }
 
         if (!impl_->initialized.load(std::memory_order_acquire)) {
-            logger::warn("CEF input dispatch dropped {} event(s) for View [{}]: runtime unavailable.",
-                         events.size(), viewId);
+            logger::warn("CEF input dispatch dropped {} event(s) for View [{}]: runtime unavailable.", events.size(),
+                         viewId);
             return;
         }
 
@@ -1237,8 +1158,8 @@ namespace PrismaUI::Cef
         }
 
         if (!client || !client->HasBrowser()) {
-            logger::warn("CEF input dispatch dropped {} event(s) for View [{}]: browser unavailable.",
-                         events.size(), viewId);
+            logger::warn("CEF input dispatch dropped {} event(s) for View [{}]: browser unavailable.", events.size(),
+                         viewId);
             return;
         }
 
@@ -1253,8 +1174,8 @@ namespace PrismaUI::Cef
                     return;
                 }
                 if (it->second.hidden) {
-                    logger::debug("CEF input dispatch dropped {} event(s) for hidden View [{}].",
-                                  events.size(), viewId);
+                    logger::debug("CEF input dispatch dropped {} event(s) for hidden View [{}].", events.size(),
+                                  viewId);
                     return;
                 }
                 if (!impl_->shellReady) {
@@ -1305,8 +1226,8 @@ namespace PrismaUI::Cef
                             mouseEvent.x = value.x;
                             mouseEvent.y = value.y;
                             mouseEvent.modifiers = value.modifiers;
-                            host->SendMouseClickEvent(mouseEvent, ToCefMouseButton(value.button),
-                                                       value.mouseUp, value.clickCount);
+                            host->SendMouseClickEvent(mouseEvent, ToCefMouseButton(value.button), value.mouseUp,
+                                                      value.clickCount);
                         } else if constexpr (std::is_same_v<T, CefInputMouseWheel>) {
                             CefMouseEvent mouseEvent;
                             mouseEvent.x = value.x;
@@ -1336,10 +1257,10 @@ namespace PrismaUI::Cef
     // ============== Step 7 JS bridge ==============
 
     namespace {
-        CefRefPtr<CefProcessMessage> MakeStringListMessage(const char* name,
-                                                          std::initializer_list<std::string> args)
-        {
-            CefRefPtr<CefProcessMessage> msg = CefProcessMessage::Create(name);
+
+        CefRefPtr<CefProcessMessage> MakeStringListMessage(Messages::BrowserToRendererMessage name,
+                                                           std::initializer_list<std::string> args) {
+            CefRefPtr<CefProcessMessage> msg = CefProcessMessage::Create(Messages::ToCefString(name));
             CefRefPtr<CefListValue> list = msg->GetArgumentList();
             list->SetSize(args.size());
             size_t i = 0;
@@ -1351,8 +1272,7 @@ namespace PrismaUI::Cef
 
         // Find the iframe frame on the CEF UI thread. Returns nullptr if the iframe
         // does not (yet) exist — caller is responsible for logging.
-        CefRefPtr<CefFrame> FindIframeFrame(CefRefPtr<CefOsrClient> client, uint64_t viewId)
-        {
+        CefRefPtr<CefFrame> FindIframeFrame(CefRefPtr<CefOsrClient> client, uint64_t viewId) {
             if (!client) return nullptr;
             const std::string iframeName = "prisma-view-" + std::to_string(viewId);
             CefString frameName;
@@ -1361,9 +1281,7 @@ namespace PrismaUI::Cef
         }
     }
 
-    void CefRuntime::InvokeScript(uint64_t viewId, std::string script,
-                                  std::function<void(std::string)> callback)
-    {
+    void CefRuntime::InvokeScript(uint64_t viewId, std::string script, std::function<void(std::string)> callback) {
         if (!impl_->initialized.load(std::memory_order_acquire)) {
             logger::warn("InvokeScript: CEF not initialized; firing empty callback for view [{}].", viewId);
             if (callback) callback(std::string());
@@ -1392,8 +1310,8 @@ namespace PrismaUI::Cef
         PostToCefUi([this, client, viewId, requestIdStr, scriptCopy]() {
             CefRefPtr<CefFrame> frame = FindIframeFrame(client, viewId);
             if (!frame) {
-                logger::warn("InvokeScript: iframe for view [{}] not yet attached; failing request {}.",
-                             viewId, requestIdStr);
+                logger::warn("InvokeScript: iframe for view [{}] not yet attached; failing request {}.", viewId,
+                             requestIdStr);
                 // Fire the queued callback with an empty string and remove the entry.
                 Impl::InvokeEntry drained;
                 bool have = false;
@@ -1410,17 +1328,15 @@ namespace PrismaUI::Cef
                 return;
             }
             logger::debug("InvokeScript: dispatching request {} to view [{}].", requestIdStr, viewId);
-            frame->SendProcessMessage(PID_RENDERER,
-                                      MakeStringListMessage(Messages::kInvokeRequest,
-                                                            {requestIdStr, scriptCopy}));
+            frame->SendProcessMessage(
+                PID_RENDERER,
+                MakeStringListMessage(Messages::BrowserToRendererMessage::InvokeRequest, {requestIdStr, scriptCopy}));
         });
     }
 
-    void CefRuntime::InteropCallInView(uint64_t viewId, std::string functionName, std::string argument)
-    {
+    void CefRuntime::InteropCallInView(uint64_t viewId, std::string functionName, std::string argument) {
         if (!impl_->initialized.load(std::memory_order_acquire)) {
-            logger::warn("InteropCall: CEF not initialized; ignoring call to '{}' on view [{}].",
-                         functionName, viewId);
+            logger::warn("InteropCall: CEF not initialized; ignoring call to '{}' on view [{}].", functionName, viewId);
             return;
         }
 
@@ -1433,25 +1349,23 @@ namespace PrismaUI::Cef
         PostToCefUi([client, viewId, fn = std::move(functionName), arg = std::move(argument)]() {
             CefRefPtr<CefFrame> frame = FindIframeFrame(client, viewId);
             if (!frame) {
-                logger::warn("InteropCall: iframe for view [{}] is not attached; dropping call to '{}'.",
-                             viewId, fn);
+                logger::warn("InteropCall: iframe for view [{}] is not attached; dropping call to '{}'.", viewId, fn);
                 return;
             }
-            frame->SendProcessMessage(PID_RENDERER,
-                                      MakeStringListMessage(Messages::kInteropCall, {fn, arg}));
+            frame->SendProcessMessage(
+                PID_RENDERER, MakeStringListMessage(Messages::BrowserToRendererMessage::InteropCall, {fn, arg}));
         });
     }
 
     void CefRuntime::RegisterListener(uint64_t viewId, std::string name,
-                                      std::function<void(const std::string&)> /*callback*/)
-    {
+                                      std::function<void(const std::string&)> /*callback*/) {
         // The callback itself lives in Core::jsCallbacks; this method only forwards
         // the "install trampoline" message to the renderer so the iframe exposes a
         // window[name] = function(arg) bridge. Caller (Communication::RegisterJSListener)
         // is responsible for storing the callback first.
         if (!impl_->initialized.load(std::memory_order_acquire)) {
-            logger::warn("RegisterListener: CEF not initialized; '{}' for view [{}] will be installed lazily.",
-                         name, viewId);
+            logger::warn("RegisterListener: CEF not initialized; '{}' for view [{}] will be installed lazily.", name,
+                         viewId);
             return;
         }
 
@@ -1470,19 +1384,19 @@ namespace PrismaUI::Cef
                 // No frame yet — renderer will queue installs at OnContextCreated once
                 // the iframe lands. We still try once here; if the frame appears later
                 // the listener is re-registered when the iframe re-creates its context.
-                logger::info("RegisterListener: iframe for view [{}] not yet attached; '{}' will install at next context.",
-                             viewId, nameCopy);
+                logger::info(
+                    "RegisterListener: iframe for view [{}] not yet attached; '{}' will install at next context.",
+                    viewId, nameCopy);
                 return;
             }
             logger::info("RegisterListener: installing '{}' for view [{}].", nameCopy, viewId);
-            frame->SendProcessMessage(PID_RENDERER,
-                                      MakeStringListMessage(Messages::kInstallListener,
-                                                            {viewIdStr, nameCopy}));
+            frame->SendProcessMessage(
+                PID_RENDERER,
+                MakeStringListMessage(Messages::BrowserToRendererMessage::InstallListener, {viewIdStr, nameCopy}));
         });
     }
 
-    void CefRuntime::CancelInvokesForView(uint64_t viewId)
-    {
+    void CefRuntime::CancelInvokesForView(uint64_t viewId) {
         std::vector<Impl::InvokeEntry> drained;
         {
             std::lock_guard lock(impl_->invokeMutex);
@@ -1496,17 +1410,16 @@ namespace PrismaUI::Cef
             }
         }
         if (!drained.empty()) {
-            logger::info("CancelInvokesForView: draining {} pending Invoke callback(s) for view [{}].",
-                         drained.size(), viewId);
+            logger::info("CancelInvokesForView: draining {} pending Invoke callback(s) for view [{}].", drained.size(),
+                         viewId);
         }
         for (auto& entry : drained) {
             if (entry.callback) entry.callback(std::string());
         }
     }
 
-    bool CefRuntime::OnRendererMessage(const std::string& frameName, const std::string& messageName,
-                                       const std::vector<std::string>& payload)
-    {
+    bool CefRuntime::OnRendererMessage(const std::string& frameName, Messages::RendererToBrowserMessage message,
+                                       const std::vector<std::string>& payload) {
         // Pull viewId out of either the frame name ("prisma-view-<id>") or the
         // first payload column, depending on which message kind we're handling.
         auto parseViewIdFromFrame = [&]() -> uint64_t {
@@ -1523,14 +1436,15 @@ namespace PrismaUI::Cef
             return value;
         };
 
-        if (messageName == Messages::kInvokeResult) {
+        if (message == Messages::RendererToBrowserMessage::InvokeResult) {
             if (payload.size() < 3) {
                 logger::error("OnRendererMessage: malformed invokeResult payload (size {}).", payload.size());
                 return true;
             }
             uint64_t requestId = 0;
-            try { requestId = std::stoull(payload[0]); }
-            catch (...) {
+            try {
+                requestId = std::stoull(payload[0]);
+            } catch (...) {
                 logger::error("OnRendererMessage: invokeResult bad requestId '{}'.", payload[0]);
                 return true;
             }
@@ -1549,14 +1463,15 @@ namespace PrismaUI::Cef
             return true;
         }
 
-        if (messageName == Messages::kListenerInvoke) {
+        if (message == Messages::RendererToBrowserMessage::ListenerInvoke) {
             if (payload.size() < 3) {
                 logger::error("OnRendererMessage: malformed listenerInvoke payload (size {}).", payload.size());
                 return true;
             }
             uint64_t viewId = 0;
-            try { viewId = std::stoull(payload[0]); }
-            catch (...) {
+            try {
+                viewId = std::stoull(payload[0]);
+            } catch (...) {
                 logger::error("OnRendererMessage: listenerInvoke bad viewId '{}'.", payload[0]);
                 return true;
             }
@@ -1569,14 +1484,15 @@ namespace PrismaUI::Cef
             return true;
         }
 
-        if (messageName == Messages::kConsoleMessage) {
+        if (message == Messages::RendererToBrowserMessage::ConsoleMessage) {
             if (payload.size() < 3) {
                 logger::error("OnRendererMessage: malformed consoleMessage payload (size {}).", payload.size());
                 return true;
             }
             uint64_t viewId = 0;
-            try { viewId = std::stoull(payload[0]); }
-            catch (...) {
+            try {
+                viewId = std::stoull(payload[0]);
+            } catch (...) {
                 logger::error("OnRendererMessage: consoleMessage bad viewId '{}'.", payload[0]);
                 return true;
             }
@@ -1589,20 +1505,21 @@ namespace PrismaUI::Cef
             return true;
         }
 
-        if (messageName == Messages::kDomReady) {
+        if (message == Messages::RendererToBrowserMessage::DomReady) {
             if (payload.size() < 1) {
                 logger::error("OnRendererMessage: malformed domReady payload (size {}).", payload.size());
                 return true;
             }
             uint64_t viewId = 0;
-            try { viewId = std::stoull(payload[0]); }
-            catch (...) {
+            try {
+                viewId = std::stoull(payload[0]);
+            } catch (...) {
                 logger::error("OnRendererMessage: domReady bad viewId '{}'.", payload[0]);
                 return true;
             }
             if (parseViewIdFromFrame() != viewId) {
-                logger::warn("OnRendererMessage: domReady viewId {} disagrees with frame '{}' — refusing.",
-                             viewId, frameName);
+                logger::warn("OnRendererMessage: domReady viewId {} disagrees with frame '{}' — refusing.", viewId,
+                             frameName);
                 return true;
             }
             Communication::DispatchDomReady(viewId);

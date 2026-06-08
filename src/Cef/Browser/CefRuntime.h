@@ -8,35 +8,26 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <vector>
 #include <variant>
+#include <vector>
 
-namespace PrismaUI::Cef
-{
-    enum class CefInputMouseButton : uint8_t
-    {
-        Left,
-        Middle,
-        Right
-    };
+namespace PrismaUI::Cef::Messages {
+    enum class RendererToBrowserMessage : std::uint8_t;
+}
 
-    enum class CefInputKeyType : uint8_t
-    {
-        RawKeyDown,
-        KeyUp,
-        Char
-    };
+namespace PrismaUI::Cef {
+    enum class CefInputMouseButton : uint8_t { Left, Middle, Right };
 
-    struct CefInputMouseMove
-    {
+    enum class CefInputKeyType : uint8_t { RawKeyDown, KeyUp, Char };
+
+    struct CefInputMouseMove {
         int x = 0;
         int y = 0;
         uint32_t modifiers = 0;
         bool mouseLeave = false;
     };
 
-    struct CefInputMouseClick
-    {
+    struct CefInputMouseClick {
         int x = 0;
         int y = 0;
         uint32_t modifiers = 0;
@@ -45,8 +36,7 @@ namespace PrismaUI::Cef
         int clickCount = 1;
     };
 
-    struct CefInputMouseWheel
-    {
+    struct CefInputMouseWheel {
         int x = 0;
         int y = 0;
         uint32_t modifiers = 0;
@@ -54,8 +44,7 @@ namespace PrismaUI::Cef
         int deltaY = 0;
     };
 
-    struct CefInputKey
-    {
+    struct CefInputKey {
         CefInputKeyType type = CefInputKeyType::RawKeyDown;
         uint32_t modifiers = 0;
         int windowsKeyCode = 0;
@@ -68,8 +57,7 @@ namespace PrismaUI::Cef
 
     using CefInputEvent = std::variant<CefInputMouseMove, CefInputMouseClick, CefInputMouseWheel, CefInputKey>;
 
-    class CefRuntime final
-    {
+    class CefRuntime final {
     public:
         static CefRuntime& GetSingleton();
 
@@ -98,7 +86,6 @@ namespace PrismaUI::Cef
         void CloseDevTools();
         bool IsDevToolsOpen() const;
 
-
         // Dispatch a batch of native input events to the focused CEF OSR shell iframe.
         // The events are copied into a single CEF UI-thread task; callers must not call
         // CefBrowserHost input APIs directly from game, window, or render callbacks.
@@ -121,8 +108,7 @@ namespace PrismaUI::Cef
         // is invoked exactly once with the coerced string result. On failure (view
         // unknown, frame missing, JS exception, view destroyed mid-flight) `callback`
         // fires with an empty string.
-        void InvokeScript(uint64_t viewId, std::string script,
-                          std::function<void(std::string)> callback);
+        void InvokeScript(uint64_t viewId, std::string script, std::function<void(std::string)> callback);
 
         // Forward a (functionName, argument) tuple to the iframe's window[functionName].
         // Fire-and-forget: missing target frame or non-callable property are logged but
@@ -133,8 +119,7 @@ namespace PrismaUI::Cef
         // window[name] trampoline that forwards to this callback the next time the
         // matching frame's V8 context is created. Re-registering replaces the prior
         // callback in place.
-        void RegisterListener(uint64_t viewId, std::string name,
-                              std::function<void(const std::string&)> callback);
+        void RegisterListener(uint64_t viewId, std::string name, std::function<void(const std::string&)> callback);
 
         // Drop any pending Invoke requests issued against `viewId`, firing their
         // callbacks with an empty string. Called from ViewManager::Destroy so the
@@ -144,7 +129,7 @@ namespace PrismaUI::Cef
         // Routes a process message received from a renderer subprocess to the
         // matching listener / Invoke / console / DOM-ready dispatcher. Returns true
         // if the message was recognised.
-        bool OnRendererMessage(const std::string& frameName, const std::string& messageName,
+        bool OnRendererMessage(const std::string& frameName, Messages::RendererToBrowserMessage message,
                                const std::vector<std::string>& payload);
 
     private:
@@ -154,8 +139,7 @@ namespace PrismaUI::Cef
         CefRuntime(const CefRuntime&) = delete;
         CefRuntime& operator=(const CefRuntime&) = delete;
 
-        struct ShellCreateViewArg
-        {
+        struct ShellCreateViewArg {
             uint64_t id;
             std::string_view url;
             int order;
@@ -176,8 +160,7 @@ namespace PrismaUI::Cef
         // `viewId` is used for iframe-existence diagnostics and logging; pass the
         // affected view's id (createView is exempted from the iframe check).
         template <class... Args>
-        bool InvokeShell(std::string_view method, uint64_t viewId, const Args&... args)
-        {
+        bool InvokeShell(std::string_view method, uint64_t viewId, const Args&... args) {
             std::string script;
             script.reserve(48 + method.size());
             script += "window.__prismaShell.";

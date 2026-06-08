@@ -1,40 +1,33 @@
 #include "PCH.h"
 
 #ifdef GetNextSibling
-#    undef GetNextSibling
+    #undef GetNextSibling
 #endif
-
-#include "Cef/Browser/CefOsrClient.h"
-#include "Cef/Browser/CefRuntime.h"
-#include "include/cef_process_message.h"
-#include "include/cef_values.h"
 
 #include <algorithm>
 #include <cstring>
 #include <limits>
 
+#include "Cef/Browser/CefOsrClient.h"
+#include "Cef/Browser/CefRuntime.h"
+#include "Cef/Shared/ProcessMessageNames.h"
+#include "include/cef_process_message.h"
+#include "include/cef_values.h"
 #include "include/wrapper/cef_helpers.h"
 
-namespace
-{
+namespace {
     constexpr int kCefWindowlessFrameRate = 120;
 
 }
 
-namespace PrismaUI::Cef
-{
-    CefOsrClient::CefOsrClient(uint32_t width, uint32_t height) :
-        width_(static_cast<int>(std::max<uint32_t>(1, width))),
-        height_(static_cast<int>(std::max<uint32_t>(1, height)))
-    {}
+namespace PrismaUI::Cef {
+    CefOsrClient::CefOsrClient(uint32_t width, uint32_t height)
+        : width_(static_cast<int>(std::max<uint32_t>(1, width))),
+          height_(static_cast<int>(std::max<uint32_t>(1, height))) {}
 
-    bool CefOsrClient::HasBrowser() const
-    {
-        return hasBrowser_.load(std::memory_order_acquire);
-    }
+    bool CefOsrClient::HasBrowser() const { return hasBrowser_.load(std::memory_order_acquire); }
 
-    void CefOsrClient::SetSize(uint32_t width, uint32_t height)
-    {
+    void CefOsrClient::SetSize(uint32_t width, uint32_t height) {
         CEF_REQUIRE_UI_THREAD();
 
         const int newWidth = static_cast<int>(std::max<uint32_t>(1, width));
@@ -54,8 +47,7 @@ namespace PrismaUI::Cef
         }
     }
 
-    void CefOsrClient::SendExternalBeginFrame()
-    {
+    void CefOsrClient::SendExternalBeginFrame() {
         CEF_REQUIRE_UI_THREAD();
 
         if (!browser_) {
@@ -70,8 +62,7 @@ namespace PrismaUI::Cef
         browser_->GetHost()->SendExternalBeginFrame();
     }
 
-    void CefOsrClient::InvalidateView()
-    {
+    void CefOsrClient::InvalidateView() {
         CEF_REQUIRE_UI_THREAD();
 
         if (!browser_) {
@@ -82,8 +73,7 @@ namespace PrismaUI::Cef
         logger::debug("CEF OSR browser view invalidated for repaint.");
     }
 
-    void CefOsrClient::CloseBrowser()
-    {
+    void CefOsrClient::CloseBrowser() {
         CEF_REQUIRE_UI_THREAD();
 
         if (!browser_) {
@@ -98,8 +88,7 @@ namespace PrismaUI::Cef
     }
 
     bool CefOsrClient::ConsumeCpuFrame(std::vector<std::byte>& pixels, uint32_t& width, uint32_t& height,
-                                       uint32_t& stride)
-    {
+                                       uint32_t& stride) {
         if (!cpuFrameReady_.exchange(false, std::memory_order_acq_rel)) {
             return false;
         }
@@ -123,32 +112,27 @@ namespace PrismaUI::Cef
         return true;
     }
 
-    void CefOsrClient::ResetCloseSignal()
-    {
+    void CefOsrClient::ResetCloseSignal() {
         std::lock_guard lock(closeMutex_);
         closeComplete_ = false;
     }
 
-    bool CefOsrClient::WaitForClose(std::chrono::milliseconds timeout)
-    {
+    bool CefOsrClient::WaitForClose(std::chrono::milliseconds timeout) {
         std::unique_lock lock(closeMutex_);
         return closeCv_.wait_for(lock, timeout, [this]() { return closeComplete_; });
     }
 
-    CefRefPtr<CefBrowser> CefOsrClient::GetBrowserOnUiThread() const
-    {
+    CefRefPtr<CefBrowser> CefOsrClient::GetBrowserOnUiThread() const {
         CEF_REQUIRE_UI_THREAD();
         return browser_;
     }
 
-    CefRefPtr<CefFrame> CefOsrClient::GetFrameByNameOnUiThread(const CefString& name) const
-    {
+    CefRefPtr<CefFrame> CefOsrClient::GetFrameByNameOnUiThread(const CefString& name) const {
         CEF_REQUIRE_UI_THREAD();
         return browser_ ? browser_->GetFrameByName(name) : nullptr;
     }
 
-    void CefOsrClient::OnAfterCreated(CefRefPtr<CefBrowser> browser)
-    {
+    void CefOsrClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
         CEF_REQUIRE_UI_THREAD();
 
         if (!browser) {
@@ -157,7 +141,8 @@ namespace PrismaUI::Cef
         }
 
         if (browser->IsPopup()) {
-            logger::warn("CEF popup browser [{}] was created during lifecycle smoke; closing it.", browser->GetIdentifier());
+            logger::warn("CEF popup browser [{}] was created during lifecycle smoke; closing it.",
+                         browser->GetIdentifier());
             browser->GetHost()->CloseBrowser(true);
             return;
         }
@@ -169,8 +154,7 @@ namespace PrismaUI::Cef
         logger::info("CEF OSR browser [{}] created.", browser_->GetIdentifier());
     }
 
-    bool CefOsrClient::DoClose(CefRefPtr<CefBrowser> browser)
-    {
+    bool CefOsrClient::DoClose(CefRefPtr<CefBrowser> browser) {
         CEF_REQUIRE_UI_THREAD();
 
         logger::info("CEF DoClose for browser [{}].", browser ? browser->GetIdentifier() : -1);
@@ -178,8 +162,7 @@ namespace PrismaUI::Cef
         return false;
     }
 
-    void CefOsrClient::OnBeforeClose(CefRefPtr<CefBrowser> browser)
-    {
+    void CefOsrClient::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
         CEF_REQUIRE_UI_THREAD();
 
         logger::info("CEF OnBeforeClose for browser [{}].", browser ? browser->GetIdentifier() : -1);
@@ -192,15 +175,13 @@ namespace PrismaUI::Cef
         }
     }
 
-    void CefOsrClient::GetViewRect(CefRefPtr<CefBrowser>, CefRect& rect)
-    {
+    void CefOsrClient::GetViewRect(CefRefPtr<CefBrowser>, CefRect& rect) {
         const int width = width_.load(std::memory_order_acquire);
         const int height = height_.load(std::memory_order_acquire);
         rect = CefRect(0, 0, std::max(1, width), std::max(1, height));
     }
 
-    bool CefOsrClient::GetScreenInfo(CefRefPtr<CefBrowser>, CefScreenInfo& screenInfo)
-    {
+    bool CefOsrClient::GetScreenInfo(CefRefPtr<CefBrowser>, CefScreenInfo& screenInfo) {
         const int width = width_.load(std::memory_order_acquire);
         const int height = height_.load(std::memory_order_acquire);
         screenInfo.device_scale_factor = 1.0f;
@@ -210,15 +191,14 @@ namespace PrismaUI::Cef
     }
 
     void CefOsrClient::OnPaint(CefRefPtr<CefBrowser>, PaintElementType type, const RectList& dirtyRects,
-                               const void* buffer, int width, int height)
-    {
+                               const void* buffer, int width, int height) {
         if (type != PET_VIEW) {
             return;
         }
 
         if (!buffer || width <= 0 || height <= 0) {
-            logger::warn("CEF CPU paint callback ignored invalid frame: buffer={}, size={}x{}",
-                         buffer ? "set" : "null", width, height);
+            logger::warn("CEF CPU paint callback ignored invalid frame: buffer={}, size={}x{}", buffer ? "set" : "null",
+                         width, height);
             return;
         }
 
@@ -262,8 +242,7 @@ namespace PrismaUI::Cef
     }
 
     void CefOsrClient::OnAcceleratedPaint(CefRefPtr<CefBrowser>, PaintElementType type, const RectList& dirtyRects,
-                                          const CefAcceleratedPaintInfo& info)
-    {
+                                          const CefAcceleratedPaintInfo& info) {
         if (type != PET_VIEW) {
             return;
         }
@@ -283,8 +262,7 @@ namespace PrismaUI::Cef
     }
 
     bool CefOsrClient::OnConsoleMessage(CefRefPtr<CefBrowser> browser, cef_log_severity_t level,
-                                        const CefString& message, const CefString& /*source*/, int /*line*/)
-    {
+                                        const CefString& message, const CefString& /*source*/, int /*line*/) {
         const int browserId = browser ? browser->GetIdentifier() : -1;
         const std::string text = message.ToString();
 
@@ -309,15 +287,13 @@ namespace PrismaUI::Cef
     }
 
     void CefOsrClient::OnLoadingStateChange(CefRefPtr<CefBrowser> browser, bool isLoading, bool canGoBack,
-                                            bool canGoForward)
-    {
+                                            bool canGoForward) {
         logger::debug("CEF loading state browser [{}]: loading={}, canGoBack={}, canGoForward={}",
                       browser ? browser->GetIdentifier() : -1, isLoading, canGoBack, canGoForward);
     }
 
     void CefOsrClient::OnLoadStart(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
-                                   TransitionType transitionType)
-    {
+                                   TransitionType transitionType) {
         if (!frame) {
             return;
         }
@@ -326,7 +302,8 @@ namespace PrismaUI::Cef
         const std::string url = frame->GetURL().ToString();
         if (frame->IsMain()) {
             logger::info("CEF shell load started for browser [{}], transition type {}, frame id '{}', url '{}'.",
-                         browser ? browser->GetIdentifier() : -1, static_cast<int>(transitionType), frameIdentifier, url);
+                         browser ? browser->GetIdentifier() : -1, static_cast<int>(transitionType), frameIdentifier,
+                         url);
             CefRuntime::GetSingleton().NotifyShellLoadStart(frameIdentifier, url);
             return;
         }
@@ -337,8 +314,7 @@ namespace PrismaUI::Cef
         CefRuntime::GetSingleton().NotifyShellFrameLoadStart(frameName, frameIdentifier, url);
     }
 
-    void CefOsrClient::OnLoadEnd(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int httpStatusCode)
-    {
+    void CefOsrClient::OnLoadEnd(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int httpStatusCode) {
         if (!frame) {
             return;
         }
@@ -359,8 +335,7 @@ namespace PrismaUI::Cef
     }
 
     void CefOsrClient::OnLoadError(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, ErrorCode errorCode,
-                                   const CefString& errorText, const CefString& failedUrl)
-    {
+                                   const CefString& errorText, const CefString& failedUrl) {
         if (!frame) {
             return;
         }
@@ -370,33 +345,35 @@ namespace PrismaUI::Cef
         const std::string error = errorText.ToString();
         const std::string failed = failedUrl.ToString();
         if (frame->IsMain()) {
-            logger::error("CEF shell load failed for browser [{}]: code={}, error='{}', failedUrl='{}', frame id '{}', url='{}'",
-                          browser ? browser->GetIdentifier() : -1, static_cast<int>(errorCode), error, failed,
-                          frameIdentifier, url);
+            logger::error(
+                "CEF shell load failed for browser [{}]: code={}, error='{}', failedUrl='{}', frame id '{}', url='{}'",
+                browser ? browser->GetIdentifier() : -1, static_cast<int>(errorCode), error, failed, frameIdentifier,
+                url);
             CefRuntime::GetSingleton().NotifyShellLoadError(static_cast<int>(errorCode), error, failed, frameIdentifier,
                                                             url);
             return;
         }
 
         const std::string frameName = frame->GetName().ToString();
-        logger::error("CEF iframe load failed: browser [{}], frame '{}', id '{}', code={}, error='{}', failedUrl='{}', url='{}'",
-                      browser ? browser->GetIdentifier() : -1, frameName, frameIdentifier, static_cast<int>(errorCode),
-                      error, failed, url);
-        CefRuntime::GetSingleton().NotifyShellFrameLoadError(frameName, frameIdentifier, url, static_cast<int>(errorCode),
-                                                             error, failed);
+        logger::error(
+            "CEF iframe load failed: browser [{}], frame '{}', id '{}', code={}, error='{}', failedUrl='{}', url='{}'",
+            browser ? browser->GetIdentifier() : -1, frameName, frameIdentifier, static_cast<int>(errorCode), error,
+            failed, url);
+        CefRuntime::GetSingleton().NotifyShellFrameLoadError(frameName, frameIdentifier, url,
+                                                             static_cast<int>(errorCode), error, failed);
     }
 
-
-    bool CefOsrClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> /*browser*/,
-                                                CefRefPtr<CefFrame> frame,
-                                                CefProcessId source_process,
-                                                CefRefPtr<CefProcessMessage> message)
-    {
+    bool CefOsrClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> /*browser*/, CefRefPtr<CefFrame> frame,
+                                                CefProcessId source_process, CefRefPtr<CefProcessMessage> message) {
         if (source_process != PID_RENDERER || !frame || !message) {
             return false;
         }
 
-        const std::string messageName = message->GetName().ToString();
+        const auto messageKind = Messages::ClassifyRendererToBrowserMessage(message->GetName());
+        if (messageKind == Messages::RendererToBrowserMessage::Unknown) {
+            return false;
+        }
+
         const std::string frameName = frame->GetName().ToString();
 
         std::vector<std::string> payload;
@@ -408,11 +385,10 @@ namespace PrismaUI::Cef
             }
         }
 
-        return CefRuntime::GetSingleton().OnRendererMessage(frameName, messageName, payload);
+        return CefRuntime::GetSingleton().OnRendererMessage(frameName, messageKind, payload);
     }
 
-    void CefOsrClient::SignalCloseComplete()
-    {
+    void CefOsrClient::SignalCloseComplete() {
         {
             std::lock_guard lock(closeMutex_);
             closeComplete_ = true;

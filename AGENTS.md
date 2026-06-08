@@ -13,7 +13,7 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
 - Use the harness `search` tool for content lookup and `find` for filename lookup. The `external/` and `build/external_builds/` trees are large; scope searches to `src`, `cmake`, `assets`, `docs`, and root docs unless dependency code is relevant.
 - Use existing logging style via `logger::info/warn/error/debug/critical`.
 - Follow `.clang-format`: Google base style, 4-space indents, no tabs, 120-column limit.
-- After C++ changes, run `clang-format` on touched source/header files when it is installed.
+- After C++ changes, run `.\Format-Code.ps1` when `clang-format` is installed. Use `.\Format-Code.ps1 -Check` to verify formatting without rewriting files.
 - Default to ASCII for new code/docs unless updating text that already uses non-ASCII.
 
 ## Build And Packaging

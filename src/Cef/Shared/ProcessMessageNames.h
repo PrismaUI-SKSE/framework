@@ -10,45 +10,57 @@
 // MUST NOT change without updating both sides.
 
 namespace PrismaUI::Cef::Messages {
+    namespace Detail {
+        inline constexpr const char* kInstallListener = "prisma.installListener";
+        inline constexpr const char* kRemoveListener = "prisma.removeListener";
+        inline constexpr const char* kInvokeRequest = "prisma.invokeRequest";
+        inline constexpr const char* kInteropCall = "prisma.interopCall";
+
+        inline constexpr const char* kInvokeResult = "prisma.invokeResult";
+        inline constexpr const char* kListenerInvoke = "prisma.listenerInvoke";
+        inline constexpr const char* kConsoleMessage = "prisma.consoleMessage";
+        inline constexpr const char* kDomReady = "prisma.domReady";
+    }
+
     // Browser -> renderer.
     inline const CefString& InstallListenerName() {
-        static const CefString value("prisma.installListener");
+        static const CefString value(Detail::kInstallListener);
         return value;
     }
 
     inline const CefString& RemoveListenerName() {
-        static const CefString value("prisma.removeListener");
+        static const CefString value(Detail::kRemoveListener);
         return value;
     }
 
     inline const CefString& InvokeRequestName() {
-        static const CefString value("prisma.invokeRequest");
+        static const CefString value(Detail::kInvokeRequest);
         return value;
     }
 
     inline const CefString& InteropCallName() {
-        static const CefString value("prisma.interopCall");
+        static const CefString value(Detail::kInteropCall);
         return value;
     }
 
     // Renderer -> browser.
     inline const CefString& InvokeResultName() {
-        static const CefString value("prisma.invokeResult");
+        static const CefString value(Detail::kInvokeResult);
         return value;
     }
 
     inline const CefString& ListenerInvokeName() {
-        static const CefString value("prisma.listenerInvoke");
+        static const CefString value(Detail::kListenerInvoke);
         return value;
     }
 
     inline const CefString& ConsoleMessageName() {
-        static const CefString value("prisma.consoleMessage");
+        static const CefString value(Detail::kConsoleMessage);
         return value;
     }
 
     inline const CefString& DomReadyName() {
-        static const CefString value("prisma.domReady");
+        static const CefString value(Detail::kDomReady);
         return value;
     }
 
@@ -135,13 +147,13 @@ namespace PrismaUI::Cef::Messages {
     constexpr std::string_view ToStringView(BrowserToRendererMessage message) noexcept {
         switch (message) {
             case BrowserToRendererMessage::InstallListener:
-                return "prisma.installListener";
+                return Detail::kInstallListener;
             case BrowserToRendererMessage::RemoveListener:
-                return "prisma.removeListener";
+                return Detail::kRemoveListener;
             case BrowserToRendererMessage::InvokeRequest:
-                return "prisma.invokeRequest";
+                return Detail::kInvokeRequest;
             case BrowserToRendererMessage::InteropCall:
-                return "prisma.interopCall";
+                return Detail::kInteropCall;
             default:
                 return "<unknown>";
         }
@@ -150,13 +162,13 @@ namespace PrismaUI::Cef::Messages {
     constexpr std::string_view ToStringView(RendererToBrowserMessage message) noexcept {
         switch (message) {
             case RendererToBrowserMessage::InvokeResult:
-                return "prisma.invokeResult";
+                return Detail::kInvokeResult;
             case RendererToBrowserMessage::ListenerInvoke:
-                return "prisma.listenerInvoke";
+                return Detail::kListenerInvoke;
             case RendererToBrowserMessage::ConsoleMessage:
-                return "prisma.consoleMessage";
+                return Detail::kConsoleMessage;
             case RendererToBrowserMessage::DomReady:
-                return "prisma.domReady";
+                return Detail::kDomReady;
             default:
                 return "<unknown>";
         }

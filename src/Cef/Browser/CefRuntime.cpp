@@ -1292,7 +1292,8 @@ namespace PrismaUI::Cef {
                 return;
             }
             logger::debug("InvokeScript: dispatching request {} to view [{}].", requestId, viewId);
-            frame->SendProcessMessage(PID_RENDERER, Messages::CreateInvokeRequestMessage(requestId, scriptCopy));
+            Messaging::SendProcessMessageToFrame(
+                frame, PID_RENDERER, Messages::InvokeRequestMessage{.RequestId = requestId, .Script = scriptCopy});
         });
     }
 
@@ -1315,7 +1316,8 @@ namespace PrismaUI::Cef {
                 return;
             }
 
-            frame->SendProcessMessage(PID_RENDERER, Messages::CreateInteropCallMessage(fn, arg));
+            Messaging::SendProcessMessageToFrame(frame, PID_RENDERER,
+                                                 Messages::InteropCallMessage{.FunctionName = fn, .Argument = arg});
         });
     }
 
@@ -1351,7 +1353,8 @@ namespace PrismaUI::Cef {
                 return;
             }
             logger::info("RegisterListener: installing '{}' for view [{}].", nameCopy, viewId);
-            frame->SendProcessMessage(PID_RENDERER, Messages::CreateInstallListenerMessage(nameCopy));
+            Messaging::SendProcessMessageToFrame(frame, PID_RENDERER,
+                                                 Messages::InstallListenerMessage{.ListenerName = nameCopy});
         });
     }
 

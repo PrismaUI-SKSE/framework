@@ -5,6 +5,8 @@
 #include <variant>
 
 #include "CefUtils.h"
+#include "Messaging.h"
+#include "Utils/VariantUtils.h"
 #include "cef_process_message.h"
 #include "cef_values.h"
 #include "include/internal/cef_string.h"
@@ -14,120 +16,97 @@
 // strings MUST NOT change without updating both sides.
 
 namespace PrismaUI::Cef::Messages {
-    inline const CefString& InvokeResultName() {
-        static const CefString value("prisma.invokeResult");
-        return value;
-    }
-
-    inline const CefString& ListenerInvokeName() {
-        static const CefString value("prisma.listenerInvoke");
-        return value;
-    }
-
-    inline const CefString& ConsoleMessageName() {
-        static const CefString value("prisma.consoleMessage");
-        return value;
-    }
-
-    inline const CefString& DomReadyName() {
-        static const CefString value("prisma.domReady");
-        return value;
-    }
-
-    inline CefRefPtr<CefProcessMessage> CreateListenerInvokeMessage(const CefString& listenerName,
-                                                                    const CefString& argument) {
-        return CefUtils::MakeListMessage(ListenerInvokeName(), listenerName, argument);
-    }
-
-    inline CefRefPtr<CefProcessMessage> CreateConsoleMessage(const CefString& level, const CefString& text) {
-        return CefUtils::MakeListMessage(ConsoleMessageName(), level, text);
-    }
-
-    inline CefRefPtr<CefProcessMessage> CreateDomReadyMessage() { return CefUtils::MakeListMessage(DomReadyName()); }
-
     struct InvokeResultMessage {
         CefString Result;
         std::uint64_t RequestId = 0;
         bool Success = false;
+
+        static const CefString& GetMessageName() {
+            static const CefString value("prisma.invokeResult");
+            return value;
+        }
     };
 
-    inline CefRefPtr<CefProcessMessage> ConvertToProcessMessage(const InvokeResultMessage& message) {
-        return CefUtils::MakeListMessage(InvokeResultName(), message.RequestId, message.Success, message.Result);
+    inline void SerializeToList(const InvokeResultMessage& message, const CefRefPtr<CefListValue>& list) {
+        CefUtils::SerializeToCefList(list, message.RequestId, message.Success, message.Result);
     }
 
-    inline ParseResult<InvokeResultMessage> ParseProcessMessage(const CefRefPtr<CefProcessMessage>& message) {
-        auto parsedResult = CefUtils::ParseListMessage<std::uint64_t, bool, CefString>(message);
+    inline void DeserializeFromList(const CefRefPtr<CefListValue>& list,
+                                    CefUtils::DeserializeResult<InvokeResultMessage>& deserializeResult) {
+        Messaging::DeserializeHelper<std::uint64_t, bool, CefString>(list, deserializeResult,
+                                                                     [](auto& deserializeResult, auto&& result) {
+                                                                         deserializeResult = InvokeResultMessage{
+                                                                             .Result = std::move(std::get<2>(result)),
+                                                                             .RequestId = std::get<0>(result),
+                                                                             .Success = std::get<1>(result),
+                                                                         };
+                                                                     });
     }
 
     struct ListenerInvokeMessage {
         CefString ListenerName;
         CefString Argument;
+
+        static const CefString& GetMessageName() {
+            static const CefString value("prisma.listenerInvoke");
+            return value;
+        }
     };
+
+    inline void SerializeToList(const ListenerInvokeMessage& message, const CefRefPtr<CefListValue>& list) {
+        CefUtils::SerializeToCefList(list, message.ListenerName, message.Argument);
+    }
+
+    inline void DeserializeFromList(const CefRefPtr<CefListValue>& list,
+                                    CefUtils::DeserializeResult<ListenerInvokeMessage>& deserializeResult) {
+        Messaging::DeserializeHelper<CefString, CefString>(list, deserializeResult,
+                                                           [](auto& deserializeResult, auto&& result) {
+                                                               deserializeResult = ListenerInvokeMessage{
+                                                                   .ListenerName = std::get<0>(result),
+                                                                   .Argument = std::get<1>(result),
+                                                               };
+                                                           });
+    }
 
     struct ConsoleMessage {
         CefString Level;
         CefString Text;
+
+        static const CefString& GetMessageName() {
+            static const CefString value("prisma.consoleMessage");
+            return value;
+        }
     };
 
-    struct DomReadyMessage {};
+    inline void SerializeToList(const ConsoleMessage& message, const CefRefPtr<CefListValue>& list) {
+        CefUtils::SerializeToCefList(list, message.Level, message.Text);
+    }
+
+    inline void DeserializeFromList(const CefRefPtr<CefListValue>& list,
+                                    CefUtils::DeserializeResult<ConsoleMessage>& deserializeResult) {
+        Messaging::DeserializeHelper<CefString, CefString>(list, deserializeResult,
+                                                           [](auto& deserializeResult, auto&& result) {
+                                                               deserializeResult = ConsoleMessage{
+                                                                   .Level = std::get<0>(result),
+                                                                   .Text = std::get<1>(result),
+                                                               };
+                                                           });
+    }
+
+    struct DomReadyMessage {
+        static const CefString& GetMessageName() {
+            static const CefString value("prisma.domReady");
+            return value;
+        }
+    };
+
+    inline void SerializeToList(const DomReadyMessage&, const CefRefPtr<CefListValue>&) {}
+
+    inline void DeserializeFromList(const CefRefPtr<CefListValue>&,
+                                    CefUtils::DeserializeResult<DomReadyMessage>& deserializeResult) {
+        deserializeResult = DomReadyMessage{};
+    }
 
     using RendererToBrowserMessage =
         std::variant<InvokeResultMessage, ListenerInvokeMessage, ConsoleMessage, DomReadyMessage>;
-
-    inline std::optional<RendererToBrowserMessage> ParseRendererToBrowserMessage(
-        const CefRefPtr<CefProcessMessage>& message) {
-        const CefString name = message->GetName();
-        CefRefPtr<CefListValue> args = message->GetArgumentList();
-        if (!args) {
-            LOG(ERROR) << "ParseRendererToBrowserMessage: " << name << " args pointer is null";
-            return std::nullopt;
-        }
-
-        auto validateArgs = [](const CefRefPtr<CefListValue>& args, const CefString& name, int requiredCount) {
-            if (args->GetSize() < requiredCount) {
-                LOG(ERROR) << "ParseRendererToBrowserMessage: " << name << " missing args";
-                return false;
-            }
-
-            return true;
-        };
-
-        if (name == InvokeResultName()) {
-            if (!validateArgs(args, name, 3)) {
-                return std::nullopt;
-            }
-
-            return InvokeResultMessage{
-                .Result = args->GetString(2),
-                .RequestId = *CefUtils::GetValueFromCefList<std::uint64_t>(args, 0),
-                .Success = *CefUtils::GetValueFromCefList<bool>(args, 1),
-            };
-        }
-        if (name == ListenerInvokeName()) {
-            if (!validateArgs(args, name, 2)) {
-                return std::nullopt;
-            }
-
-            return ListenerInvokeMessage{
-                .ListenerName = args->GetString(0),
-                .Argument = args->GetString(1),
-            };
-        }
-        if (name == ConsoleMessageName()) {
-            if (!validateArgs(args, name, 2)) {
-                return std::nullopt;
-            }
-
-            return ConsoleMessage{
-                .Level = args->GetString(0),
-                .Text = args->GetString(1),
-            };
-        }
-        if (name == DomReadyName()) {
-            return DomReadyMessage{};
-        }
-
-        LOG(ERROR) << "ParseRendererToBrowserMessage: " << name << " message name not found";
-        return std::nullopt;
-    }
 }

@@ -5,10 +5,13 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <optional>
 #include <source_location>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 #include "include/cef_process_message.h"
 #include "include/cef_v8.h"
@@ -69,9 +72,11 @@ namespace PrismaUI::Cef::CefUtils {
     }
 
     template <class... Args>
-    CefRefPtr<CefProcessMessage> MakeListMessage(const CefString& messageName, const Args&... args) {
-        CefRefPtr<CefProcessMessage> msg = CefProcessMessage::Create(messageName);
-        CefRefPtr<CefListValue> list = msg->GetArgumentList();
+    void SerializeToCefList(const CefRefPtr<CefListValue>& list, const Args&... args) {
+        if (!list) {
+            return;
+        }
+
         list->SetSize(sizeof...(Args));
         size_t i = 0;
         (
@@ -95,6 +100,12 @@ namespace PrismaUI::Cef::CefUtils {
                 }
             }(),
             ...);
+    }
+
+    template <class... Args>
+    CefRefPtr<CefProcessMessage> MakeListMessage(const CefString& messageName, const Args&... args) {
+        CefRefPtr<CefProcessMessage> msg = CefProcessMessage::Create(messageName);
+        SerializeToCefList(msg->GetArgumentList(), args...);
 
         return msg;
     }
@@ -118,13 +129,17 @@ namespace PrismaUI::Cef::CefUtils {
 
             return list->GetBool(index);
         } else if constexpr (std::is_integral_v<T>) {
-            if (list->GetType(index) != VTYPE_INT) {
-                return std::nullopt;
-            }
-
             if constexpr (sizeof(T) <= sizeof(int)) {
+                if (list->GetType(index) != VTYPE_INT) {
+                    return std::nullopt;
+                }
+
                 return static_cast<T>(list->GetInt(index));
             } else {
+                if (list->GetType(index) != VTYPE_DOUBLE) {
+                    return std::nullopt;
+                }
+
                 return static_cast<T>(list->GetDouble(index));
             }
         } else if constexpr (std::is_floating_point_v<T>) {
@@ -147,19 +162,21 @@ namespace PrismaUI::Cef::CefUtils {
         int Index;
     };
 
-    using ParseError = std::variant<InvalidArgCount, InvalidArg>;
+    using DeserializeError = std::variant<InvalidArgCount, InvalidArg>;
 
     template <class T>
-    using ParseResult = std::variant<T, ParseError>;
+    using DeserializeResult = std::variant<T, DeserializeError>;
 
     template <class... Args>
-    ParseResult<std::tuple<Args...>> ParseCefList(const CefRefPtr<CefListValue>& list) {
+    DeserializeResult<std::tuple<Args...>> DeserializeCefList(const CefRefPtr<CefListValue>& list) {
         if (!list || list->GetSize() < sizeof...(Args)) {
+            LOG(WARNING) << "DeserializeCefList: list is null or has less args than expected. Expected: "
+                         << sizeof...(Args) << ", got: " << (list ? std::to_string(list->GetSize()) : "null");
             return InvalidArgCount{sizeof...(Args)};
         }
 
         std::tuple<Args...> result;
-        std::optional<ParseError> error;
+        std::optional<DeserializeError> error;
 
         [&]<std::size_t... I>(std::index_sequence<I...>) {
             (
@@ -172,6 +189,7 @@ namespace PrismaUI::Cef::CefUtils {
 
                     auto value = GetValueFromCefList<T>(list, I);
                     if (!value.has_value()) {
+                        LOG(WARNING) << "DeserializeCefList: error deserializing list at index: " << I;
                         error.emplace(InvalidArg{static_cast<int>(I)});
                         return;
                     }
@@ -181,6 +199,6 @@ namespace PrismaUI::Cef::CefUtils {
                 ...);
         }(std::index_sequence_for<Args...>{});
 
-        return error.has_value() ? *error : result;
+        return !error.has_value() ? DeserializeResult<std::tuple<Args...>>(std::move(result)) : error.value();
     }
 }

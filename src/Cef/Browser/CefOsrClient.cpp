@@ -370,13 +370,17 @@ namespace PrismaUI::Cef {
             return false;
         }
 
-        std::optional<Messages::RendererToBrowserMessage> parsedMessage =
-            Messages::ParseRendererToBrowserMessage(message);
-        if (!parsedMessage) {
-            return false;
-        }
-
-        return CefRuntime::GetSingleton().OnRendererMessage(frame->GetName(), *parsedMessage);
+        auto deserializeResult =
+            Messaging::DeserializeProcessMessageVariant<Messages::RendererToBrowserMessage>(message);
+        return Match(
+            deserializeResult,
+            [&](const Messages::RendererToBrowserMessage& result) {
+                return CefRuntime::GetSingleton().OnRendererMessage(frame->GetName(), result);
+            },
+            [](const Messaging::DeserializeMessageError e) {
+                LOG(WARNING) << "CEF OnProcessMessageReceived failed to deserialize message";
+                return false;
+            });
     }
 
     void CefOsrClient::SignalCloseComplete() {

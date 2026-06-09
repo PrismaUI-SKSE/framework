@@ -9,6 +9,7 @@
 
 #include "Cef/Shared/BrowserToRendererMessages.h"
 #include "Cef/Shared/CefUtils.h"
+#include "Cef/Shared/Messaging.h"
 #include "Cef/Shared/ProcessMessageNames.h"
 #include "Cef/Shared/RendererToBrowserMessages.h"
 #include "Cef/Shared/ViewUtils.h"
@@ -290,8 +291,12 @@ namespace PrismaUI::Cef {
                         LOG(WARNING) << "PrismaCefRenderApp: Invoke exception: " << exception->GetMessage();
                     }
 
-                    frame->SendProcessMessage(PID_BROWSER,
-                                              Messages::CreateInvokeResultMessage(m.RequestId, success, resultStr));
+                    Messaging::SendProcessMessageToFrame(frame, PID_BROWSER,
+                                                         Messages::InvokeResultMessage{
+                                                             .Result = std::move(resultStr),
+                                                             .RequestId = m.RequestId,
+                                                             .Success = success,
+                                                         });
                 },
                 [&context](const Messages::InteropCallMessage& m) {
                     CefRefPtr<CefV8Value> global = context->GetGlobal();

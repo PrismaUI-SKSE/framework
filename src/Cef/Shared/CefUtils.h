@@ -68,7 +68,6 @@ namespace PrismaUI::Cef::CefUtils {
         }
     }
 
-    // Build a process message with the given (name, [string args]) shape.
     template <class... Args>
     CefRefPtr<CefProcessMessage> MakeListMessage(const CefString& messageName, const Args&... args) {
         CefRefPtr<CefProcessMessage> msg = CefProcessMessage::Create(messageName);
@@ -101,22 +100,87 @@ namespace PrismaUI::Cef::CefUtils {
     }
 
     template <class T>
-    T GetValueFromCefList(const CefRefPtr<CefListValue>& list, size_t index) {
+    std::optional<T> GetValueFromCefList(const CefRefPtr<CefListValue>& list, size_t index) {
+        if (!list || list->GetSize() <= index) {
+            return std::nullopt;
+        }
+
         if constexpr (std::is_convertible_v<CefString, T>) {
+            if (list->GetType(index) != VTYPE_STRING) {
+                return std::nullopt;
+            }
+
             return list->GetString(index);
         } else if constexpr (std::is_same_v<T, bool>) {
+            if (list->GetType(index) != VTYPE_BOOL) {
+                return std::nullopt;
+            }
+
             return list->GetBool(index);
         } else if constexpr (std::is_integral_v<T>) {
+            if (list->GetType(index) != VTYPE_INT) {
+                return std::nullopt;
+            }
+
             if constexpr (sizeof(T) <= sizeof(int)) {
                 return static_cast<T>(list->GetInt(index));
             } else {
                 return static_cast<T>(list->GetDouble(index));
             }
         } else if constexpr (std::is_floating_point_v<T>) {
+            if (list->GetType(index) != VTYPE_DOUBLE) {
+                return std::nullopt;
+            }
+
             return static_cast<T>(list->GetDouble(index));
         } else {
             static_assert(!sizeof(T), "Unsupported type");
             return T{};
         }
+    }
+
+    struct InvalidArgCount {
+        int Expected;
+    };
+
+    struct InvalidArg {
+        int Index;
+    };
+
+    using ParseError = std::variant<InvalidArgCount, InvalidArg>;
+
+    template <class T>
+    using ParseResult = std::variant<T, ParseError>;
+
+    template <class... Args>
+    ParseResult<std::tuple<Args...>> ParseCefList(const CefRefPtr<CefListValue>& list) {
+        if (!list || list->GetSize() < sizeof...(Args)) {
+            return InvalidArgCount{sizeof...(Args)};
+        }
+
+        std::tuple<Args...> result;
+        std::optional<ParseError> error;
+
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            (
+                [&] {
+                    using T = std::tuple_element_t<I, std::tuple<Args...>>;
+
+                    if (error.has_value()) {
+                        return;
+                    }
+
+                    auto value = GetValueFromCefList<T>(list, I);
+                    if (!value.has_value()) {
+                        error.emplace(InvalidArg{static_cast<int>(I)});
+                        return;
+                    }
+
+                    std::get<I>(result) = std::move(*value);
+                }(),
+                ...);
+        }(std::index_sequence_for<Args...>{});
+
+        return error.has_value() ? *error : result;
     }
 }

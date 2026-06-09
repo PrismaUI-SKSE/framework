@@ -34,11 +34,6 @@ namespace PrismaUI::Cef::Messages {
         return value;
     }
 
-    inline CefRefPtr<CefProcessMessage> CreateInvokeResultMessage(std::uint64_t requestId, bool success,
-                                                                  const CefString& result) {
-        return CefUtils::MakeListMessage(InvokeResultName(), requestId, success, result);
-    }
-
     inline CefRefPtr<CefProcessMessage> CreateListenerInvokeMessage(const CefString& listenerName,
                                                                     const CefString& argument) {
         return CefUtils::MakeListMessage(ListenerInvokeName(), listenerName, argument);
@@ -55,6 +50,14 @@ namespace PrismaUI::Cef::Messages {
         std::uint64_t RequestId = 0;
         bool Success = false;
     };
+
+    inline CefRefPtr<CefProcessMessage> ConvertToProcessMessage(const InvokeResultMessage& message) {
+        return CefUtils::MakeListMessage(InvokeResultName(), message.RequestId, message.Success, message.Result);
+    }
+
+    inline ParseResult<InvokeResultMessage> ParseProcessMessage(const CefRefPtr<CefProcessMessage>& message) {
+        auto parsedResult = CefUtils::ParseListMessage<std::uint64_t, bool, CefString>(message);
+    }
 
     struct ListenerInvokeMessage {
         CefString ListenerName;
@@ -96,8 +99,8 @@ namespace PrismaUI::Cef::Messages {
 
             return InvokeResultMessage{
                 .Result = args->GetString(2),
-                .RequestId = CefUtils::GetValueFromCefList<std::uint64_t>(args, 0),
-                .Success = CefUtils::GetValueFromCefList<bool>(args, 1),
+                .RequestId = *CefUtils::GetValueFromCefList<std::uint64_t>(args, 0),
+                .Success = *CefUtils::GetValueFromCefList<bool>(args, 1),
             };
         }
         if (name == ListenerInvokeName()) {

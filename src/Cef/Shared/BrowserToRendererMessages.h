@@ -112,7 +112,7 @@ namespace PrismaUI::Cef::Messages {
             }
 
             return InvokeRequestMessage{
-                .RequestId = CefUtils::GetValueFromCefList<std::uint64_t>(args, 0),
+                .RequestId = *CefUtils::GetValueFromCefList<std::uint64_t>(args, 0),
                 .Script = args->GetString(1),
             };
         }

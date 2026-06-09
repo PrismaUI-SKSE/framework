@@ -40,16 +40,16 @@ $excludedRoots = $excludedDirectories | ForEach-Object {
 }
 
 $sourceFiles = @(Get-ChildItem -Path $repoRoot -Recurse -File -Include *.h, *.cpp | Where-Object {
-    $fullName = [System.IO.Path]::GetFullPath($_.FullName)
-    foreach ($excludedRoot in $excludedRoots) {
-        if ($fullName.StartsWith($excludedRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase) -or
-            $fullName.StartsWith($excludedRoot + [System.IO.Path]::AltDirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
-            return $false
+        $fullName = [System.IO.Path]::GetFullPath($_.FullName)
+        foreach ($excludedRoot in $excludedRoots) {
+            if ($fullName.StartsWith($excludedRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase) -or
+                $fullName.StartsWith($excludedRoot + [System.IO.Path]::AltDirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+                return $false
+            }
         }
-    }
 
-    return $true
-} | Sort-Object FullName)
+        return $true
+    } | Sort-Object FullName)
 
 if ($sourceFiles.Count -eq 0) {
     Write-Host "No .h or .cpp files found."
@@ -62,18 +62,18 @@ $failed = $false
 foreach ($sourceFile in $sourceFiles) {
     $relativePath = Get-RelativePath -BasePath $repoRoot -Path $sourceFile.FullName
 
+    Write-Host $relativePath
+    & $clangFormatCommand.Source --style=file -i $sourceFile.FullName
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "clang-format failed for $relativePath"
+        exit 1
+    }
+
     if ($Check) {
         & $clangFormatCommand.Source --style=file --dry-run --Werror $sourceFile.FullName
         if ($LASTEXITCODE -ne 0) {
             Write-Host "Needs formatting: $relativePath"
             $failed = $true
-        }
-    } else {
-        Write-Host $relativePath
-        & $clangFormatCommand.Source --style=file -i $sourceFile.FullName
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "clang-format failed for $relativePath"
-            exit 1
         }
     }
 }

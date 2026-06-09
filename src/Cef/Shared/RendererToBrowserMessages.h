@@ -15,7 +15,7 @@
 // (PrismaUICefSubprocess.exe) to the browser process (PrismaUI.dll). These
 // strings MUST NOT change without updating both sides.
 
-namespace PrismaUI::Cef::Messages {
+namespace PrismaUI::Cef::RTBMessages {
     struct InvokeResultMessage {
         CefString Result;
         std::uint64_t RequestId = 0;

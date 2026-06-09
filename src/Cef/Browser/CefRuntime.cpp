@@ -1293,7 +1293,7 @@ namespace PrismaUI::Cef {
             }
             logger::debug("InvokeScript: dispatching request {} to view [{}].", requestId, viewId);
             Messaging::SendProcessMessageToFrame(
-                frame, PID_RENDERER, Messages::InvokeRequestMessage{.RequestId = requestId, .Script = scriptCopy});
+                frame, PID_RENDERER, BTRMessages::InvokeRequestMessage{.RequestId = requestId, .Script = scriptCopy});
         });
     }
 
@@ -1317,7 +1317,7 @@ namespace PrismaUI::Cef {
             }
 
             Messaging::SendProcessMessageToFrame(frame, PID_RENDERER,
-                                                 Messages::InteropCallMessage{.FunctionName = fn, .Argument = arg});
+                                                 BTRMessages::InteropCallMessage{.FunctionName = fn, .Argument = arg});
         });
     }
 
@@ -1354,7 +1354,7 @@ namespace PrismaUI::Cef {
             }
             logger::info("RegisterListener: installing '{}' for view [{}].", nameCopy, viewId);
             Messaging::SendProcessMessageToFrame(frame, PID_RENDERER,
-                                                 Messages::InstallListenerMessage{.ListenerName = nameCopy});
+                                                 BTRMessages::InstallListenerMessage{.ListenerName = nameCopy});
         });
     }
 
@@ -1380,7 +1380,7 @@ namespace PrismaUI::Cef {
         }
     }
 
-    bool CefRuntime::OnRendererMessage(const CefString& frameName, const Messages::RendererToBrowserMessage& message) {
+    bool CefRuntime::OnRendererMessage(const CefString& frameName, const RTBMessages::RendererToBrowserMessage& message) {
         std::uint64_t frameViewId = 0;
         const bool hasFrameViewId = ViewUtils::TryParseViewIdFromFrameName(frameName, frameViewId);
 
@@ -1396,7 +1396,7 @@ namespace PrismaUI::Cef {
 
         Match(
             message,
-            [this](const Messages::InvokeResultMessage& m) {
+            [this](const RTBMessages::InvokeResultMessage& m) {
                 Impl::InvokeEntry entry;
                 {
                     std::lock_guard lock(impl_->invokeMutex);
@@ -1410,18 +1410,18 @@ namespace PrismaUI::Cef {
                     entry.callback(m.Success ? m.Result.ToString() : std::string());
                 }
             },
-            [&requireFrameView, frameViewId](const Messages::ListenerInvokeMessage& m) {
+            [&requireFrameView, frameViewId](const RTBMessages::ListenerInvokeMessage& m) {
                 if (requireFrameView("listenerInvoke")) {
                     Communication::DispatchListenerInvoke(frameViewId, m.ListenerName.ToString(),
                                                           m.Argument.ToString());
                 }
             },
-            [&requireFrameView, frameViewId](const Messages::ConsoleMessage& m) {
+            [&requireFrameView, frameViewId](const RTBMessages::ConsoleMessage& m) {
                 if (requireFrameView("consoleMessage")) {
                     Communication::DispatchConsoleMessage(frameViewId, m.Level.ToString(), m.Text.ToString());
                 }
             },
-            [&requireFrameView, frameViewId](const Messages::DomReadyMessage&) {
+            [&requireFrameView, frameViewId](const RTBMessages::DomReadyMessage&) {
                 if (requireFrameView("domReady")) {
                     Communication::DispatchDomReady(frameViewId);
                 }

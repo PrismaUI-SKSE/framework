@@ -127,7 +127,7 @@ namespace PrismaUI::Cef {
         // Routes a process message received from a renderer subprocess to the
         // matching listener / Invoke / console / DOM-ready dispatcher. Returns true
         // if the message was recognised.
-        bool OnRendererMessage(const CefString& frameName, const Messages::RendererToBrowserMessage& message);
+        bool OnRendererMessage(const CefString& frameName, const RTBMessages::RendererToBrowserMessage& message);
 
     private:
         CefRuntime();

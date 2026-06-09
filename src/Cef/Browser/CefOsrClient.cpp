@@ -371,10 +371,10 @@ namespace PrismaUI::Cef {
         }
 
         auto deserializeResult =
-            Messaging::DeserializeProcessMessageVariant<Messages::RendererToBrowserMessage>(message);
+            Messaging::DeserializeProcessMessageVariant<RTBMessages::RendererToBrowserMessage>(message);
         return Match(
             deserializeResult,
-            [&](const Messages::RendererToBrowserMessage& result) {
+            [&](const RTBMessages::RendererToBrowserMessage& result) {
                 return CefRuntime::GetSingleton().OnRendererMessage(frame->GetName(), result);
             },
             [](const Messaging::DeserializeMessageError e) {

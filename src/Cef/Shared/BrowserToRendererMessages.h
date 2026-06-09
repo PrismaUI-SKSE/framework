@@ -12,7 +12,7 @@
 // to the CEF renderer subprocess (PrismaUICefSubprocess.exe). These strings
 // MUST NOT change without updating both sides.
 
-namespace PrismaUI::Cef::Messages {
+namespace PrismaUI::Cef::BTRMessages {
     struct InstallListenerMessage {
         CefString ListenerName;
 

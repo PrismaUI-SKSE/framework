@@ -72,9 +72,9 @@ namespace PrismaUI::Cef {
                 const CefString listenerName = V8ToCefString(arguments[0]);
                 const CefString arg = arguments.size() >= 2 ? V8ToCefString(arguments[1]) : CefString();
                 Messaging::SendProcessMessageToFrame(frame, PID_BROWSER,
-                                                     Messages::ListenerInvokeMessage{listenerName, arg});
+                                                     RTBMessages::ListenerInvokeMessage{listenerName, arg});
             } else if (name == FireDomReadyName()) {
-                Messaging::SendProcessMessageToFrame(frame, PID_BROWSER, Messages::DomReadyMessage{});
+                Messaging::SendProcessMessageToFrame(frame, PID_BROWSER, RTBMessages::DomReadyMessage{});
             } else if (name == FireConsoleName()) {
                 if (arguments.size() < 2) {
                     retval = CefV8Value::CreateUndefined();
@@ -82,7 +82,7 @@ namespace PrismaUI::Cef {
                 }
                 const CefString level = V8ToCefString(arguments[0]);
                 const CefString text = V8ToCefString(arguments[1]);
-                Messaging::SendProcessMessageToFrame(frame, PID_BROWSER, Messages::ConsoleMessage{level, text});
+                Messaging::SendProcessMessageToFrame(frame, PID_BROWSER, RTBMessages::ConsoleMessage{level, text});
             } else {
                 LOG(WARNING) << "PrismaCefRenderApp: unknown __prismaNative call '" << name.ToString() << "'";
             }
@@ -213,15 +213,15 @@ namespace PrismaUI::Cef {
 
         const CefString frameName = frame->GetName();
         auto deserializeResult =
-            Messaging::DeserializeProcessMessageVariant<Messages::BrowserToRendererMessage>(message);
+            Messaging::DeserializeProcessMessageVariant<BTRMessages::BrowserToRendererMessage>(message);
 
         return Match(
             deserializeResult,
-            [&](const Messages::BrowserToRendererMessage& parsedMessage) {
+            [&](const BTRMessages::BrowserToRendererMessage& parsedMessage) {
                 auto frameIt = impl_->frames.find(frameName);
                 auto invalidFrameIt = impl_->frames.end();
 
-                if (auto installListenerMessage = std::get_if<Messages::InstallListenerMessage>(&parsedMessage)) {
+                if (auto installListenerMessage = std::get_if<BTRMessages::InstallListenerMessage>(&parsedMessage)) {
                     if (frameIt == invalidFrameIt) {
                         // Queue for next OnContextCreated.
                         impl_->frames[frameName].pendingListeners.emplace_back(installListenerMessage->ListenerName);
@@ -248,15 +248,15 @@ namespace PrismaUI::Cef {
                 CefRefPtr<CefV8Context> context = frameIt->second.context;
                 CefUtils::EnterContext(context, [&parsedMessage, &frame](const CefRefPtr<CefV8Context>& context) {
                     Match(
-                        parsedMessage, [](const Messages::InstallListenerMessage&) {},
-                        [&context](const Messages::RemoveListenerMessage& m) {
+                        parsedMessage, [](const BTRMessages::InstallListenerMessage&) {},
+                        [&context](const BTRMessages::RemoveListenerMessage& m) {
                             if (CefRefPtr<CefV8Value> global = context->GetGlobal()) {
                                 global->DeleteValue(m.ListenerName);
                             }
 
                             LOG(INFO) << "PrismaCefRenderApp: removed listener '" << m.ListenerName << "'";
                         },
-                        [&context, &frame](const Messages::InvokeRequestMessage& m) {
+                        [&context, &frame](const BTRMessages::InvokeRequestMessage& m) {
                             CefRefPtr<CefV8Value> retval;
                             CefRefPtr<CefV8Exception> exception;
                             bool success = false;
@@ -292,13 +292,13 @@ namespace PrismaUI::Cef {
                             }
 
                             Messaging::SendProcessMessageToFrame(frame, PID_BROWSER,
-                                                                 Messages::InvokeResultMessage{
+                                                                 RTBMessages::InvokeResultMessage{
                                                                      .Result = std::move(resultStr),
                                                                      .RequestId = m.RequestId,
                                                                      .Success = success,
                                                                  });
                         },
-                        [&context](const Messages::InteropCallMessage& m) {
+                        [&context](const BTRMessages::InteropCallMessage& m) {
                             CefRefPtr<CefV8Value> global = context->GetGlobal();
                             CefRefPtr<CefV8Value> fn = global ? global->GetValue(m.FunctionName) : nullptr;
                             CefV8ValueList callArgs;

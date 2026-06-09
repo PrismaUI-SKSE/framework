@@ -102,14 +102,6 @@ namespace PrismaUI::Cef::CefUtils {
             ...);
     }
 
-    template <class... Args>
-    CefRefPtr<CefProcessMessage> MakeListMessage(const CefString& messageName, const Args&... args) {
-        CefRefPtr<CefProcessMessage> msg = CefProcessMessage::Create(messageName);
-        SerializeToCefList(msg->GetArgumentList(), args...);
-
-        return msg;
-    }
-
     template <class T>
     std::optional<T> GetValueFromCefList(const CefRefPtr<CefListValue>& list, size_t index) {
         if (!list || list->GetSize() <= index) {

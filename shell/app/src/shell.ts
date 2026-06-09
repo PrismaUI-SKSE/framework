@@ -72,7 +72,7 @@ export function createPrismaShell(root: HTMLElement): PrismaShellApi {
         frame.id = id;
         frame.name = id;
         frame.dataset.viewId = id;
-        frame.allow = 'clipboard-read; clipboard-write';
+        frame.allow = 'autoplay *; clipboard-read *; clipboard-write *; encrypted-media *; fullscreen *; web-share *';
         frame.setAttribute('allowtransparency', 'true');
         installFrameEvents(frame, id);
         views.set(id, frame);

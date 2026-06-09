@@ -143,6 +143,11 @@ namespace PrismaUI::Cef {
             return;
         }
 
+        std::uint64_t viewId = 0;
+        if (!ViewUtils::TryParseViewIdFromFrameName(frameName.ToString(), viewId)) {
+            return;
+        }
+
         std::vector<CefString> pending;
         {
             auto& state = impl_->frames[frameIdentifier];

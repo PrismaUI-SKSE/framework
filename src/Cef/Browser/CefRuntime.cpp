@@ -916,8 +916,8 @@ namespace PrismaUI::Cef {
                                                const std::string& url) {
         uint64_t viewId = 0;
         if (!ViewUtils::TryParseViewIdFromFrameName(frameName, viewId)) {
-            logger::warn("CEF shell could not correlate iframe load start: frame='{}', id='{}', url='{}'.", frameName,
-                         frameIdentifier, url);
+            logger::debug("CEF shell ignored nested iframe load start: frame='{}', id='{}', url='{}'.", frameName,
+                          frameIdentifier, url);
             return;
         }
 
@@ -938,8 +938,8 @@ namespace PrismaUI::Cef {
                                              const std::string& url, int httpStatusCode) {
         uint64_t viewId = 0;
         if (!ViewUtils::TryParseViewIdFromFrameName(frameName, viewId)) {
-            logger::warn("CEF shell could not correlate iframe load end: frame='{}', id='{}', status {}, url='{}'.",
-                         frameName, frameIdentifier, httpStatusCode, url);
+            logger::debug("CEF shell ignored nested iframe load end: frame='{}', id='{}', status {}, url='{}'.",
+                          frameName, frameIdentifier, httpStatusCode, url);
             return;
         }
 
@@ -963,9 +963,8 @@ namespace PrismaUI::Cef {
                                                const std::string& failedUrl) {
         uint64_t viewId = 0;
         if (!ViewUtils::TryParseViewIdFromFrameName(frameName, viewId)) {
-            logger::warn(
-                "CEF shell could not correlate iframe load error: frame='{}', id='{}', code={}, failedUrl='{}'.",
-                frameName, frameIdentifier, errorCode, failedUrl);
+            logger::debug("CEF shell ignored nested iframe load error: frame='{}', id='{}', code={}, failedUrl='{}'.",
+                          frameName, frameIdentifier, errorCode, failedUrl);
             return;
         }
 

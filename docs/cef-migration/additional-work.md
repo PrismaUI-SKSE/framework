@@ -1,3 +1,2 @@
 - Create C++ shell API
 - CEF shutdown???
-- Remove duplicated code when handle messages

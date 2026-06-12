@@ -17,7 +17,7 @@
 #include "include/wrapper/cef_helpers.h"
 
 namespace {
-    constexpr int kCefWindowlessFrameRate = 120;
+    constexpr int kCefWindowlessFrameRate = 240;
 
 }
 

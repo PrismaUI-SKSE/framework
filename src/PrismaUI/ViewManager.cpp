@@ -91,7 +91,7 @@ namespace PrismaUI::ViewManager {
             Core::InitializeCoreSystem();
         }
 
-        const Core::PrismaViewId newViewId = generator.generate();
+        const Core::PrismaViewId newViewId = nextViewId.fetch_add(1, std::memory_order_relaxed);
 
         // Mirror CefRuntime's URL resolution shape for logging consistency; the runtime
         // re-resolves the same way when CreateShellView is dispatched.

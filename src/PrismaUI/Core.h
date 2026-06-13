@@ -18,7 +18,6 @@
 
 #include "Hooks/Hooks.h"
 #include "Menus/FocusMenu/FocusMenu.h"
-#include "Utils/NanoID.h"
 
 namespace PRISMA_UI_API {
     enum class ConsoleMessageLevel : uint8_t;
@@ -56,7 +55,7 @@ namespace PrismaUI::Core {
         ~PrismaView();
     };
 
-    extern NanoIdGenerator generator;
+    extern std::atomic_uint64_t nextViewId;
     extern std::atomic<bool> coreInitialized;
     extern ID3D11Device* d3dDevice;
     extern ID3D11DeviceContext* d3dContext;

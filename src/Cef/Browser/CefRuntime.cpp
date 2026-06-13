@@ -1380,7 +1380,8 @@ namespace PrismaUI::Cef {
         }
     }
 
-    bool CefRuntime::OnRendererMessage(const CefString& frameName, const RTBMessages::RendererToBrowserMessage& message) {
+    bool CefRuntime::OnRendererMessage(const CefString& frameName,
+                                       const RTBMessages::RendererToBrowserMessage& message) {
         std::uint64_t frameViewId = 0;
         const bool hasFrameViewId = ViewUtils::TryParseViewIdFromFrameName(frameName, frameViewId);
 

@@ -17,7 +17,7 @@ namespace PrismaUI::Core {
     using namespace PrismaUI::ViewManager;
     using namespace PrismaUI::InputHandler;
 
-    NanoIdGenerator generator;
+    std::atomic_uint64_t nextViewId = {1};
     std::atomic<bool> coreInitialized = false;
     ID3D11Device* d3dDevice = nullptr;
     ID3D11DeviceContext* d3dContext = nullptr;

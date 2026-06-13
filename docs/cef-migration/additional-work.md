@@ -1,2 +1,4 @@
 - Create C++ shell API
 - CEF shutdown???
+- Refactor PrismaUI initialization
+- Unify cursor and views render

@@ -51,8 +51,6 @@ namespace PrismaUI::Core {
         std::queue<std::function<void()>> pendingOperations;
         std::atomic<bool> isProcessingOperation = false;
         std::atomic<int> queuedOperationsCount = 0;
-
-        ~PrismaView();
     };
 
     extern std::atomic_uint64_t nextViewId;

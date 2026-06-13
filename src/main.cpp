@@ -3,12 +3,12 @@
 #include "API/API.h"
 #include "Menus/CursorMenu/CursorMenu.h"
 #include "PrismaUI_API.h"
-#include "Utils/DllLoader.h"
+#include "PrismaUI/Bootstrapper.h"
 
 static void SKSEMessageHandler(SKSE::MessagingInterface::Message* message) {
     switch (message->type) {
         case SKSE::MessagingInterface::kDataLoaded:
-            CursorMenuEx::InstallHook();
+            PrismaUI::Bootstrapper::Initialize();
             break;
     }
 }

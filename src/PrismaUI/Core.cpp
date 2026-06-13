@@ -37,8 +37,6 @@ namespace PrismaUI::Core {
 
     inline REL::Relocation<Hooks::D3DPresentHook::D3DPresentFunc> RealD3dPresentFunc;
 
-    PrismaView::~PrismaView() = default;
-
     void InitializeCoreSystem() {
         logger::info("Initializing PrismaUI Core System...");
         InitHooks();
@@ -127,11 +125,6 @@ namespace PrismaUI::Core {
                                   static_cast<unsigned int>(hr));
                     cursorTexture.Reset();
                 }
-            }
-
-            if (hWnd && d3dDevice && d3dContext && screenSize.width != 0 && screenSize.height != 0) {
-                Cef::CefRuntime::GetSingleton().Initialize(hWnd, d3dDevice, d3dContext, screenSize.width,
-                                                           screenSize.height);
             }
         } else {
             logger::error("Cannot initialize DirectXTK: D3D device or context is null.");

@@ -263,12 +263,16 @@ namespace PrismaUI::Cef {
         return instance;
     }
 
-    bool CefRuntime::Initialize(HWND hwnd, ID3D11Device* device, ID3D11DeviceContext* context, uint32_t width,
-                                uint32_t height) {
+    bool CefRuntime::Initialize(HWND hwnd, uint32_t width, uint32_t height) {
         std::lock_guard lock(impl_->stateMutex);
 
         if (impl_->initialized.load(std::memory_order_acquire)) {
             return true;
+        }
+
+        if (!hwnd || width == 0 || height == 0) {
+            logger::debug("CEF initialization deferred: hwnd={}, size={}x{}", hwnd ? "set" : "null", width, height);
+            return false;
         }
 
         if (impl_->initializeAttempted.exchange(true, std::memory_order_acq_rel)) {
@@ -276,13 +280,7 @@ namespace PrismaUI::Cef {
             return false;
         }
 
-        if (!hwnd || !device || !context || width == 0 || height == 0) {
-            logger::error("CEF initialization skipped: hwnd={}, device={}, context={}, size={}x{}",
-                          hwnd ? "set" : "null", device ? "set" : "null", context ? "set" : "null", width, height);
-            return false;
-        }
-
-        logger::info("Initializing CEF runtime for PrismaUI lifecycle smoke browser.");
+        logger::info("Initializing CEF runtime for PrismaUI shell browser.");
 
         if (!Utils::DllLoader::GetSingleton().LoadCefLibraries()) {
             logger::error("CEF runtime initialization failed while preparing CEF libraries.");
@@ -1190,7 +1188,6 @@ namespace PrismaUI::Cef {
 
             host->SetFocus(true);
 
-            logger::debug("CEF input dispatch sending {} event(s) to View [{}].", events.size(), viewId);
             for (const auto& event : events) {
                 std::visit(
                     [host, viewId](const auto& value) {

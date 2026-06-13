@@ -27,6 +27,29 @@
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
         }
 
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 14px;
+        }
+
+        button {
+            padding: 8px 10px;
+            border: 1px solid rgba(128, 200, 255, 0.75);
+            border-radius: 4px;
+            background: rgba(24, 44, 72, 0.92);
+            color: #f5f5f5;
+            cursor: pointer;
+            font: inherit;
+        }
+
+        button:hover,
+        button:focus {
+            background: rgba(42, 76, 122, 0.96);
+            outline: none;
+        }
+
         h1 {
             margin: 0 0 8px;
             font-size: 22px;
@@ -46,6 +69,12 @@
         <h1>PrismaUI API Test</h1>
         <p>Status: <code id="status">loading</code></p>
         <p>Native callbacks and console events are written to <code>PrismaUITest.log</code>.</p>
+        <div class="controls" aria-label="Echo view controls">
+            <button type="button" data-command="focus:1">Focus echo view 1</button>
+            <button type="button" data-command="focus:2">Focus echo view 2</button>
+            <button type="button" data-command="visibility:1">Toggle echo view 1</button>
+            <button type="button" data-command="visibility:2">Toggle echo view 2</button>
+        </div>
     </main>
 
     <script>
@@ -65,6 +94,18 @@
                 }
                 return 'interop-result:' + payload;
             };
+
+            document.querySelectorAll('button[data-command]').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    const command = button.getAttribute('data-command');
+                    setStatus('control:' + command);
+                    if (typeof window.prismaApiTestControl === 'function') {
+                        window.prismaApiTestControl(command);
+                    } else {
+                        console.warn('[PrismaUITest] prismaApiTestControl listener is unavailable');
+                    }
+                });
+            });
 
             window.addEventListener('DOMContentLoaded', function () {
                 setStatus('dom-content-loaded');

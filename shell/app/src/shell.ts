@@ -25,8 +25,14 @@ function setHiddenState(frame: HTMLIFrameElement, id: string, hidden: unknown): 
   frame.dataset.hidden = isHidden ? 'true' : 'false';
   frame.hidden = isHidden;
   frame.style.visibility = isHidden ? 'hidden' : 'visible';
-  frame.style.pointerEvents = isHidden ? 'none' : 'auto';
   console.info(`PrismaUI shell set hidden id=${id} iframe=${frame.name} hidden=${String(isHidden)} url=${frame.src}`);
+}
+
+function syncInputTarget(views: ReadonlyMap<string, HTMLIFrameElement>, focusedId: string | undefined): void {
+  for (const [id, frame] of views) {
+    frame.style.pointerEvents =
+      frame.dataset.hidden === 'true' || (focusedId !== undefined && id !== focusedId) ? 'none' : 'auto';
+  }
 }
 
 function getFrame(views: ReadonlyMap<string, HTMLIFrameElement>, id: PrismaViewId): HTMLIFrameElement | undefined {
@@ -53,7 +59,7 @@ function isCreateViewOptions(value: unknown): value is CreateViewOptions {
 
 export function createPrismaShell(root: HTMLElement): PrismaShellApi {
   const views = new Map<string, HTMLIFrameElement>();
-
+  let focusedId: string | undefined;
   return Object.freeze({
     createView(options: CreateViewOptions): true {
       if (!isCreateViewOptions(options)) {
@@ -84,6 +90,7 @@ export function createPrismaShell(root: HTMLElement): PrismaShellApi {
       frame.style.zIndex = String(order);
       frame.dataset.order = String(order);
       setHiddenState(frame, id, hidden);
+      syncInputTarget(views, focusedId);
       if (frame.getAttribute('src') !== url) {
         frame.setAttribute('src', url);
         root.appendChild(frame);
@@ -102,6 +109,10 @@ export function createPrismaShell(root: HTMLElement): PrismaShellApi {
       const { src: url } = frame;
       frame.remove();
       views.delete(key);
+      if (focusedId === key) {
+        focusedId = undefined;
+        syncInputTarget(views, focusedId);
+      }
       console.info(`PrismaUI shell iframe destroyed id=${key} iframe=${key} url=${url}`);
       return true;
     },
@@ -113,6 +124,10 @@ export function createPrismaShell(root: HTMLElement): PrismaShellApi {
         return false;
       }
       setHiddenState(frame, key, hidden);
+      if (focusedId === key && Boolean(hidden)) {
+        focusedId = undefined;
+      }
+      syncInputTarget(views, focusedId);
       return true;
     },
 
@@ -135,6 +150,8 @@ export function createPrismaShell(root: HTMLElement): PrismaShellApi {
       if (!frame) {
         return false;
       }
+      focusedId = key;
+      syncInputTarget(views, focusedId);
       frame.focus();
       console.info(`PrismaUI shell iframe focused id=${key} iframe=${frame.name} url=${frame.src}`);
       return true;
@@ -148,6 +165,10 @@ export function createPrismaShell(root: HTMLElement): PrismaShellApi {
       }
       if (document.activeElement === frame) {
         frame.blur();
+      }
+      if (focusedId === key) {
+        focusedId = undefined;
+        syncInputTarget(views, focusedId);
       }
       console.info(`PrismaUI shell iframe blurred id=${key} iframe=${frame.name} url=${frame.src}`);
       return true;

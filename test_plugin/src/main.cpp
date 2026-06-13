@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cstddef>
 #include <thread>
 
 #include "PCH.h"
@@ -6,6 +7,7 @@
 
 namespace {
     constexpr const char* kViewPath = "prismaui_api_test.html";
+    constexpr const char* kEchoViewPaths[] = {"prismaui_echo_view_left.html", "prismaui_echo_view_right.html"};
     constexpr std::uint8_t kRawVersionProbeFirst = 0;
     constexpr std::uint8_t kRawVersionProbeLast = 6;
 
@@ -19,11 +21,14 @@ namespace {
     CallbackState g_domInvokeState{"dom-invoke", 0x50554903};
     CallbackState g_listenerState{"listener", 0x50554904};
     CallbackState g_consoleState{"console", 0x50554905};
+    CallbackState g_controlState{"control", 0x50554906};
 
     PRISMA_UI_API::IVPrismaUI1* g_apiV1 = nullptr;
     PRISMA_UI_API::IVPrismaUI2* g_apiV2 = nullptr;
     PRISMA_UI_API::IVPrismaUI3* g_apiV3 = nullptr;
     PrismaView g_testView = 0;
+    PrismaView g_echoViews[2]{};
+    bool g_echoViewsVisible[2]{true, true};
     std::atomic_bool g_startedLifecycleTest = false;
     constexpr const char* kSmokePassMarker = "PRISMAUI_SMOKE_TEST_PASS";
     constexpr unsigned int kSmokeExitWatchdogSeconds = 8;
@@ -204,6 +209,70 @@ namespace {
         }
     }
 
+    [[nodiscard]] PrismaView GetEchoView(const std::string_view command, const std::string_view prefix,
+                                         std::size_t& index) noexcept {
+        if (!command.starts_with(prefix) || command.size() != prefix.size() + 1) {
+            return 0;
+        }
+
+        const char slot = command[prefix.size()];
+        if (slot != '1' && slot != '2') {
+            return 0;
+        }
+
+        index = static_cast<std::size_t>(slot - '1');
+        return g_echoViews[index];
+    }
+
+    void ControlCallback(const char* argument, void* state) {
+        LogState("View control listener", state);
+
+        if (!g_apiV3) {
+            logger::warn("View control skipped: PrismaUI V3 API unavailable");
+            return;
+        }
+
+        const std::string_view command = argument ? std::string_view(argument) : std::string_view();
+        std::size_t index = 0;
+        if (const PrismaView view = GetEchoView(command, "focus:"sv, index); view) {
+            const bool focused = g_apiV3->Focus(view, false, true);
+            logger::info("View control focus echoView{}={} returned {}", index + 1, view, BoolText(focused));
+            return;
+        }
+
+        if (const PrismaView view = GetEchoView(command, "visibility:"sv, index); view) {
+            g_echoViewsVisible[index] = !g_echoViewsVisible[index];
+            if (g_echoViewsVisible[index]) {
+                g_apiV3->Show(view);
+            } else {
+                g_apiV3->Hide(view);
+            }
+
+            logger::info("View control {} echoView{}={}", g_echoViewsVisible[index] ? "show" : "hide", index + 1, view);
+            return;
+        }
+
+        logger::warn("View control ignored unknown command '{}'", argument ? argument : "<null>");
+    }
+
+    void ReturnFocusCallback(const char* argument, void* state) {
+        LogState("Return focus listener", state);
+
+        if (!g_apiV3 || !g_testView) {
+            logger::warn("Return focus skipped: api={}, mainView={}", static_cast<void*>(g_apiV3), g_testView);
+            return;
+        }
+
+        const std::string_view command = argument ? std::string_view(argument) : std::string_view();
+        if (command != "focus:main"sv) {
+            logger::warn("Return focus ignored unknown command '{}'", argument ? argument : "<null>");
+            return;
+        }
+
+        const bool focused = g_apiV3->Focus(g_testView, false, true);
+        logger::info("Return focus mainView={} returned {}", g_testView, BoolText(focused));
+    }
+
     void RunDomReadyScript(const PrismaView view) {
         if (!g_apiV3 || !view) {
             logger::warn("DOM-ready script skipped: api={}, view={}", static_cast<void*>(g_apiV3), view);
@@ -231,6 +300,7 @@ namespace {
         g_domReadySeen.store(true, std::memory_order_release);
         CheckSmokeCompletion();
         RunDomReadyScript(view);
+        g_apiV3->Focus(view);
     }
 
     void InitializeLog() {
@@ -299,6 +369,24 @@ namespace {
         logger::info("Disposable IsValid after Destroy={}", BoolText(g_apiV3->IsValid(view)));
     }
 
+    void CreateEchoViews() {
+        for (std::size_t i = 0; i < 2; ++i) {
+            g_echoViews[i] = g_apiV3->CreateViewV2(kEchoViewPaths[i], nullptr, nullptr);
+            g_echoViewsVisible[i] = g_echoViews[i] != 0;
+            logger::info("CreateViewV2 returned echo view {} for {}", g_echoViews[i], kEchoViewPaths[i]);
+            if (!g_echoViews[i]) {
+                continue;
+            }
+
+            g_apiV3->RegisterConsoleCallbackV2(g_echoViews[i], ConsoleCallback, &g_consoleState);
+            g_apiV3->RegisterJSListenerV2(g_echoViews[i], "prismaApiTestReturnFocus", ReturnFocusCallback,
+                                          &g_controlState);
+            g_apiV3->SetOrder(g_echoViews[i], static_cast<int>(40 + i));
+            logger::info("Echo view {} IsValid={}, order={}", i + 1, BoolText(g_apiV3->IsValid(g_echoViews[i])),
+                         g_apiV3->GetOrder(g_echoViews[i]));
+        }
+    }
+
     void RunViewLifecycleTest() {
         bool expected = false;
         if (!g_startedLifecycleTest.compare_exchange_strong(expected, true)) {
@@ -312,6 +400,7 @@ namespace {
 
         RunNullInputTests();
         RunDisposableViewTest();
+        CreateEchoViews();
 
         g_testView = g_apiV3->CreateViewV2(kViewPath, DomReadyCallback, &g_domReadyState);
         logger::info("CreateViewV2 returned test view {} for {}", g_testView, kViewPath);
@@ -322,7 +411,7 @@ namespace {
 
         g_apiV3->RegisterConsoleCallbackV2(g_testView, ConsoleCallback, &g_consoleState);
         g_apiV3->RegisterJSListenerV2(g_testView, "prismaApiTestEcho", ListenerCallback, &g_listenerState);
-
+        g_apiV3->RegisterJSListenerV2(g_testView, "prismaApiTestControl", ControlCallback, &g_controlState);
         logger::info("IsValid({})={}", g_testView, BoolText(g_apiV3->IsValid(g_testView)));
         logger::info("Initial IsHidden({})={}", g_testView, BoolText(g_apiV3->IsHidden(g_testView)));
         logger::info("Initial HasFocus({})={}", g_testView, BoolText(g_apiV3->HasFocus(g_testView)));

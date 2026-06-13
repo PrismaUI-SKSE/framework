@@ -43,7 +43,7 @@ namespace PrismaUI {
         try {
             _commonStates = std::make_unique<DirectX::CommonStates>(_d3dDevice);
             _spriteBatch = std::make_unique<DirectX::SpriteBatch>(_d3dContext);
-            logger::info("DirectXTK SpriteBatch and CommonStates (re)initialized.");
+            logger::info("DirectXTK SpriteBatch and CommonStates initialized");
         } catch (const std::exception& e) {
             logger::critical("Failed to initialize DirectXTK: {}", e.what());
             _commonStates.reset();

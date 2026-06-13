@@ -15,6 +15,7 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
 - Follow `.clang-format`: Google base style, 4-space indents, no tabs, 120-column limit.
 - After C++ changes, run `.\Format-Code.ps1` when `clang-format` is installed. Use `.\Format-Code.ps1 -Check` to verify formatting without rewriting files.
 - Default to ASCII for new code/docs unless updating text that already uses non-ASCII.
+- Avoid code duplication. If you see a pattern or that you duplicate a code, try to refactor it and extract a code to a class/function..
 
 ## Build And Packaging
 

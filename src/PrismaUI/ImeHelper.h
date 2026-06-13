@@ -48,10 +48,6 @@ namespace PrismaUI {
         // Associate/unassociate IME context with window.
         void SetAssociation(bool enabled);
 
-        // Send current IME composition/candidate state to JS, or clear it.
-        void SendStateToJS(Core::PrismaViewId viewId, HWND hwnd, bool active);
-        void ClearStateInJS(Core::PrismaViewId viewId);
-
         // Returns true if IME is currently associated with the window.
         bool IsAssociated() const { return m_associated.load(); }
 
@@ -69,7 +65,6 @@ namespace PrismaUI {
         static const char* MessageName(UINT uMsg);
 
     private:
-        void DispatchScriptToView(Core::PrismaViewId viewId, const std::string& script);
         bool IsTextInputFocused() const;
 
         HIMC m_context = nullptr;

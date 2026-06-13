@@ -656,13 +656,6 @@ namespace PrismaUI::InputHandler {
             const bool isCaptureActive = g_isAnyInputCaptureActive.load();
             g_isFocusedTextInputActive.store(isTextInputFocused);
             g_imeHelper.SetAssociation(isCaptureActive && isTextInputFocused);
-
-            if (!isTextInputFocused) {
-                logger::debug("IME text focus cleared for View [{}].", viewId);
-                g_imeHelper.ClearStateInJS(viewId);
-            } else {
-                logger::debug("IME text focus active for View [{}].", viewId);
-            }
         });
         RefreshImeFocusTrackingForView(viewId);
 
@@ -719,7 +712,6 @@ namespace PrismaUI::InputHandler {
 
         g_isFocusedTextInputActive.store(false);
         g_imeHelper.SetAssociation(false);
-        g_imeHelper.ClearStateInJS(viewId);
     }
 
     bool IsAnyInputCaptureActive() { return g_isAnyInputCaptureActive.load(); }

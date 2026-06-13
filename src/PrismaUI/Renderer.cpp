@@ -123,12 +123,12 @@ namespace PrismaUI {
             }
         }
 
-        self._cefRuntime->BeginFrame();
-        self._cefRuntime->UpdateOverlayTexture(self._d3dDevice, self._d3dContext);
-
         // Process pending operations and queued input for all views.
         ViewOperationQueue::ProcessAllViewOperations();
         self._inputHandler->ProcessEvents();
+
+        self._cefRuntime->BeginFrame();
+        self._cefRuntime->UpdateOverlayTexture(self._d3dDevice, self._d3dContext);
 
         self.Render();
     }

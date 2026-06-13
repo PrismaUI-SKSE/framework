@@ -2,8 +2,8 @@
 
 #include "API/API.h"
 #include "Menus/CursorMenu/CursorMenu.h"
-#include "PrismaUI_API.h"
 #include "PrismaUI/Bootstrapper.h"
+#include "PrismaUI_API.h"
 
 static void SKSEMessageHandler(SKSE::MessagingInterface::Message* message) {
     switch (message->type) {

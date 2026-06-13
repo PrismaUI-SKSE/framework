@@ -1,10 +1,10 @@
 ﻿#include "Bootstrapper.h"
 
+#include "Cef/Browser/CefRuntime.h"
 #include "Core.h"
 #include "InputHandler.h"
-#include "Renderer.h"
-#include "Cef/Browser/CefRuntime.h"
 #include "Menus/CursorMenu/CursorMenu.h"
+#include "Renderer.h"
 
 namespace PrismaUI::Bootstrapper {
     static std::optional<std::tuple<HWND, RE::BSGraphics::ScreenSize>> TryGetRenderWindow() {
@@ -23,8 +23,7 @@ namespace PrismaUI::Bootstrapper {
         return std::make_tuple(reinterpret_cast<HWND>(runtimeData.renderWindows->hWnd), renderManager->GetScreenSize());
     }
 
-    static bool InitializeImpl()
-    {
+    static bool InitializeImpl() {
         logger::info("Initializing PrismaUI...");
         auto renderWindowOpt = TryGetRenderWindow();
         if (!renderWindowOpt) {
@@ -54,8 +53,7 @@ namespace PrismaUI::Bootstrapper {
         return true;
     }
 
-    bool Initialize()
-    {
+    bool Initialize() {
         auto isInitialized = InitializeImpl();
         if (!isInitialized) {
             Shutdown();
@@ -64,8 +62,7 @@ namespace PrismaUI::Bootstrapper {
         return isInitialized;
     }
 
-    void Shutdown()
-    {
+    void Shutdown() {
         logger::info("Shutdown...");
         Core::Shutdown();
         Renderer::GetSingleton().Shutdown();

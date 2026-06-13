@@ -4,12 +4,12 @@
 #include <SpriteBatch.h>
 #include <WICTextureLoader.h>
 
-#include "InputHandler.h"
-#include "ViewOperationQueue.h"
 #include "Hooks/Hooks.h"
+#include "InputHandler.h"
 #include "Menus/FocusMenu/FocusMenu.h"
 #include "Utils/D3DStateGuard.h"
 #include "Utils/DllLoader.h"
+#include "ViewOperationQueue.h"
 
 namespace PrismaUI {
     Renderer& Renderer::GetSingleton() {
@@ -52,7 +52,8 @@ namespace PrismaUI {
         }
 
         auto cursorPath = Utils::GetBasePath() / "misc" / "cursor.png";
-        HRESULT hr = DirectX::CreateWICTextureFromFile(_d3dDevice, cursorPath.wstring().c_str(), nullptr, &_cursorTexture);
+        HRESULT hr =
+            DirectX::CreateWICTextureFromFile(_d3dDevice, cursorPath.wstring().c_str(), nullptr, &_cursorTexture);
         if (SUCCEEDED(hr)) {
             logger::info("Cursor texture loaded successfully.");
         } else {
@@ -65,7 +66,8 @@ namespace PrismaUI {
         return true;
     }
 
-    static void RenderCefOverlay(const std::unique_ptr<DirectX::SpriteBatch>& spriteBatch, const Cef::CefRuntime& cefRuntime) {
+    static void RenderCefOverlay(const std::unique_ptr<DirectX::SpriteBatch>& spriteBatch,
+                                 const Cef::CefRuntime& cefRuntime) {
         ID3D11ShaderResourceView* overlaySrv = cefRuntime.GetOverlaySrv();
         const uint32_t overlayWidth = cefRuntime.GetOverlayWidth();
         const uint32_t overlayHeight = cefRuntime.GetOverlayHeight();
@@ -75,11 +77,12 @@ namespace PrismaUI {
 
         constexpr Vector2 position(0.0f, 0.0f);
         const RECT sourceRect = {0, 0, static_cast<long>(overlayWidth), static_cast<long>(overlayHeight)};
-        spriteBatch->Draw(overlaySrv, position, &sourceRect, DirectX::Colors::White, 0.f,
-                          Vector2::Zero, 1.0f, DirectX::SpriteEffects_None, 0.f);
+        spriteBatch->Draw(overlaySrv, position, &sourceRect, DirectX::Colors::White, 0.f, Vector2::Zero, 1.0f,
+                          DirectX::SpriteEffects_None, 0.f);
     }
 
-    void RenderCursor(const std::unique_ptr<DirectX::SpriteBatch>& spriteBatch, const Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& cursorTexture) {
+    void RenderCursor(const std::unique_ptr<DirectX::SpriteBatch>& spriteBatch,
+                      const Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& cursorTexture) {
         if (!InputHandler::IsAnyInputCaptureActive()) {
             return;
         }
@@ -112,7 +115,8 @@ namespace PrismaUI {
         if (auto* renderManager = RE::BSGraphics::Renderer::GetSingleton()) {
             const auto currentScreenSize = renderManager->GetScreenSize();
             if (currentScreenSize.width != 0 && currentScreenSize.height != 0 &&
-                (currentScreenSize.width != self._screenSize.width || currentScreenSize.height != self._screenSize.height)) {
+                (currentScreenSize.width != self._screenSize.width ||
+                 currentScreenSize.height != self._screenSize.height)) {
                 self._screenSize = currentScreenSize;
                 Cef::CefRuntime::GetSingleton().Resize(self._screenSize.width, self._screenSize.height);
             }

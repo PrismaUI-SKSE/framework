@@ -12,7 +12,7 @@ namespace PrismaUI::ViewManager {
         // Apply the native side-effects of focusing a Prisma view (control-map disable,
         // FocusMenu open, optional pause, input capture). Caller already holds the target
         // viewData and has cleared focus on any other focused views.
-        void ApplyFocusSideEffects(const Core::PrismaViewId& viewId, const std::shared_ptr<PrismaView>& viewData,
+        void ApplyFocusSideEffects(Core::PrismaViewId viewId, const std::shared_ptr<PrismaView>& viewData,
                                    bool pauseGame, bool disableFocusMenu) {
             PrismaUI::InputHandler::EnableInputCapture(viewId);
 
@@ -42,7 +42,7 @@ namespace PrismaUI::ViewManager {
         // Apply the native side-effects of unfocusing: blur the iframe via CEF, restore
         // controls, optionally close FocusMenu, drop the pause counter. closeFocusMenu==false
         // is used when transferring focus between Prisma views so the focus surface stays open.
-        void ApplyUnfocusSideEffects(const Core::PrismaViewId& viewId, const std::shared_ptr<PrismaView>& viewData,
+        void ApplyUnfocusSideEffects(Core::PrismaViewId viewId, const std::shared_ptr<PrismaView>& viewData,
                                      bool closeFocusMenu) {
             if (viewData->isPaused.load()) {
                 if (auto* ui = RE::UI::GetSingleton()) {
@@ -77,7 +77,7 @@ namespace PrismaUI::ViewManager {
             }
         }
 
-        std::shared_ptr<PrismaView> LookupView(const Core::PrismaViewId& viewId) {
+        std::shared_ptr<PrismaView> LookupView(Core::PrismaViewId viewId) {
             std::shared_lock lock(viewsMutex);
             auto it = views.find(viewId);
             if (it == views.end()) return nullptr;
@@ -151,7 +151,7 @@ namespace PrismaUI::ViewManager {
         return newViewId;
     }
 
-    void Show(const Core::PrismaViewId& viewId) {
+    void Show(Core::PrismaViewId viewId) {
         if (!IsValid(viewId)) {
             logger::warn("Show: View ID [{}] not found.", viewId);
             return;
@@ -174,7 +174,7 @@ namespace PrismaUI::ViewManager {
         });
     }
 
-    void Hide(const Core::PrismaViewId& viewId) {
+    void Hide(Core::PrismaViewId viewId) {
         if (!IsValid(viewId)) {
             logger::warn("Hide: View ID [{}] not found.", viewId);
             return;
@@ -200,7 +200,7 @@ namespace PrismaUI::ViewManager {
         });
     }
 
-    bool IsHidden(const Core::PrismaViewId& viewId) {
+    bool IsHidden(Core::PrismaViewId viewId) {
         std::shared_lock lock(viewsMutex);
         auto it = views.find(viewId);
         if (it != views.end()) {
@@ -210,12 +210,12 @@ namespace PrismaUI::ViewManager {
         return true;
     }
 
-    bool IsValid(const Core::PrismaViewId& viewId) {
+    bool IsValid(Core::PrismaViewId viewId) {
         std::shared_lock lock(viewsMutex);
         return views.find(viewId) != views.end();
     }
 
-    bool Focus(const Core::PrismaViewId& viewId, bool pauseGame, bool disableFocusMenu) {
+    bool Focus(Core::PrismaViewId viewId, bool pauseGame, bool disableFocusMenu) {
         if (!IsValid(viewId)) {
             logger::warn("Focus: View ID [{}] not found.", viewId);
             return false;
@@ -271,7 +271,7 @@ namespace PrismaUI::ViewManager {
         return true;
     }
 
-    void Unfocus(const Core::PrismaViewId& viewId) {
+    void Unfocus(Core::PrismaViewId viewId) {
         if (!IsValid(viewId)) {
             logger::warn("Unfocus: View ID [{}] not found.", viewId);
             return;
@@ -296,7 +296,7 @@ namespace PrismaUI::ViewManager {
         });
     }
 
-    bool HasFocus(const Core::PrismaViewId& viewId) {
+    bool HasFocus(Core::PrismaViewId viewId) {
         std::shared_lock lock(viewsMutex);
         auto it = views.find(viewId);
         if (it == views.end()) {
@@ -306,7 +306,7 @@ namespace PrismaUI::ViewManager {
         return it->second->isFocused.load();
     }
 
-    bool ViewHasInputFocus(const Core::PrismaViewId& viewId) {
+    bool ViewHasInputFocus(Core::PrismaViewId viewId) {
         // Step 6 simplification: native focus state is the source of truth.
         // Step 7 may refine using DOM activeElement signalling from CEF.
         std::shared_lock lock(viewsMutex);
@@ -315,7 +315,7 @@ namespace PrismaUI::ViewManager {
         return it->second->isFocused.load();
     }
 
-    void SetScrollingPixelSize(const Core::PrismaViewId& viewId, int pixelSize) {
+    void SetScrollingPixelSize(Core::PrismaViewId viewId, int pixelSize) {
         std::unique_lock lock(viewsMutex);
         auto it = views.find(viewId);
         if (it == views.end()) {
@@ -332,7 +332,7 @@ namespace PrismaUI::ViewManager {
         }
     }
 
-    int GetScrollingPixelSize(const Core::PrismaViewId& viewId) {
+    int GetScrollingPixelSize(Core::PrismaViewId viewId) {
         std::shared_lock lock(viewsMutex);
         auto it = views.find(viewId);
         if (it != views.end()) {
@@ -342,7 +342,7 @@ namespace PrismaUI::ViewManager {
         return 28;
     }
 
-    void Destroy(const Core::PrismaViewId& viewId) {
+    void Destroy(Core::PrismaViewId viewId) {
         logger::info("Destroy: Beginning destruction of View [{}]", viewId);
 
         if (!IsValid(viewId)) {
@@ -402,7 +402,7 @@ namespace PrismaUI::ViewManager {
         logger::info("Destroy: View [{}] (iframe={}) destroyed.", viewId, viewDataToDestroy->iframeName);
     }
 
-    void SetOrder(const Core::PrismaViewId& viewId, int order) {
+    void SetOrder(Core::PrismaViewId viewId, int order) {
         std::shared_ptr<PrismaView> viewData;
         {
             std::unique_lock lock(viewsMutex);
@@ -422,7 +422,7 @@ namespace PrismaUI::ViewManager {
         logger::info("SetOrder: View [{}] (iframe={}) order set to {}.", viewId, viewData->iframeName, order);
     }
 
-    int GetOrder(const Core::PrismaViewId& viewId) {
+    int GetOrder(Core::PrismaViewId viewId) {
         std::shared_lock lock(viewsMutex);
         auto it = views.find(viewId);
         if (it != views.end()) {
@@ -443,7 +443,7 @@ namespace PrismaUI::ViewManager {
     }
 
     void RegisterConsoleCallback(
-        const Core::PrismaViewId& viewId,
+        Core::PrismaViewId viewId,
         std::function<void(PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> callback) {
         std::unique_lock lock(viewsMutex);
         auto it = views.find(viewId);

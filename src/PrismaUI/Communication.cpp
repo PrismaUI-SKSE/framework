@@ -18,7 +18,7 @@ namespace PrismaUI::Communication {
         }
     }
 
-    void Invoke(const Core::PrismaViewId& viewId, std::string script, std::function<void(std::string)> callback) {
+    void Invoke(Core::PrismaViewId viewId, std::string script, std::function<void(std::string)> callback) {
         {
             std::shared_lock lock(viewsMutex);
             if (views.find(viewId) == views.end()) {
@@ -31,7 +31,7 @@ namespace PrismaUI::Communication {
         Cef::CefRuntime::GetSingleton().InvokeScript(viewId, std::move(script), std::move(callback));
     }
 
-    void RegisterJSListener(const Core::PrismaViewId& viewId, const std::string& name,
+    void RegisterJSListener(Core::PrismaViewId viewId, const std::string& name,
                             Core::SimpleJSCallback callback) {
         if (!ViewManager::IsValid(viewId)) {
             logger::error("RegisterJSListener: View ID [{}] not found.", viewId);
@@ -54,7 +54,7 @@ namespace PrismaUI::Communication {
         Cef::CefRuntime::GetSingleton().RegisterListener(viewId, name, /*unused*/ nullptr);
     }
 
-    void InteropCall(const Core::PrismaViewId& viewId, const std::string& functionName, const std::string& argument) {
+    void InteropCall(Core::PrismaViewId viewId, const std::string& functionName, const std::string& argument) {
         {
             std::shared_lock lock(viewsMutex);
             if (views.find(viewId) == views.end()) {

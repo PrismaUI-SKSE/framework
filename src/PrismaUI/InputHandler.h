@@ -15,11 +15,11 @@ namespace PrismaUI::InputHandler {
     bool Initialize(HWND gameHwnd, std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* viewsMap,
                     std::shared_mutex* viewsMapMutex);
 
-    void EnableInputCapture(const Core::PrismaViewId& viewId);
-    void DisableInputCapture(const Core::PrismaViewId& viewId);
-    void ClearImeState(const Core::PrismaViewId& viewId);
+    void EnableInputCapture(Core::PrismaViewId viewId);
+    void DisableInputCapture(Core::PrismaViewId viewId);
+    void ClearImeState(Core::PrismaViewId viewId);
 
-    bool IsInputCaptureActiveForView(const Core::PrismaViewId& viewId);
+    bool IsInputCaptureActiveForView(Core::PrismaViewId viewId);
 
     bool IsAnyInputCaptureActive();
 

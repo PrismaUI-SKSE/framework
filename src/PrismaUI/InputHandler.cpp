@@ -46,7 +46,7 @@ namespace PrismaUI::InputHandler {
 
     constexpr const char* IME_FOCUS_CALLBACK_NAME = Cef::Messages::kImeFocusListener;
 
-    void RefreshImeFocusTrackingForView(const Core::PrismaViewId& viewId) {
+    void RefreshImeFocusTrackingForView(Core::PrismaViewId viewId) {
         if (viewId == 0) {
             return;
         }
@@ -651,7 +651,7 @@ namespace PrismaUI::InputHandler {
         }
     }
 
-    void EnableInputCapture(const Core::PrismaViewId& viewId) {
+    void EnableInputCapture(Core::PrismaViewId viewId) {
         if (viewId == 0) {
             logger::warn("EnableInputCapture called with empty viewId.");
             return;
@@ -694,7 +694,7 @@ namespace PrismaUI::InputHandler {
         g_mouseButtonStates[0] = g_mouseButtonStates[1] = g_mouseButtonStates[2] = false;
     }
 
-    void DisableInputCapture(const Core::PrismaViewId& viewIdToUnfocus) {
+    void DisableInputCapture(Core::PrismaViewId viewIdToUnfocus) {
         bool disableSystem = false;
         Core::PrismaViewId currentFocusedBeforeDisable;
         {
@@ -737,7 +737,7 @@ namespace PrismaUI::InputHandler {
         }
     }
 
-    void ClearImeState(const Core::PrismaViewId& viewId) {
+    void ClearImeState(Core::PrismaViewId viewId) {
         if (viewId == 0) {
             return;
         }
@@ -748,7 +748,7 @@ namespace PrismaUI::InputHandler {
 
     bool IsAnyInputCaptureActive() { return g_isAnyInputCaptureActive.load(); }
 
-    bool IsInputCaptureActiveForView(const Core::PrismaViewId& viewId) {
+    bool IsInputCaptureActiveForView(Core::PrismaViewId viewId) {
         Core::PrismaViewId currentFocused;
         {
             std::lock_guard lock(g_focusedViewIdMutex);

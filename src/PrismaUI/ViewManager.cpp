@@ -14,7 +14,7 @@ namespace PrismaUI::ViewManager {
         // viewData and has cleared focus on any other focused views.
         void ApplyFocusSideEffects(Core::PrismaViewId viewId, const std::shared_ptr<PrismaView>& viewData,
                                    bool pauseGame, bool disableFocusMenu) {
-            PrismaUI::InputHandler::EnableInputCapture(viewId);
+            PrismaUI::InputHandler::GetSingleton().EnableInputCapture(viewId);
 
             if (!disableFocusMenu) {
                 FocusMenu::Open();
@@ -54,9 +54,9 @@ namespace PrismaUI::ViewManager {
                 logger::info("Unfocus: View [{}] released the pause counter.", viewId);
             }
 
-            PrismaUI::InputHandler::DisableInputCapture(viewId);
+            PrismaUI::InputHandler::GetSingleton().DisableInputCapture(viewId);
             if (closeFocusMenu) {
-                PrismaUI::InputHandler::ClearImeState(viewId);
+                PrismaUI::InputHandler::GetSingleton().ClearImeState(viewId);
             }
 
             Cef::CefRuntime::GetSingleton().BlurShellView(viewId);
@@ -281,7 +281,7 @@ namespace PrismaUI::ViewManager {
             auto viewData = LookupView(viewId);
             if (!viewData) {
                 logger::warn("Unfocus: View [{}] disappeared before unfocus could be applied.", viewId);
-                PrismaUI::InputHandler::DisableInputCapture(0);
+                PrismaUI::InputHandler::GetSingleton().DisableInputCapture(0);
                 FocusMenu::Close();
                 return;
             }

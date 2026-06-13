@@ -5,13 +5,14 @@
 #include <wrl/client.h>
 
 #include "Cef/Browser/CefRuntime.h"
+#include "InputHandler.h"
 
 namespace PrismaUI {
     class Renderer {
     public:
         static Renderer& GetSingleton();
 
-        bool Initialize(Cef::CefRuntime* cefRuntime);
+        bool Initialize(Cef::CefRuntime* cefRuntime, InputHandler* inputHandler);
 
         void Shutdown();
 
@@ -23,6 +24,7 @@ namespace PrismaUI {
         static void D3DPresent(uint32_t a_p1);
 
         Cef::CefRuntime* _cefRuntime{};
+        InputHandler* _inputHandler{};
         ID3D11Device* _d3dDevice{};
         ID3D11DeviceContext* _d3dContext{};
         HWND _hWnd{};

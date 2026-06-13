@@ -1117,7 +1117,6 @@ namespace PrismaUI::Cef {
 
     void CefRuntime::DispatchInputEvents(uint64_t viewId, std::vector<CefInputEvent> events) {
         if (events.empty()) {
-            logger::debug("CEF input dispatch ignored empty batch for View [{}].", viewId);
             return;
         }
 
@@ -1188,8 +1187,8 @@ namespace PrismaUI::Cef {
 
             for (const auto& event : events) {
                 std::visit(
-                    [host, viewId](const auto& value) {
-                        using T = std::decay_t<decltype(value)>;
+                    [host, viewId]<typename T0>(const T0& value) {
+                        using T = std::decay_t<T0>;
                         if constexpr (std::is_same_v<T, CefInputMouseMove>) {
                             CefMouseEvent mouseEvent;
                             mouseEvent.x = value.x;

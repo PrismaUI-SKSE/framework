@@ -2,3 +2,4 @@
 - CEF shutdown???
 - Refactor PrismaUI initialization
 - Fix input delay
+- Simplify concurrent code

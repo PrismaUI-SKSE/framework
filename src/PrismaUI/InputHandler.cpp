@@ -12,37 +12,15 @@
 #include "include/internal/cef_types.h"
 #pragma comment(lib, "comctl32.lib")
 
-namespace PrismaUI::InputHandler {
-    using namespace Core;
-
-    HWND g_hWnd = nullptr;
-    std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* g_viewsMap = nullptr;
-    std::shared_mutex* g_viewsMapMutex = nullptr;
-
-    Core::PrismaViewId g_currentlyFocusedViewId;
-    std::mutex g_focusedViewIdMutex;
-
-    std::atomic<bool> g_isAnyInputCaptureActive = false;
-
-    std::mutex g_eventQueueMutex;
-    std::vector<Cef::CefInputEvent> g_eventQueue;
-
-    const int SCROLL_LINES_PER_WHEEL_DELTA = 1;
+namespace PrismaUI {
+    constexpr int SCROLL_LINES_PER_WHEEL_DELTA = 1;
 
     // Clipboard safety limits
     constexpr size_t MAX_CLIPBOARD_SIZE = 1024 * 1024;  // 1MB max
     constexpr size_t MAX_CLIPBOARD_CHARS = 200000;      // 200K characters max
 
-    bool g_mouseButtonStates[3] = {false, false, false};
-    wchar_t g_pendingHighSurrogate = 0;
-
     // WndProc subclass state
-    static std::atomic<bool> g_wndProcInstalled = false;
     static constexpr UINT_PTR SUBCLASS_ID = 0x505249534D41;  // "PRISMA" in hex
-    static std::mutex g_wndProcMutex;                        // Thread-safe installation
-
-    static ImeHelper g_imeHelper;
-    static std::atomic<bool> g_isFocusedTextInputActive = false;
 
     constexpr const char* IME_FOCUS_CALLBACK_NAME = Cef::Messages::kImeFocusListener;
 
@@ -127,8 +105,8 @@ namespace PrismaUI::InputHandler {
         return escaped;
     }
 
-    std::string GetClipboardText() {
-        if (!OpenClipboard(g_hWnd)) {
+    std::string InputHandler::GetClipboardText() const {
+        if (!OpenClipboard(_hWnd)) {
             logger::warn("Failed to open clipboard for reading");
             return "";
         }
@@ -190,7 +168,7 @@ namespace PrismaUI::InputHandler {
         return result;
     }
 
-    void SetClipboardText(const std::string& text) {
+    void InputHandler::SetClipboardText(const std::string& text) const {
         // Check size limits before processing
         if (text.size() > MAX_CLIPBOARD_SIZE) {
             logger::warn("Text too large to copy to clipboard: {} bytes (max: {} bytes)", text.size(),
@@ -198,7 +176,7 @@ namespace PrismaUI::InputHandler {
             return;
         }
 
-        if (!OpenClipboard(g_hWnd)) {
+        if (!OpenClipboard(_hWnd)) {
             logger::warn("Failed to open clipboard for writing");
             return;
         }
@@ -273,28 +251,28 @@ namespace PrismaUI::InputHandler {
         return result;
     }
 
-    void QueueInputEvent(Cef::CefInputEvent event) {
-        std::lock_guard lock(g_eventQueueMutex);
-        g_eventQueue.emplace_back(std::move(event));
+    void InputHandler::QueueInputEvent(Cef::CefInputEvent event) {
+        std::lock_guard lock(_eventQueueMutex);
+        _eventQueue.emplace_back(std::move(event));
     }
 
-    uint32_t GetMouseModifiers() {
+    uint32_t InputHandler::GetMouseModifiers() const {
         uint32_t modifiers = WinKeyHandler::GetCefModifiers();
-        if (g_mouseButtonStates[0]) modifiers |= EVENTFLAG_LEFT_MOUSE_BUTTON;
-        if (g_mouseButtonStates[1]) modifiers |= EVENTFLAG_RIGHT_MOUSE_BUTTON;
-        if (g_mouseButtonStates[2]) modifiers |= EVENTFLAG_MIDDLE_MOUSE_BUTTON;
+        if (_mouseButtonStates[0]) modifiers |= EVENTFLAG_LEFT_MOUSE_BUTTON;
+        if (_mouseButtonStates[1]) modifiers |= EVENTFLAG_RIGHT_MOUSE_BUTTON;
+        if (_mouseButtonStates[2]) modifiers |= EVENTFLAG_MIDDLE_MOUSE_BUTTON;
         return modifiers;
     }
 
     bool IsSystemKeyMessage(UINT uMsg) { return uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP || uMsg == WM_SYSCHAR; }
 
-    void QueueCommittedCharEvent(const std::wstring& utf16Text, LPARAM lParam) {
+    void InputHandler::QueueCommittedCharEvent(const std::wstring& utf16Text, LPARAM lParam) {
         if (utf16Text.empty()) {
             return;
         }
 
         for (wchar_t ch : utf16Text) {
-            QueueInputEvent(WinKeyHandler::CreateCharEvent(ch, lParam, false, g_isFocusedTextInputActive.load()));
+            QueueInputEvent(WinKeyHandler::CreateCharEvent(ch, lParam, false, _isFocusedTextInputActive.load()));
         }
     }
 
@@ -314,149 +292,30 @@ namespace PrismaUI::InputHandler {
         return std::wstring{high, low};
     }
 
-    class MouseEventListener : public RE::BSTEventSink<RE::InputEvent*> {
-    public:
-        static MouseEventListener* GetSingleton() {
-            static MouseEventListener singleton;
-            return &singleton;
-        }
-
-        RE::BSEventNotifyControl ProcessEvent(
-            RE::InputEvent* const* a_event,
-            [[maybe_unused]] RE::BSTEventSource<RE::InputEvent*>* a_eventSource) override {
-            if (!a_event || !*a_event || !g_isAnyInputCaptureActive.load()) {
-                return RE::BSEventNotifyControl::kContinue;
-            }
-
-            auto cursor = RE::MenuCursor::GetSingleton();
-            if (!cursor) {
-                return RE::BSEventNotifyControl::kContinue;
-            }
-
-            const int cursorX = static_cast<int>(cursor->cursorPosX);
-            const int cursorY = static_cast<int>(cursor->cursorPosY);
-
-            for (auto event = *a_event; event; event = event->next) {
-                switch (event->GetEventType()) {
-                    case RE::INPUT_EVENT_TYPE::kMouseMove: {
-                        if (event->AsMouseMoveEvent()) {
-                            Cef::CefInputMouseMove ev;
-                            ev.x = cursorX;
-                            ev.y = cursorY;
-                            ev.modifiers = GetMouseModifiers();
-                            ev.mouseLeave = false;
-                            QueueInputEvent(ev);
-                        }
-                        break;
-                    }
-
-                    case RE::INPUT_EVENT_TYPE::kButton: {
-                        auto buttonEvent = event->AsButtonEvent();
-                        if (!buttonEvent || buttonEvent->GetDevice() != RE::INPUT_DEVICE::kMouse) break;
-
-                        const auto idCode = buttonEvent->GetIDCode();
-                        const bool isPressed = buttonEvent->IsPressed();
-                        const bool isUp = buttonEvent->IsUp();
-
-                        if (idCode <= 2) {
-                            Cef::CefInputMouseButton button = Cef::CefInputMouseButton::Left;
-                            switch (idCode) {
-                                case 0:
-                                    button = Cef::CefInputMouseButton::Left;
-                                    break;
-                                case 1:
-                                    button = Cef::CefInputMouseButton::Right;
-                                    break;
-                                case 2:
-                                    button = Cef::CefInputMouseButton::Middle;
-                                    break;
-                                default:
-                                    break;
-                            }
-
-                            if (isPressed && !g_mouseButtonStates[idCode]) {
-                                g_mouseButtonStates[idCode] = true;
-                                Cef::CefInputMouseClick ev;
-                                ev.x = cursorX;
-                                ev.y = cursorY;
-                                ev.modifiers = GetMouseModifiers();
-                                ev.button = button;
-                                ev.mouseUp = false;
-                                ev.clickCount = 1;
-                                QueueInputEvent(ev);
-                            } else if (isUp && g_mouseButtonStates[idCode]) {
-                                g_mouseButtonStates[idCode] = false;
-                                Cef::CefInputMouseClick ev;
-                                ev.x = cursorX;
-                                ev.y = cursorY;
-                                ev.modifiers = GetMouseModifiers();
-                                ev.button = button;
-                                ev.mouseUp = true;
-                                ev.clickCount = 1;
-                                QueueInputEvent(ev);
-                            }
-                        } else if (idCode == 8 || idCode == 9) {
-                            if (isPressed) {
-                                int scrollPixelSize = 28;
-                                Core::PrismaViewId focusedViewId;
-                                {
-                                    std::lock_guard lock(g_focusedViewIdMutex);
-                                    focusedViewId = g_currentlyFocusedViewId;
-                                }
-
-                                if (focusedViewId != 0 && g_viewsMap && g_viewsMapMutex) {
-                                    std::shared_lock lock(*g_viewsMapMutex);
-                                    auto it = g_viewsMap->find(focusedViewId);
-                                    if (it != g_viewsMap->end() && it->second) {
-                                        scrollPixelSize = it->second->scrollingPixelSize;
-                                    }
-                                }
-
-                                const int scrollAmount = SCROLL_LINES_PER_WHEEL_DELTA * scrollPixelSize;
-                                Cef::CefInputMouseWheel ev;
-                                ev.x = cursorX;
-                                ev.y = cursorY;
-                                ev.modifiers = GetMouseModifiers();
-                                ev.deltaX = 0;
-                                ev.deltaY = idCode == 9 ? -scrollAmount : scrollAmount;
-                                QueueInputEvent(ev);
-                            }
-                        }
-                        break;
-                    }
-
-                    default:
-                        break;
-                }
-            }
-
-            return RE::BSEventNotifyControl::kContinue;
-        }
-    };
-
-    LRESULT CALLBACK SubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass,
-                                  DWORD_PTR /*dwRefData*/) {
+    LRESULT CALLBACK InputHandler::SubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam,
+                                                UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
+        InputHandler& self = *reinterpret_cast<InputHandler*>(dwRefData);
         LRESULT imeControlResult = 0;
-        if (g_imeHelper.HandleControlMessage(hwnd, uMsg, wParam, lParam, &imeControlResult)) {
+        if (self._imeHelper.HandleControlMessage(hwnd, uMsg, wParam, lParam, &imeControlResult)) {
             return imeControlResult;
         }
 
         if (uMsg == WM_IME_SETCONTEXT) {
             LPARAM imeLParam = lParam;
-            g_imeHelper.ModifySetContextLParam(&imeLParam, uMsg);
+            self._imeHelper.ModifySetContextLParam(&imeLParam, uMsg);
             lParam = imeLParam;
         }
 
-        if (g_isAnyInputCaptureActive.load()) {
+        if (self._isAnyInputCaptureActive.load()) {
             bool handledByUI = false;
             Core::PrismaViewId focusedViewIdCopy;
             {
-                std::lock_guard lock(g_focusedViewIdMutex);
-                focusedViewIdCopy = g_currentlyFocusedViewId;
+                std::lock_guard lock(self._focusedViewIdMutex);
+                focusedViewIdCopy = self._currentlyFocusedViewId;
             }
 
             if (focusedViewIdCopy != 0) {
-                if (g_imeHelper.HandleMessage(hwnd, uMsg, wParam, lParam, focusedViewIdCopy, &handledByUI)) {
+                if (self._imeHelper.HandleMessage(hwnd, uMsg, wParam, lParam, focusedViewIdCopy, &handledByUI)) {
                     if (handledByUI) {
                         return 0;
                     }
@@ -465,17 +324,17 @@ namespace PrismaUI::InputHandler {
                 switch (uMsg) {
                     case WM_KEYDOWN:
                     case WM_SYSKEYDOWN: {
-                        QueueInputEvent(WinKeyHandler::CreateKeyEvent(Cef::CefInputKeyType::RawKeyDown, wParam, lParam,
-                                                                      IsSystemKeyMessage(uMsg),
-                                                                      g_isFocusedTextInputActive.load()));
+                        self.QueueInputEvent(WinKeyHandler::CreateKeyEvent(Cef::CefInputKeyType::RawKeyDown, wParam,
+                                                                           lParam, IsSystemKeyMessage(uMsg),
+                                                                           self._isFocusedTextInputActive.load()));
                         handledByUI = true;
                         break;
                     }
                     case WM_KEYUP:
                     case WM_SYSKEYUP: {
-                        QueueInputEvent(WinKeyHandler::CreateKeyEvent(Cef::CefInputKeyType::KeyUp, wParam, lParam,
-                                                                      IsSystemKeyMessage(uMsg),
-                                                                      g_isFocusedTextInputActive.load()));
+                        self.QueueInputEvent(WinKeyHandler::CreateKeyEvent(Cef::CefInputKeyType::KeyUp, wParam, lParam,
+                                                                           IsSystemKeyMessage(uMsg),
+                                                                           self._isFocusedTextInputActive.load()));
                         handledByUI = true;
                         break;
                     }
@@ -484,23 +343,23 @@ namespace PrismaUI::InputHandler {
                         handledByUI = true;
                         wchar_t ch = static_cast<wchar_t>(wParam);
                         if (IsHighSurrogate(ch)) {
-                            g_pendingHighSurrogate = ch;
+                            self._pendingHighSurrogate = ch;
                             break;
                         }
 
                         std::wstring committedText;
-                        if (IsLowSurrogate(ch) && g_pendingHighSurrogate != 0) {
-                            committedText.push_back(g_pendingHighSurrogate);
+                        if (IsLowSurrogate(ch) && self._pendingHighSurrogate != 0) {
+                            committedText.push_back(self._pendingHighSurrogate);
                             committedText.push_back(ch);
-                            g_pendingHighSurrogate = 0;
+                            self._pendingHighSurrogate = 0;
                         } else {
-                            g_pendingHighSurrogate = 0;
+                            self._pendingHighSurrogate = 0;
                             if (ShouldQueueChar(ch)) {
                                 committedText.push_back(ch);
                             }
                         }
 
-                        QueueCommittedCharEvent(committedText, lParam);
+                        self.QueueCommittedCharEvent(committedText, lParam);
                         break;
                     }
                     case WM_UNICHAR: {
@@ -511,8 +370,8 @@ namespace PrismaUI::InputHandler {
                         handledByUI = true;
                         std::wstring committedText = ConvertCodePointToUtf16(static_cast<UINT>(wParam));
                         if (!committedText.empty() && ShouldQueueChar(committedText[0])) {
-                            g_pendingHighSurrogate = 0;
-                            QueueCommittedCharEvent(committedText, lParam);
+                            self._pendingHighSurrogate = 0;
+                            self.QueueCommittedCharEvent(committedText, lParam);
                         }
                         break;
                     }
@@ -529,9 +388,6 @@ namespace PrismaUI::InputHandler {
         // Handle window destruction - clean up subclass
         if (uMsg == WM_NCDESTROY) {
             RemoveWindowSubclass(hwnd, SubclassProc, uIdSubclass);
-            if (uIdSubclass == SUBCLASS_ID) {
-                g_wndProcInstalled.store(false);
-            }
         }
 
         // Pass to next handler in the chain using DefSubclassProc
@@ -539,7 +395,164 @@ namespace PrismaUI::InputHandler {
         return DefSubclassProc(hwnd, uMsg, wParam, lParam);
     }
 
-    static void InstallWndProc() {
+    InputHandler& InputHandler::GetSingleton() {
+        static InputHandler singleton;
+        return singleton;
+    }
+
+    RE::BSEventNotifyControl InputHandler::ProcessEvent(RE::InputEvent* const* a_event,
+                                                        RE::BSTEventSource<RE::InputEvent*>*) {
+        if (!a_event || !*a_event || !_isAnyInputCaptureActive.load()) {
+            return RE::BSEventNotifyControl::kContinue;
+        }
+
+        auto cursor = RE::MenuCursor::GetSingleton();
+        if (!cursor) {
+            return RE::BSEventNotifyControl::kContinue;
+        }
+
+        const int cursorX = static_cast<int>(cursor->cursorPosX);
+        const int cursorY = static_cast<int>(cursor->cursorPosY);
+
+        for (auto event = *a_event; event; event = event->next) {
+            switch (event->GetEventType()) {
+                case RE::INPUT_EVENT_TYPE::kMouseMove: {
+                    if (event->AsMouseMoveEvent()) {
+                        Cef::CefInputMouseMove ev;
+                        ev.x = cursorX;
+                        ev.y = cursorY;
+                        ev.modifiers = GetMouseModifiers();
+                        ev.mouseLeave = false;
+                        QueueInputEvent(ev);
+                    }
+                    break;
+                }
+
+                case RE::INPUT_EVENT_TYPE::kButton: {
+                    auto buttonEvent = event->AsButtonEvent();
+                    if (!buttonEvent || buttonEvent->GetDevice() != RE::INPUT_DEVICE::kMouse) break;
+
+                    const auto idCode = buttonEvent->GetIDCode();
+                    const bool isPressed = buttonEvent->IsPressed();
+                    const bool isUp = buttonEvent->IsUp();
+
+                    if (idCode <= 2) {
+                        Cef::CefInputMouseButton button = Cef::CefInputMouseButton::Left;
+                        switch (idCode) {
+                            case 0:
+                                button = Cef::CefInputMouseButton::Left;
+                                break;
+                            case 1:
+                                button = Cef::CefInputMouseButton::Right;
+                                break;
+                            case 2:
+                                button = Cef::CefInputMouseButton::Middle;
+                                break;
+                            default:
+                                break;
+                        }
+
+                        if (isPressed && !_mouseButtonStates[idCode]) {
+                            _mouseButtonStates[idCode] = true;
+                            Cef::CefInputMouseClick ev;
+                            ev.x = cursorX;
+                            ev.y = cursorY;
+                            ev.modifiers = GetMouseModifiers();
+                            ev.button = button;
+                            ev.mouseUp = false;
+                            ev.clickCount = 1;
+                            QueueInputEvent(ev);
+                        } else if (isUp && _mouseButtonStates[idCode]) {
+                            _mouseButtonStates[idCode] = false;
+                            Cef::CefInputMouseClick ev;
+                            ev.x = cursorX;
+                            ev.y = cursorY;
+                            ev.modifiers = GetMouseModifiers();
+                            ev.button = button;
+                            ev.mouseUp = true;
+                            ev.clickCount = 1;
+                            QueueInputEvent(ev);
+                        }
+                    } else if (idCode == 8 || idCode == 9) {
+                        if (isPressed) {
+                            int scrollPixelSize = 28;
+                            Core::PrismaViewId focusedViewId;
+                            {
+                                std::lock_guard lock(_focusedViewIdMutex);
+                                focusedViewId = _currentlyFocusedViewId;
+                            }
+
+                            if (focusedViewId != 0 && _viewsMap && _viewsMapMutex) {
+                                std::shared_lock lock(*_viewsMapMutex);
+                                auto it = _viewsMap->find(focusedViewId);
+                                if (it != _viewsMap->end() && it->second) {
+                                    scrollPixelSize = it->second->scrollingPixelSize;
+                                }
+                            }
+
+                            const int scrollAmount = SCROLL_LINES_PER_WHEEL_DELTA * scrollPixelSize;
+                            Cef::CefInputMouseWheel ev;
+                            ev.x = cursorX;
+                            ev.y = cursorY;
+                            ev.modifiers = GetMouseModifiers();
+                            ev.deltaX = 0;
+                            ev.deltaY = idCode == 9 ? -scrollAmount : scrollAmount;
+                            QueueInputEvent(ev);
+                        }
+                    }
+                    break;
+                }
+
+                default:
+                    break;
+            }
+        }
+
+        return RE::BSEventNotifyControl::kContinue;
+    }
+
+    bool InputHandler::Initialize(HWND gameHwnd,
+                                  std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* viewsMap,
+                                  std::shared_mutex* viewsMapMutex) {
+        logger::info("Initialization...");
+
+        if (auto inputEventSource = RE::BSInputDeviceManager::GetSingleton()) {
+            inputEventSource->AddEventSink(this);
+            logger::info("MouseEventListener registered with BSInputDeviceManager");
+        } else {
+            logger::error("Failed to register MouseEventListener: BSInputDeviceManager is null");
+            return false;
+        }
+
+        _hWnd = gameHwnd;
+        _viewsMap = viewsMap;
+        _viewsMapMutex = viewsMapMutex;
+        _isAnyInputCaptureActive = false;
+        _isFocusedTextInputActive = false;
+        {
+            std::lock_guard lock(_focusedViewIdMutex);
+            _currentlyFocusedViewId = 0;
+        }
+
+        _mouseButtonStates[0] = _mouseButtonStates[1] = _mouseButtonStates[2] = false;
+
+        _imeHelper.SetCallbacks([](const std::string& s) { return EscapeForJS(s); },
+                                [this](const std::wstring& ws, LPARAM lp) { QueueCommittedCharEvent(ws, lp); },
+                                [](const wchar_t* p, int len) { return ConvertUtf16ToUtf8(p, len); });
+        _imeHelper.SetContext({_hWnd, _viewsMap, _viewsMapMutex, &_focusedViewIdMutex, &_currentlyFocusedViewId,
+                               &_isAnyInputCaptureActive, &_isFocusedTextInputActive});
+        _imeHelper.Initialize(_hWnd);
+
+        InstallWndProcHook();
+
+        _isInitialized = true;
+
+        logger::info("Initialized with HWND: {}", static_cast<void*>(_hWnd));
+
+        return true;
+    }
+
+    void InputHandler::InstallWndProcHook() {
         // Thread-affinity issue with SetWindowSubclass:
         // - Windows requires SetWindowSubclass to be called from the window's owning thread
         // - The game HWND is created on the main thread (thread that creates the window)
@@ -550,13 +563,13 @@ namespace PrismaUI::InputHandler {
         // Solution: Try direct installation first (faster), fallback to main thread if it fails
 
         logger::info("Attempting to install WndProc hook from render thread...");
-        if (InstallWndProcHook()) {
+        if (InstallWndProcHookAttempt()) {
             logger::info("WndProc hook installed successfully from render thread.");
         } else {
             logger::warn("Direct installation failed, scheduling on main thread...");
-            SKSE::GetTaskInterface()->AddTask([]() {
+            SKSE::GetTaskInterface()->AddTask([this] {
                 logger::info("Attempting to install WndProc hook from main thread...");
-                if (InstallWndProcHook()) {
+                if (InstallWndProcHookAttempt()) {
                     logger::info("WndProc hook installed successfully from main thread.");
                 } else {
                     logger::error("Failed to install WndProc hook even from main thread!");
@@ -565,119 +578,53 @@ namespace PrismaUI::InputHandler {
         }
     }
 
-    bool Initialize(HWND gameHwnd, std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* viewsMap,
-                    std::shared_mutex* viewsMapMutex) {
-        logger::info("Initialization...");
-
-        if (auto inputEventSource = RE::BSInputDeviceManager::GetSingleton()) {
-            inputEventSource->AddEventSink(MouseEventListener::GetSingleton());
-            logger::info("MouseEventListener registered with BSInputDeviceManager");
-        } else {
-            logger::error("Failed to register MouseEventListener: BSInputDeviceManager is null");
-            return false;
-        }
-
-        InstallWndProc();
-
-        g_hWnd = gameHwnd;
-        g_viewsMap = viewsMap;
-        g_viewsMapMutex = viewsMapMutex;
-        g_isAnyInputCaptureActive = false;
-        g_isFocusedTextInputActive = false;
-        {
-            std::lock_guard lock(g_focusedViewIdMutex);
-            g_currentlyFocusedViewId = 0;
-        }
-
-        g_mouseButtonStates[0] = g_mouseButtonStates[1] = g_mouseButtonStates[2] = false;
-
-        g_imeHelper.SetCallbacks([](const std::string& s) { return EscapeForJS(s); },
-                                 [](const std::wstring& ws, LPARAM lp) { QueueCommittedCharEvent(ws, lp); },
-                                 [](const wchar_t* p, int len) { return ConvertUtf16ToUtf8(p, len); });
-        g_imeHelper.SetContext({g_hWnd, g_viewsMap, g_viewsMapMutex, &g_focusedViewIdMutex, &g_currentlyFocusedViewId,
-                                &g_isAnyInputCaptureActive, &g_isFocusedTextInputActive});
-        g_imeHelper.Initialize(g_hWnd);
-
-        logger::info("Initialized with HWND: {}", static_cast<void*>(g_hWnd));
-
-        return true;
-    }
-
-    bool InstallWndProcHook() {
-        std::lock_guard<std::mutex> lock(g_wndProcMutex);
-
-        if (g_wndProcInstalled.load()) {
-            logger::debug("WndProc subclass already installed");
-            return true;
-        }
-
-        if (!g_hWnd) {
-            logger::error("Cannot install WndProc subclass: HWND is null");
-            return false;
-        }
-
-        // Check if HWND is valid
-        if (!IsWindow(g_hWnd)) {
-            logger::error("HWND {:p} is not a valid window", (void*)g_hWnd);
-            return false;
-        }
-
-        logger::debug("Attempting to install subclass on HWND: {:p}", (void*)g_hWnd);
+    bool InputHandler::InstallWndProcHookAttempt() {
+        logger::info("Attempting to install subclass on HWND: {:p}", static_cast<void*>(_hWnd));
 
         // Clear last error before calling
         SetLastError(0);
 
-        if (!SetWindowSubclass(g_hWnd, SubclassProc, SUBCLASS_ID, 0)) {
+        if (!SetWindowSubclass(_hWnd, SubclassProc, SUBCLASS_ID, reinterpret_cast<DWORD_PTR>(this))) {
             DWORD err = GetLastError();
             logger::warn("Failed to install WndProc subclass. Error: {} (0x{:X})", err, err);
             return false;
         }
 
-        g_wndProcInstalled.store(true);
-        logger::info("WndProc subclass installed successfully on HWND: {:p}", (void*)g_hWnd);
+        logger::info("WndProc subclass installed successfully on HWND: {:p}", static_cast<void*>(_hWnd));
         return true;
     }
 
-    void UninstallWndProcHook() {
-        std::lock_guard<std::mutex> lock(g_wndProcMutex);
-
-        if (!g_wndProcInstalled.exchange(false)) {
-            return;
-        }
-
-        if (g_hWnd) {
-            RemoveWindowSubclass(g_hWnd, SubclassProc, SUBCLASS_ID);
-            logger::info("WndProc subclass removed");
-        }
+    void InputHandler::UninstallWndProcHook() const {
+        RemoveWindowSubclass(_hWnd, SubclassProc, SUBCLASS_ID);
+        logger::info("WndProc subclass removed");
     }
 
-    void EnableInputCapture(Core::PrismaViewId viewId) {
+    void InputHandler::EnableInputCapture(Core::PrismaViewId viewId) {
         if (viewId == 0) {
             logger::warn("EnableInputCapture called with empty viewId.");
             return;
         }
-        bool firstTimeActivation = false;
+
         {
-            std::lock_guard lock(g_focusedViewIdMutex);
-            if (g_currentlyFocusedViewId != viewId) {
-                g_currentlyFocusedViewId = viewId;
+            std::lock_guard lock(_focusedViewIdMutex);
+            if (_currentlyFocusedViewId != viewId) {
+                _currentlyFocusedViewId = viewId;
                 logger::debug("PrismaUI Input Capture focused on View [{}].", viewId);
             }
         }
 
-        if (!g_isAnyInputCaptureActive.exchange(true)) {
-            firstTimeActivation = true;
+        if (!_isAnyInputCaptureActive.exchange(true)) {
             logger::debug("PrismaUI Input Capture System Enabled for View [{}].", viewId);
         }
 
-        g_isFocusedTextInputActive.store(false);
-        g_imeHelper.SetAssociation(false);
+        _isFocusedTextInputActive.store(false);
+        _imeHelper.SetAssociation(false);
 
-        Communication::RegisterJSListener(viewId, IME_FOCUS_CALLBACK_NAME, [viewId](std::string focused) {
-            Core::PrismaViewId currentFocusedViewId = 0;
+        Communication::RegisterJSListener(viewId, IME_FOCUS_CALLBACK_NAME, [this, viewId](std::string focused) {
+            Core::PrismaViewId currentFocusedViewId;
             {
-                std::lock_guard lock(g_focusedViewIdMutex);
-                currentFocusedViewId = g_currentlyFocusedViewId;
+                std::lock_guard lock(_focusedViewIdMutex);
+                currentFocusedViewId = _currentlyFocusedViewId;
             }
 
             if (currentFocusedViewId != viewId) {
@@ -685,37 +632,37 @@ namespace PrismaUI::InputHandler {
             }
 
             const bool isTextInputFocused = focused == "1";
-            const bool isCaptureActive = g_isAnyInputCaptureActive.load();
-            g_isFocusedTextInputActive.store(isTextInputFocused);
-            g_imeHelper.SetAssociation(isCaptureActive && isTextInputFocused);
+            const bool isCaptureActive = _isAnyInputCaptureActive.load();
+            _isFocusedTextInputActive.store(isTextInputFocused);
+            _imeHelper.SetAssociation(isCaptureActive && isTextInputFocused);
         });
         RefreshImeFocusTrackingForView(viewId);
 
-        g_mouseButtonStates[0] = g_mouseButtonStates[1] = g_mouseButtonStates[2] = false;
+        _mouseButtonStates[0] = _mouseButtonStates[1] = _mouseButtonStates[2] = false;
     }
 
-    void DisableInputCapture(Core::PrismaViewId viewIdToUnfocus) {
+    void InputHandler::DisableInputCapture(Core::PrismaViewId viewIdToUnfocus) {
         bool disableSystem = false;
         Core::PrismaViewId currentFocusedBeforeDisable;
         {
-            std::lock_guard lock(g_focusedViewIdMutex);
-            currentFocusedBeforeDisable = g_currentlyFocusedViewId;
-            if (viewIdToUnfocus == 0 || viewIdToUnfocus == g_currentlyFocusedViewId) {
-                if (g_isAnyInputCaptureActive.load()) {
+            std::lock_guard lock(_focusedViewIdMutex);
+            currentFocusedBeforeDisable = _currentlyFocusedViewId;
+            if (viewIdToUnfocus == 0 || viewIdToUnfocus == _currentlyFocusedViewId) {
+                if (_isAnyInputCaptureActive.load()) {
                     disableSystem = true;
-                    g_currentlyFocusedViewId = 0;
+                    _currentlyFocusedViewId = 0;
                 }
             }
         }
 
         if (disableSystem) {
-            if (g_isAnyInputCaptureActive.exchange(false)) {
-                g_isFocusedTextInputActive.store(false);
-                g_imeHelper.SetAssociation(false);
+            if (_isAnyInputCaptureActive.exchange(false)) {
+                _isFocusedTextInputActive.store(false);
+                _imeHelper.SetAssociation(false);
                 logger::debug("PrismaUI Input Capture System Disabled (was active for View [{}]).",
                               currentFocusedBeforeDisable);
 
-                g_mouseButtonStates[0] = g_mouseButtonStates[1] = g_mouseButtonStates[2] = false;
+                _mouseButtonStates[0] = _mouseButtonStates[1] = _mouseButtonStates[2] = false;
 
                 if (currentFocusedBeforeDisable != 0) {
                     Cef::CefInputMouseMove resetEvent;
@@ -737,55 +684,45 @@ namespace PrismaUI::InputHandler {
         }
     }
 
-    void ClearImeState(Core::PrismaViewId viewId) {
+    void InputHandler::ClearImeState(Core::PrismaViewId viewId) {
         if (viewId == 0) {
             return;
         }
 
-        g_isFocusedTextInputActive.store(false);
-        g_imeHelper.SetAssociation(false);
+        _isFocusedTextInputActive.store(false);
+        _imeHelper.SetAssociation(false);
     }
 
-    bool IsAnyInputCaptureActive() { return g_isAnyInputCaptureActive.load(); }
+    bool InputHandler::IsAnyInputCaptureActive() const { return _isAnyInputCaptureActive.load(); }
 
-    bool IsInputCaptureActiveForView(Core::PrismaViewId viewId) {
-        Core::PrismaViewId currentFocused;
-        {
-            std::lock_guard lock(g_focusedViewIdMutex);
-            currentFocused = g_currentlyFocusedViewId;
-        }
-        if (viewId == 0) return g_isAnyInputCaptureActive.load();
-        return g_isAnyInputCaptureActive.load() && (currentFocused == viewId);
-    }
-
-    void ProcessEvents() {
+    void InputHandler::ProcessEvents() {
         Core::PrismaViewId focusedViewIdCopy;
         {
-            std::lock_guard lock(g_focusedViewIdMutex);
-            focusedViewIdCopy = g_currentlyFocusedViewId;
+            std::lock_guard lock(_focusedViewIdMutex);
+            focusedViewIdCopy = _currentlyFocusedViewId;
         }
 
         if (focusedViewIdCopy == 0) {
-            std::lock_guard lock(g_eventQueueMutex);
-            if (!g_eventQueue.empty()) {
-                logger::debug("Dropping {} queued input event(s): no focused PrismaUI view.", g_eventQueue.size());
-                g_eventQueue.clear();
+            std::lock_guard lock(_eventQueueMutex);
+            if (!_eventQueue.empty()) {
+                logger::debug("Dropping {} queued input event(s): no focused PrismaUI view.", _eventQueue.size());
+                _eventQueue.clear();
             }
             return;
         }
 
         std::vector<Cef::CefInputEvent> eventsToProcess;
         {
-            std::lock_guard lock(g_eventQueueMutex);
-            if (g_eventQueue.empty()) return;
-            eventsToProcess.swap(g_eventQueue);
+            std::lock_guard lock(_eventQueueMutex);
+            if (_eventQueue.empty()) return;
+            eventsToProcess.swap(_eventQueue);
         }
 
         std::shared_ptr<Core::PrismaView> targetViewData = nullptr;
-        if (g_viewsMap && g_viewsMapMutex) {
-            std::shared_lock lock(*g_viewsMapMutex);
-            auto it = g_viewsMap->find(focusedViewIdCopy);
-            if (it != g_viewsMap->end()) {
+        if (_viewsMap && _viewsMapMutex) {
+            std::shared_lock lock(*_viewsMapMutex);
+            auto it = _viewsMap->find(focusedViewIdCopy);
+            if (it != _viewsMap->end()) {
                 targetViewData = it->second;
             }
         }
@@ -811,29 +748,34 @@ namespace PrismaUI::InputHandler {
         Cef::CefRuntime::GetSingleton().DispatchInputEvents(focusedViewIdCopy, std::move(eventsToProcess));
     }
 
-    void Shutdown() {
+    void InputHandler::Shutdown() {
+        if (!_isInitialized) {
+            return;
+        }
+
         logger::info("Shutdown...");
 
         DisableInputCapture(0);
         {
-            std::lock_guard lock(g_eventQueueMutex);
-            g_eventQueue.clear();
+            std::lock_guard lock(_eventQueueMutex);
+            _eventQueue.clear();
         }
 
         auto inputEventSource = RE::BSInputDeviceManager::GetSingleton();
         if (inputEventSource) {
-            inputEventSource->RemoveEventSink(MouseEventListener::GetSingleton());
+            inputEventSource->RemoveEventSink(this);
             logger::debug("MouseEventListener removed from BSInputDeviceManager");
         }
 
         UninstallWndProcHook();
 
-        g_imeHelper.Shutdown(g_hWnd);
+        _imeHelper.Shutdown(_hWnd);
 
-        g_hWnd = nullptr;
-        g_viewsMap = nullptr;
-        g_viewsMapMutex = nullptr;
-        g_isFocusedTextInputActive = false;
+        _hWnd = nullptr;
+        _viewsMap = nullptr;
+        _viewsMapMutex = nullptr;
+        _isFocusedTextInputActive = false;
+        _isInitialized = false;
         logger::info("Shutdown complete");
     }
 }

@@ -82,8 +82,9 @@ namespace PrismaUI {
     }
 
     void RenderCursor(const std::unique_ptr<DirectX::SpriteBatch>& spriteBatch,
-                      const Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& cursorTexture) {
-        if (!InputHandler::IsAnyInputCaptureActive()) {
+                      const Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& cursorTexture,
+                      const InputHandler& inputHandler) {
+        if (!inputHandler.IsAnyInputCaptureActive()) {
             return;
         }
 
@@ -101,7 +102,7 @@ namespace PrismaUI {
         _spriteBatch->Begin(DirectX::SpriteSortMode_Deferred, _commonStates->AlphaBlend());
 
         RenderCefOverlay(_spriteBatch, *_cefRuntime);
-        RenderCursor(_spriteBatch, _cursorTexture);
+        RenderCursor(_spriteBatch, _cursorTexture, *_inputHandler);
 
         _spriteBatch->End();
     }
@@ -127,12 +128,12 @@ namespace PrismaUI {
 
         // Process pending operations and queued input for all views.
         ViewOperationQueue::ProcessAllViewOperations();
-        InputHandler::ProcessEvents();
+        self._inputHandler->ProcessEvents();
 
         self.Render();
     }
 
-    bool Renderer::Initialize(Cef::CefRuntime* cefRuntime) {
+    bool Renderer::Initialize(Cef::CefRuntime* cefRuntime, InputHandler* inputHandler) {
         logger::info("Initialization...");
         if (!InitGraphics()) {
             return false;
@@ -144,6 +145,7 @@ namespace PrismaUI {
         RealD3dPresentFunc = Hooks::D3DPresentHook::Install(&D3DPresent);
 
         _cefRuntime = cefRuntime;
+        _inputHandler = inputHandler;
         _isInitialized = true;
 
         logger::info("Initialized");

@@ -31,8 +31,7 @@ namespace PrismaUI::Communication {
         Cef::CefRuntime::GetSingleton().InvokeScript(viewId, std::move(script), std::move(callback));
     }
 
-    void RegisterJSListener(Core::PrismaViewId viewId, const std::string& name,
-                            Core::SimpleJSCallback callback) {
+    void RegisterJSListener(Core::PrismaViewId viewId, const std::string& name, Core::SimpleJSCallback callback) {
         if (!ViewManager::IsValid(viewId)) {
             logger::error("RegisterJSListener: View ID [{}] not found.", viewId);
             return;

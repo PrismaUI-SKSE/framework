@@ -8,7 +8,6 @@
 
 namespace PrismaUI::Core {
     using namespace PrismaUI::ViewManager;
-    using namespace PrismaUI::InputHandler;
 
     std::atomic_uint64_t nextViewId = {1};
 

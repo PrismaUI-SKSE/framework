@@ -31,9 +31,6 @@ namespace PrismaUI {
     // for custom candidate/composition UI (hides native IME windows in fullscreen).
     class ImeHelper {
     public:
-        ImeHelper() = default;
-        ~ImeHelper() = default;
-
         // Initialize IME context. Must be called on main thread with valid hwnd.
         void Initialize(HWND hwnd);
 

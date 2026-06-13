@@ -36,12 +36,12 @@ namespace PrismaUI::Bootstrapper {
             return false;
         }
 
-        if (!InputHandler::Initialize(hWnd, &Core::views, &Core::viewsMutex)) {
+        if (!InputHandler::GetSingleton().Initialize(hWnd, &Core::views, &Core::viewsMutex)) {
             logger::critical("InputHandler initialization failed");
             return false;
         }
 
-        if (!Renderer::GetSingleton().Initialize(&Cef::CefRuntime::GetSingleton())) {
+        if (!Renderer::GetSingleton().Initialize(&Cef::CefRuntime::GetSingleton(), &InputHandler::GetSingleton())) {
             logger::critical("Renderer initialization failed");
             return false;
         }
@@ -66,7 +66,7 @@ namespace PrismaUI::Bootstrapper {
         logger::info("Shutdown...");
         Core::Shutdown();
         Renderer::GetSingleton().Shutdown();
-        InputHandler::Shutdown();
+        InputHandler::GetSingleton().Shutdown();
         Cef::CefRuntime::GetSingleton().Shutdown();
         logger::info("Shutdown complete");
     }

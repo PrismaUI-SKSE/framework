@@ -1,0 +1,35 @@
+﻿#pragma once
+
+#include <CommonStates.h>
+#include <SpriteBatch.h>
+#include <wrl/client.h>
+
+#include "Cef/Browser/CefRuntime.h"
+
+namespace PrismaUI {
+    class Renderer {
+    public:
+        static Renderer& GetSingleton();
+
+        bool Initialize(Cef::CefRuntime* cefRuntime);
+
+        void Shutdown();
+
+    private:
+        bool InitGraphics();
+
+        void Render() const;
+
+        static void D3DPresent(uint32_t a_p1);
+
+        Cef::CefRuntime* _cefRuntime{};
+        ID3D11Device* _d3dDevice{};
+        ID3D11DeviceContext* _d3dContext{};
+        HWND _hWnd{};
+        RE::BSGraphics::ScreenSize _screenSize{};
+        std::unique_ptr<DirectX::SpriteBatch> _spriteBatch;
+        std::unique_ptr<DirectX::CommonStates> _commonStates;
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> _cursorTexture;
+        bool _isInitialized = false;
+    };
+}

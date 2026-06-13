@@ -124,14 +124,13 @@ int PluginAPI::PrismaUIInterface::GetOrder(PrismaView view) noexcept {
     return PrismaUI::ViewManager::GetOrder(view);
 }
 
-void PluginAPI::PrismaUIInterface::CreateInspectorView(PrismaView view) noexcept {}
+void PluginAPI::PrismaUIInterface::CreateInspectorView(PrismaView) noexcept {}
 
-void PluginAPI::PrismaUIInterface::SetInspectorVisibility(PrismaView view, bool visible) noexcept {}
+void PluginAPI::PrismaUIInterface::SetInspectorVisibility(PrismaView, bool) noexcept {}
 
-bool PluginAPI::PrismaUIInterface::IsInspectorVisible(PrismaView view) noexcept { return false; }
+bool PluginAPI::PrismaUIInterface::IsInspectorVisible(PrismaView) noexcept { return false; }
 
-void PluginAPI::PrismaUIInterface::SetInspectorBounds(PrismaView view, float topLeftX, float topLeftY, unsigned width,
-                                                      unsigned height) noexcept {}
+void PluginAPI::PrismaUIInterface::SetInspectorBounds(PrismaView, float, float, unsigned, unsigned) noexcept {}
 
 bool PluginAPI::PrismaUIInterface::HasAnyActiveFocus() noexcept { return PrismaUI::ViewManager::HasAnyActiveFocus(); }
 

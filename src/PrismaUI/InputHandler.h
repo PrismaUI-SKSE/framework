@@ -12,7 +12,7 @@ namespace PrismaUI::Core {
 }
 
 namespace PrismaUI::InputHandler {
-    void Initialize(HWND gameHwnd, std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* viewsMap,
+    bool Initialize(HWND gameHwnd, std::map<Core::PrismaViewId, std::shared_ptr<Core::PrismaView>>* viewsMap,
                     std::shared_mutex* viewsMapMutex);
 
     void EnableInputCapture(const Core::PrismaViewId& viewId);

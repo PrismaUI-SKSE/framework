@@ -477,11 +477,6 @@ namespace PrismaUI::Cef {
 
     uint32_t CefRuntime::GetOverlayHeight() const { return impl_->overlay.GetHeight(); }
 
-    void CefRuntime::ReleaseRenderResources() {
-        impl_->overlay.ReleaseResources();
-        impl_->missingD3DLogged = false;
-    }
-
     bool CefRuntime::CopyAcceleratedFrameDuringCallback(HANDLE sharedTextureHandle) {
         return impl_->overlay.CopyFromSharedHandle(sharedTextureHandle);
     }
@@ -984,6 +979,9 @@ namespace PrismaUI::Cef {
     }
 
     void CefRuntime::Shutdown() {
+        impl_->overlay.ReleaseResources();
+        impl_->missingD3DLogged = false;
+
         CefRefPtr<CefOsrClient> client;
         {
             std::lock_guard lock(impl_->stateMutex);

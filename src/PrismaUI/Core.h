@@ -1,11 +1,5 @@
 #pragma once
 
-#include <DirectXTK/CommonStates.h>
-#include <DirectXTK/SpriteBatch.h>
-#include <d3d11.h>
-#include <windows.h>
-#include <wrl/client.h>
-
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -16,7 +10,6 @@
 #include <shared_mutex>
 #include <string>
 
-#include "Hooks/Hooks.h"
 #include "Menus/FocusMenu/FocusMenu.h"
 
 namespace PRISMA_UI_API {
@@ -54,14 +47,6 @@ namespace PrismaUI::Core {
     };
 
     extern std::atomic_uint64_t nextViewId;
-    extern std::atomic<bool> coreInitialized;
-    extern ID3D11Device* d3dDevice;
-    extern ID3D11DeviceContext* d3dContext;
-    extern HWND hWnd;
-    extern RE::BSGraphics::ScreenSize screenSize;
-    extern std::unique_ptr<DirectX::SpriteBatch> spriteBatch;
-    extern std::unique_ptr<DirectX::CommonStates> commonStates;
-    extern Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> cursorTexture;
 
     extern std::map<PrismaViewId, std::shared_ptr<PrismaView>> views;
     extern std::shared_mutex viewsMutex;
@@ -77,12 +62,5 @@ namespace PrismaUI::Core {
     extern std::map<std::pair<PrismaViewId, std::string>, JSCallbackData> jsCallbacks;
     extern std::mutex jsCallbacksMutex;
 
-    extern inline REL::Relocation<Hooks::D3DPresentHook::D3DPresentFunc> RealD3dPresentFunc;
-
-    void InitializeCoreSystem();
-    void InitHooks();
-    void InitGraphics();
-    void D3DPresent(uint32_t a_p1);
     void Shutdown();
-
 }

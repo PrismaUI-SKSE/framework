@@ -1,30 +1,76 @@
 ﻿#include "Bootstrapper.h"
 
+#include "Core.h"
+#include "InputHandler.h"
+#include "Renderer.h"
 #include "Cef/Browser/CefRuntime.h"
 #include "Menus/CursorMenu/CursorMenu.h"
 
 namespace PrismaUI::Bootstrapper {
-    bool Initialize()
-    {
-        logger::info("Bootstrapper: Initializing PrismaUI...");
+    static std::optional<std::tuple<HWND, RE::BSGraphics::ScreenSize>> TryGetRenderWindow() {
         auto renderManager = RE::BSGraphics::Renderer::GetSingleton();
         if (!renderManager) {
-            logger::critical("Bootstrapper: RenderManager is null!");
-            return false;
+            logger::critical("RenderManager is null!");
+            return std::nullopt;
         }
 
         auto& runtimeData = renderManager->GetRuntimeData();
         if (!runtimeData.renderWindows || !runtimeData.renderWindows->hWnd) {
-            logger::critical("Bootstrapper: HWND is null!");
+            logger::critical("HWND is null!");
+            return std::nullopt;
+        }
+
+        return std::make_tuple(reinterpret_cast<HWND>(runtimeData.renderWindows->hWnd), renderManager->GetScreenSize());
+    }
+
+    static bool InitializeImpl()
+    {
+        logger::info("Initializing PrismaUI...");
+        auto renderWindowOpt = TryGetRenderWindow();
+        if (!renderWindowOpt) {
             return false;
         }
 
-        auto screenSize = renderManager->GetScreenSize();
+        auto [hWnd, screenSize] = renderWindowOpt.value();
+        if (!Cef::CefRuntime::GetSingleton().Initialize(hWnd, screenSize.width, screenSize.height)) {
+            logger::critical("CefRuntime initialization failed");
+            return false;
+        }
 
-        Cef::CefRuntime::GetSingleton().Initialize(reinterpret_cast<HWND>(runtimeData.renderWindows->hWnd), screenSize.width, screenSize.height);
+        if (!InputHandler::Initialize(hWnd, &Core::views, &Core::viewsMutex)) {
+            logger::critical("InputHandler initialization failed");
+            return false;
+        }
+
+        if (!Renderer::GetSingleton().Initialize(&Cef::CefRuntime::GetSingleton())) {
+            logger::critical("Renderer initialization failed");
+            return false;
+        }
 
         CursorMenuEx::InstallHook();
 
+        logger::info("PrismaUI successfully initialized");
+
         return true;
+    }
+
+    bool Initialize()
+    {
+        auto isInitialized = InitializeImpl();
+        if (!isInitialized) {
+            Shutdown();
+        }
+
+        return isInitialized;
+    }
+
+    void Shutdown()
+    {
+        logger::info("Shutdown...");
+        Core::Shutdown();
+        Renderer::GetSingleton().Shutdown();
+        InputHandler::Shutdown();
+        Cef::CefRuntime::GetSingleton().Shutdown();
+        logger::info("Shutdown complete");
     }
 }

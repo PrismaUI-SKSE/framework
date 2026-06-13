@@ -8,7 +8,11 @@
 static void SKSEMessageHandler(SKSE::MessagingInterface::Message* message) {
     switch (message->type) {
         case SKSE::MessagingInterface::kDataLoaded:
-            PrismaUI::Bootstrapper::Initialize();
+            if (!PrismaUI::Bootstrapper::Initialize()) {
+                logger::critical("Failed to initialize PrismaUI, exiting...");
+                std::terminate();
+            }
+
             break;
     }
 }

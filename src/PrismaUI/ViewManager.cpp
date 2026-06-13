@@ -86,11 +86,6 @@ namespace PrismaUI::ViewManager {
     }  // namespace
 
     Core::PrismaViewId Create(const std::string& htmlPath, std::function<void(Core::PrismaViewId)> onDomReadyCallback) {
-        bool expected_init = false;
-        if (coreInitialized.compare_exchange_strong(expected_init, true)) {
-            Core::InitializeCoreSystem();
-        }
-
         const Core::PrismaViewId newViewId = nextViewId.fetch_add(1, std::memory_order_relaxed);
 
         // Mirror CefRuntime's URL resolution shape for logging consistency; the runtime

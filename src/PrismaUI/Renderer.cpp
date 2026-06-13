@@ -70,7 +70,6 @@ namespace PrismaUI {
         const uint32_t overlayWidth = cefRuntime.GetOverlayWidth();
         const uint32_t overlayHeight = cefRuntime.GetOverlayHeight();
         if (!overlaySrv || overlayWidth == 0 || overlayHeight == 0) {
-            logger::error("CEF overlay texture is invalid");
             return;
         }
 

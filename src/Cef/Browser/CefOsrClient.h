@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "include/cef_client.h"
+#include "include/cef_context_menu_handler.h"
 #include "include/cef_display_handler.h"
 #include "include/cef_life_span_handler.h"
 #include "include/cef_load_handler.h"
@@ -19,7 +20,8 @@ namespace PrismaUI::Cef {
                                public CefRenderHandler,
                                public CefLifeSpanHandler,
                                public CefLoadHandler,
-                               public CefDisplayHandler {
+                               public CefDisplayHandler,
+                               public CefContextMenuHandler {
     public:
         CefOsrClient(uint32_t width, uint32_t height);
 
@@ -27,6 +29,7 @@ namespace PrismaUI::Cef {
         CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
         CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
         CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
+        CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
 
         bool HasBrowser() const;
         void SetSize(uint32_t width, uint32_t height);
@@ -50,6 +53,8 @@ namespace PrismaUI::Cef {
         void OnAcceleratedPaint(CefRefPtr<CefBrowser> browser, PaintElementType type, const RectList& dirtyRects,
                                 const CefAcceleratedPaintInfo& info) override;
 
+        void OnBeforeContextMenu(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
+                                 CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefMenuModel> model) override;
         bool OnConsoleMessage(CefRefPtr<CefBrowser> browser, cef_log_severity_t level, const CefString& message,
                               const CefString& source, int line) override;
         void OnLoadingStateChange(CefRefPtr<CefBrowser> browser, bool isLoading, bool canGoBack,

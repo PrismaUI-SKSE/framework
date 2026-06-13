@@ -262,6 +262,13 @@ namespace PrismaUI::Cef {
         CefRuntime::GetSingleton().CopyAcceleratedFrameDuringCallback(info.shared_texture_handle);
     }
 
+    void CefOsrClient::OnBeforeContextMenu(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, CefRefPtr<CefContextMenuParams>,
+                                           CefRefPtr<CefMenuModel> model) {
+        if (model) {
+            model->Clear();
+        }
+    }
+
     bool CefOsrClient::OnConsoleMessage(CefRefPtr<CefBrowser> browser, cef_log_severity_t level,
                                         const CefString& message, const CefString& /*source*/, int /*line*/) {
         const int browserId = browser ? browser->GetIdentifier() : -1;

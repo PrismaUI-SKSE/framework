@@ -20,6 +20,7 @@
 #include <utility>
 #include <vector>
 
+#include "Cef/Browser/BrowserCefUtils.h"
 #include "Cef/Browser/CefOsrClient.h"
 #include "Cef/Browser/CefRuntime.h"
 #include "Cef/Browser/OverlayTexture.h"
@@ -138,28 +139,6 @@ namespace {
         escaped.push_back('"');
         return escaped;
     }
-
-    class FunctionTask final : public CefTask {
-    public:
-        explicit FunctionTask(std::function<void()> task) : task_(std::move(task)) {}
-
-        void Execute() override {
-            try {
-                if (task_) {
-                    task_();
-                }
-            } catch (const std::exception& e) {
-                logger::error("Exception in CEF UI task: {}", e.what());
-            } catch (...) {
-                logger::error("Unknown exception in CEF UI task.");
-            }
-        }
-
-    private:
-        std::function<void()> task_;
-
-        IMPLEMENT_REFCOUNTING(FunctionTask);
-    };
 
     class DevToolsClient final : public CefClient, public CefLifeSpanHandler {
     public:
@@ -1071,21 +1050,6 @@ namespace PrismaUI::Cef {
     bool CefRuntime::HasBrowser() const {
         std::lock_guard lock(impl_->stateMutex);
         return impl_->client && impl_->client->HasBrowser();
-    }
-
-    void CefRuntime::PostToCefUi(std::function<void()> task) {
-        if (!impl_->initialized.load(std::memory_order_acquire)) {
-            return;
-        }
-
-        if (CefCurrentlyOn(TID_UI)) {
-            task();
-            return;
-        }
-
-        if (!CefPostTask(TID_UI, new FunctionTask(std::move(task)))) {
-            logger::error("Failed to post task to CEF UI thread.");
-        }
     }
 
     namespace {

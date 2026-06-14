@@ -70,7 +70,6 @@ namespace PrismaUI::Cef {
         void Shutdown();
         bool IsInitialized() const;
         bool HasBrowser() const;
-        void PostToCefUi(std::function<void()> task);
         bool CreateShellView(uint64_t viewId, std::string_view urlOrPath, int order, bool hidden);
         bool DestroyShellView(uint64_t viewId);
         bool SetShellViewHidden(uint64_t viewId, bool hidden);

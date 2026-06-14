@@ -28,6 +28,7 @@ namespace PrismaUI {
         bool IsAnyInputCaptureActive() const;
         void ProcessEvents();
         void Shutdown();
+        void OnExit(std::move_only_function<void()>&& callback);
 
         RE::BSEventNotifyControl ProcessEvent(RE::InputEvent* const* a_event,
                                               RE::BSTEventSource<RE::InputEvent*>* a_eventSource) override;
@@ -57,6 +58,7 @@ namespace PrismaUI {
         std::vector<Cef::CefInputEvent> _eventQueue;
         std::atomic<bool> _isAnyInputCaptureActive = false;
         std::atomic<bool> _isFocusedTextInputActive = false;
+        std::move_only_function<void()> _onExitCallback{};
         bool _mouseButtonStates[3] = {false, false, false};
         wchar_t _pendingHighSurrogate = 0;
         bool _isInitialized = false;

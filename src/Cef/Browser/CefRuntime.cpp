@@ -331,7 +331,8 @@ namespace PrismaUI::Cef {
         impl_->app = CreatePrismaCefApp();
         logger::info("Calling CefInitialize.");
         if (!CefInitialize(mainArgs, settings, impl_->app, nullptr)) {
-            logger::error("CefInitialize failed.");
+            auto errorCode = CefGetExitCode();
+            logger::error("CefInitialize failed, exit code: {}", errorCode);
             impl_->app = nullptr;
             return false;
         }

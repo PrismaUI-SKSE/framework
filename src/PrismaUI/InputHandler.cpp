@@ -385,9 +385,12 @@ namespace PrismaUI {
             }
         }
 
-        // Handle window destruction - clean up subclass
-        if (uMsg == WM_NCDESTROY) {
-            RemoveWindowSubclass(hwnd, SubclassProc, uIdSubclass);
+        switch (uMsg) {
+            case WM_NCDESTROY:
+            case WM_DESTROY:
+            case WM_CLOSE:
+                std::invoke(self._onExitCallback);
+                break;
         }
 
         // Pass to next handler in the chain using DefSubclassProc
@@ -777,5 +780,9 @@ namespace PrismaUI {
         _isFocusedTextInputActive = false;
         _isInitialized = false;
         logger::info("Shutdown complete");
+    }
+
+    void InputHandler::OnExit(std::move_only_function<void()>&& callback) {
+        _onExitCallback = std::move(callback);
     }
 }

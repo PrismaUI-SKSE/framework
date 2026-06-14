@@ -453,4 +453,36 @@ namespace PrismaUI::ViewManager {
             logger::warn("RegisterConsoleCallback: View ID [{}] not found.", viewId);
         }
     }
+
+    void Shutdown() {
+        logger::info("Shutdown...");
+
+        std::vector<PrismaViewId> viewIdsToDestroy;
+        {
+            std::shared_lock lock(viewsMutex);
+            for (const auto& pair : views) {
+                viewIdsToDestroy.push_back(pair.first);
+                if (pair.second) {
+                    // Mark each view as destroyRequested so any in-flight queue entries
+                    // observe it and no-op before reaching CEF or render state (Step 6).
+                    pair.second->destroyRequested.store(true, std::memory_order_release);
+                }
+            }
+        }
+
+        for (const auto& id : viewIdsToDestroy) {
+            try {
+                Destroy(id);
+            } catch (const std::exception& e) {
+                logger::error("Error destroying view [{}] during shutdown: {}", id, e.what());
+            }
+        }
+
+        {
+            std::unique_lock lock(viewsMutex);
+            views.clear();
+        }
+
+        logger::info("Shutdown complete");
+    }
 }

@@ -35,4 +35,6 @@ namespace PrismaUI::ViewManager {
     void RegisterConsoleCallback(
         Core::PrismaViewId viewId,
         std::function<void(Core::PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> callback);
+
+    void Shutdown();
 }

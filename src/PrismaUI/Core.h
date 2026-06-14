@@ -61,6 +61,4 @@ namespace PrismaUI::Core {
 
     extern std::map<std::pair<PrismaViewId, std::string>, JSCallbackData> jsCallbacks;
     extern std::mutex jsCallbacksMutex;
-
-    void Shutdown();
 }

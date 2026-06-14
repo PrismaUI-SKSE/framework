@@ -5,8 +5,11 @@
 #include "InputHandler.h"
 #include "Menus/CursorMenu/CursorMenu.h"
 #include "Renderer.h"
+#include "ViewManager.h"
 
 namespace PrismaUI::Bootstrapper {
+    static inline std::atomic_bool IsShutdownStarted = false;
+
     static std::optional<std::tuple<HWND, RE::BSGraphics::ScreenSize>> TryGetRenderWindow() {
         auto renderManager = RE::BSGraphics::Renderer::GetSingleton();
         if (!renderManager) {
@@ -53,21 +56,29 @@ namespace PrismaUI::Bootstrapper {
         return true;
     }
 
-    bool Initialize() {
-        auto isInitialized = InitializeImpl();
-        if (!isInitialized) {
-            Shutdown();
+    static void Shutdown() {
+        auto expected = false;
+        if (!IsShutdownStarted.compare_exchange_strong(expected, true)) {
+            return;
         }
 
-        return isInitialized;
-    }
-
-    void Shutdown() {
         logger::info("Shutdown...");
-        Core::Shutdown();
+        ViewManager::Shutdown();
         Renderer::GetSingleton().Shutdown();
         InputHandler::GetSingleton().Shutdown();
         Cef::CefRuntime::GetSingleton().Shutdown();
         logger::info("Shutdown complete");
+    }
+
+    bool Initialize() {
+        auto isInitialized = InitializeImpl();
+        if (isInitialized) {
+            InputHandler::GetSingleton().OnExit([] { Shutdown(); });
+        }
+        else {
+            Shutdown();
+        }
+
+        return isInitialized;
     }
 }

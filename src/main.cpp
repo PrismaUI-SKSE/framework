@@ -40,15 +40,26 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 
     g_messaging->RegisterListener("SKSE", SKSEMessageHandler);
 
-    Hooks::HookInstaller<Hooks::D3DPresentHook>::Create()
-        .AddPreHandler([](uint32_t) {
+    Hooks::HookInstaller<Hooks::UpdateHook>::Create()
+        .AddPreHandler([](RE::Main*, float) {
+            [[unlikely]]
             if (!PrismaUI::Bootstrapper::Initialize()) {
                 logger::critical("Failed to initialize PrismaUI, exiting...");
                 std::terminate();
             }
         })
-        .AddPreHandler([](uint32_t) { PrismaUI::InputHandler::GetSingleton().ProcessEvents(); })
-        .AddPostHandler([](uint32_t) { PrismaUI::Renderer::GetSingleton().DoRender(); })
+        .Install();
+
+    Hooks::HookInstaller<Hooks::D3DPresentHook>::Create()
+        .AddPreHandler([](uint32_t) {
+            [[unlikely]]
+            if (!PrismaUI::Bootstrapper::IsInitialized()) {
+                return;
+            }
+
+            PrismaUI::InputHandler::GetSingleton().ProcessEvents();
+            PrismaUI::Renderer::GetSingleton().DoRender();
+        })
         .Install();
 
     return true;

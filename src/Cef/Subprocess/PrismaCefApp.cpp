@@ -14,6 +14,8 @@ namespace PrismaUI::Cef {
         command_line->AppendSwitch("disable-smooth-scrolling");
         command_line->AppendSwitch("allow-file-access-from-files");
         command_line->AppendSwitch("allow-universal-access-from-files");
+        command_line->AppendSwitchWithValue("use-gl", "angle");
+        command_line->AppendSwitchWithValue("use-angle", "d3d11");
     }
 
     CefRefPtr<CefRenderProcessHandler> PrismaCefApp::GetRenderProcessHandler() { return renderHandler_; }

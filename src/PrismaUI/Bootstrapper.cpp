@@ -8,6 +8,7 @@
 #include "ViewManager.h"
 
 namespace PrismaUI::Bootstrapper {
+    static inline bool IsInitialized = false;
     static inline std::atomic_bool IsShutdownStarted = false;
 
     static std::optional<std::tuple<HWND, RE::BSGraphics::ScreenSize>> TryGetRenderWindow() {
@@ -71,13 +72,18 @@ namespace PrismaUI::Bootstrapper {
     }
 
     bool Initialize() {
-        auto isInitialized = InitializeImpl();
-        if (isInitialized) {
+        [[likely]]
+        if (IsInitialized) {
+            return true;
+        }
+
+        IsInitialized = InitializeImpl();
+        if (IsInitialized) {
             InputHandler::GetSingleton().OnExit([] { Shutdown(); });
         } else {
             Shutdown();
         }
 
-        return isInitialized;
+        return IsInitialized;
     }
 }

@@ -14,14 +14,14 @@ namespace PrismaUI {
 
         bool Initialize(Cef::CefRuntime* cefRuntime, InputHandler* inputHandler);
 
+        void DoRender();
+
         void Shutdown();
 
     private:
         bool InitGraphics();
 
         void Render() const;
-
-        static void D3DPresent(uint32_t a_p1);
 
         Cef::CefRuntime* _cefRuntime{};
         InputHandler* _inputHandler{};

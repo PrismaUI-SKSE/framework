@@ -1,18 +1,16 @@
 #include <spdlog/sinks/basic_file_sink.h>
 
 #include "API/API.h"
+#include "Hooks/HookInstaller.h"
+#include "Hooks/HooksLib.h"
 #include "Menus/CursorMenu/CursorMenu.h"
 #include "PrismaUI/Bootstrapper.h"
+#include "PrismaUI/Renderer.h"
 #include "PrismaUI_API.h"
 
 static void SKSEMessageHandler(SKSE::MessagingInterface::Message* message) {
     switch (message->type) {
         case SKSE::MessagingInterface::kDataLoaded:
-            if (!PrismaUI::Bootstrapper::Initialize()) {
-                logger::critical("Failed to initialize PrismaUI, exiting...");
-                std::terminate();
-            }
-
             break;
     }
 }
@@ -41,6 +39,17 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
     SKSE::AllocTrampoline(1 << 10);
 
     g_messaging->RegisterListener("SKSE", SKSEMessageHandler);
+
+    Hooks::HookInstaller<Hooks::D3DPresentHook>::Create()
+        .AddPreHandler([](uint32_t) {
+            if (!PrismaUI::Bootstrapper::Initialize()) {
+                logger::critical("Failed to initialize PrismaUI, exiting...");
+                std::terminate();
+            }
+        })
+        .AddPreHandler([](uint32_t) { PrismaUI::InputHandler::GetSingleton().ProcessEvents(); })
+        .AddPostHandler([](uint32_t) { PrismaUI::Renderer::GetSingleton().DoRender(); })
+        .Install();
 
     return true;
 }

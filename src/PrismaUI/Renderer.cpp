@@ -108,30 +108,22 @@ namespace PrismaUI {
         _spriteBatch->End();
     }
 
-    inline REL::Relocation<Hooks::D3DPresentHook::FuncDefinition> RealD3dPresentFunc;
-
-    void Renderer::D3DPresent(uint32_t a_p1) {
-        RealD3dPresentFunc(a_p1);
-
-        auto& self = GetSingleton();
+    void Renderer::DoRender() {
         if (auto* renderManager = RE::BSGraphics::Renderer::GetSingleton()) {
             const auto currentScreenSize = renderManager->GetScreenSize();
             if (currentScreenSize.width != 0 && currentScreenSize.height != 0 &&
-                (currentScreenSize.width != self._screenSize.width ||
-                 currentScreenSize.height != self._screenSize.height)) {
-                self._screenSize = currentScreenSize;
-                Cef::CefRuntime::GetSingleton().Resize(self._screenSize.width, self._screenSize.height);
+                (currentScreenSize.width != _screenSize.width || currentScreenSize.height != _screenSize.height)) {
+                _screenSize = currentScreenSize;
+                Cef::CefRuntime::GetSingleton().Resize(_screenSize.width, _screenSize.height);
             }
         }
 
-        // Process pending operations and queued input for all views.
         ViewOperationQueue::ProcessAllViewOperations();
-        self._inputHandler->ProcessEvents();
 
-        self._cefRuntime->BeginFrame();
-        self._cefRuntime->UpdateOverlayTexture(self._d3dDevice, self._d3dContext);
+        _cefRuntime->BeginFrame();
+        _cefRuntime->UpdateOverlayTexture(_d3dDevice, _d3dContext);
 
-        self.Render();
+        Render();
     }
 
     bool Renderer::Initialize(Cef::CefRuntime* cefRuntime, InputHandler* inputHandler) {
@@ -142,8 +134,6 @@ namespace PrismaUI {
 
         auto ui = RE::UI::GetSingleton();
         ui->Register(FocusMenu::MENU_NAME, FocusMenu::Creator);
-
-        RealD3dPresentFunc = Hooks::Install<Hooks::D3DPresentHook>(&D3DPresent);
 
         _cefRuntime = cefRuntime;
         _inputHandler = inputHandler;

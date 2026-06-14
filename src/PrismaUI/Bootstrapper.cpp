@@ -74,8 +74,7 @@ namespace PrismaUI::Bootstrapper {
         auto isInitialized = InitializeImpl();
         if (isInitialized) {
             InputHandler::GetSingleton().OnExit([] { Shutdown(); });
-        }
-        else {
+        } else {
             Shutdown();
         }
 

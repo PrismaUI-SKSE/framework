@@ -5,6 +5,7 @@
 #include <WICTextureLoader.h>
 
 #include "Hooks/Hooks.h"
+#include "Hooks/HooksLib.h"
 #include "InputHandler.h"
 #include "Menus/FocusMenu/FocusMenu.h"
 #include "Utils/D3DStateGuard.h"
@@ -107,7 +108,7 @@ namespace PrismaUI {
         _spriteBatch->End();
     }
 
-    inline REL::Relocation<Hooks::D3DPresentHook::D3DPresentFunc> RealD3dPresentFunc;
+    inline REL::Relocation<Hooks::D3DPresentHook::FuncDefinition> RealD3dPresentFunc;
 
     void Renderer::D3DPresent(uint32_t a_p1) {
         RealD3dPresentFunc(a_p1);
@@ -142,7 +143,7 @@ namespace PrismaUI {
         auto ui = RE::UI::GetSingleton();
         ui->Register(FocusMenu::MENU_NAME, FocusMenu::Creator);
 
-        RealD3dPresentFunc = Hooks::D3DPresentHook::Install(&D3DPresent);
+        RealD3dPresentFunc = Hooks::Install<Hooks::D3DPresentHook>(&D3DPresent);
 
         _cefRuntime = cefRuntime;
         _inputHandler = inputHandler;

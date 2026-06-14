@@ -782,7 +782,5 @@ namespace PrismaUI {
         logger::info("Shutdown complete");
     }
 
-    void InputHandler::OnExit(std::move_only_function<void()>&& callback) {
-        _onExitCallback = std::move(callback);
-    }
+    void InputHandler::OnExit(std::move_only_function<void()>&& callback) { _onExitCallback = std::move(callback); }
 }

@@ -1,5 +1,4 @@
 - Create C++ shell API
-- CEF shutdown???
 - Refactor PrismaUI initialization
-- Fix input delay
 - Simplify concurrent code
+- Make almost all communication between browser and renderer through messages

@@ -512,7 +512,8 @@ namespace PrismaUI::Cef {
         }
 
         const bool checkIframe = method != std::string_view{"createView"};
-        auto run = [client, script = std::move(script), method = std::string(method), viewId, checkIframe]() {
+
+        PostToCefUi([client, script = std::move(script), method = std::string(method), viewId, checkIframe]() {
             CefRefPtr<CefBrowser> browser = client->GetBrowserOnUiThread();
             if (!browser) {
                 logger::error("CEF shell '{}' (view={}) failed: browser disappeared.", method, viewId);
@@ -540,13 +541,8 @@ namespace PrismaUI::Cef {
             cefScript.FromString(script);
             mainFrame->ExecuteJavaScript(cefScript, sourceUrl, 0);
             logger::debug("CEF shell '{}' (view={}) executed.", method, viewId);
-        };
+        });
 
-        if (CefCurrentlyOn(TID_UI)) {
-            run();
-        } else {
-            PostToCefUi(std::move(run));
-        }
         return true;
     }
 

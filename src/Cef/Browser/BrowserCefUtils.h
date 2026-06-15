@@ -27,7 +27,7 @@ namespace PrismaUI::Cef {
     template <std::invocable TTask>
     void PostToCefUi(TTask&& task) {
         if (CefCurrentlyOn(TID_UI)) {
-            task();
+            std::invoke(std::forward<TTask>(task));
             return;
         }
 

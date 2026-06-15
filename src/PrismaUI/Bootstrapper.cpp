@@ -2,13 +2,16 @@
 
 #include "Cef/Browser/CefRuntime.h"
 #include "Core.h"
+#include "Globals.h"
 #include "InputHandler.h"
 #include "Menus/CursorMenu/CursorMenu.h"
 #include "Renderer.h"
 #include "ViewManager.h"
+#include "Hooks/HookInstaller.h"
+#include "Hooks/HooksLib.h"
 
 namespace PrismaUI::Bootstrapper {
-    static inline bool IsInitializedVar = false;
+    static inline bool IsInitialized = false;
     static inline std::atomic_bool IsShutdownStarted = false;
 
     static std::optional<std::tuple<HWND, RE::BSGraphics::ScreenSize>> TryGetRenderWindow() {
@@ -29,6 +32,12 @@ namespace PrismaUI::Bootstrapper {
 
     static bool InitializeImpl() {
         logger::info("Initializing PrismaUI...");
+
+        if (!MainThreadScheduler.IsTargetThread()) {
+            logger::critical("PrismaUI must be initialized on the main thread");
+            return false;
+        }
+
         auto renderWindowOpt = TryGetRenderWindow();
         if (!renderWindowOpt) {
             return false;
@@ -51,6 +60,12 @@ namespace PrismaUI::Bootstrapper {
         }
 
         CursorMenuEx::InstallHook();
+        Hooks::HookInstaller<Hooks::D3DPresentHook>::Create()
+            .AddPreHandler([](uint32_t) {
+                InputHandler::GetSingleton().ProcessEvents();
+                Renderer::GetSingleton().DoRender();
+            })
+            .Install();
 
         logger::info("PrismaUI successfully initialized");
 
@@ -71,11 +86,9 @@ namespace PrismaUI::Bootstrapper {
         logger::info("Shutdown complete");
     }
 
-    bool IsInitialized() { return IsInitializedVar; }
-
     bool Initialize() {
         [[likely]]
-        if (IsInitializedVar) {
+        if (IsInitialized) {
             return true;
         }
 
@@ -83,13 +96,15 @@ namespace PrismaUI::Bootstrapper {
             return false;
         }
 
-        IsInitializedVar = InitializeImpl();
-        if (IsInitializedVar) {
-            InputHandler::GetSingleton().OnExit([] { Shutdown(); });
+        IsInitialized = InitializeImpl();
+        if (IsInitialized) {
+            InputHandler::GetSingleton().OnExit([] {
+                MainThreadScheduler.Post([] { Shutdown(); });
+            });
         } else {
             Shutdown();
         }
 
-        return IsInitializedVar;
+        return IsInitialized;
     }
 }

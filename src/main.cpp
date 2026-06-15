@@ -1,5 +1,6 @@
 #include <spdlog/sinks/basic_file_sink.h>
 
+#include "Globals.h"
 #include "API/API.h"
 #include "Hooks/HookInstaller.h"
 #include "Hooks/HooksLib.h"
@@ -40,6 +41,8 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 
     g_messaging->RegisterListener("SKSE", SKSEMessageHandler);
 
+    MainThreadScheduler.SetThreadId(std::this_thread::get_id());
+
     Hooks::HookInstaller<Hooks::UpdateHook>::Create()
         .AddPreHandler([](RE::Main*, float) {
             [[unlikely]]
@@ -47,18 +50,8 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
                 logger::critical("Failed to initialize PrismaUI, exiting...");
                 std::terminate();
             }
-        })
-        .Install();
 
-    Hooks::HookInstaller<Hooks::D3DPresentHook>::Create()
-        .AddPreHandler([](uint32_t) {
-            [[unlikely]]
-            if (!PrismaUI::Bootstrapper::IsInitialized()) {
-                return;
-            }
-
-            PrismaUI::InputHandler::GetSingleton().ProcessEvents();
-            PrismaUI::Renderer::GetSingleton().DoRender();
+            MainThreadScheduler.ExecuteTasks();
         })
         .Install();
 

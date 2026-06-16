@@ -15,8 +15,7 @@ public:
     void Post(TTask&& task) {
         if (IsTargetThread()) {
             std::invoke(std::forward<TTask>(task));
-        }
-        else {
+        } else {
             auto taskQueue = _taskQueueLock.Acquire();
             taskQueue->push(std::forward<TTask>(task));
         }
@@ -41,6 +40,7 @@ public:
     }
 
 private:
-    ResourceLock<std::queue<std::move_only_function<void()>>> _taskQueueLock{std::queue<std::move_only_function<void()>>()};
+    ResourceLock<std::queue<std::move_only_function<void()>>> _taskQueueLock{
+        std::queue<std::move_only_function<void()>>()};
     std::thread::id _threadId{};
 };

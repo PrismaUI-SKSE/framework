@@ -19,9 +19,7 @@ public:
 
     explicit ResourceLock(T value) : value_(std::move(value)) {}
 
-    Lock Acquire() {
-        return Lock(mutex_, value_);
-    }
+    Lock Acquire() { return Lock(mutex_, value_); }
 
 private:
     std::mutex mutex_;

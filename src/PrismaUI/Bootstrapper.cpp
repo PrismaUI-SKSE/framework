@@ -3,12 +3,12 @@
 #include "Cef/Browser/CefRuntime.h"
 #include "Core.h"
 #include "Globals.h"
+#include "Hooks/HookInstaller.h"
+#include "Hooks/HooksLib.h"
 #include "InputHandler.h"
 #include "Menus/CursorMenu/CursorMenu.h"
 #include "Renderer.h"
 #include "ViewManager.h"
-#include "Hooks/HookInstaller.h"
-#include "Hooks/HooksLib.h"
 
 namespace PrismaUI::Bootstrapper {
     static inline bool IsInitialized = false;
@@ -98,9 +98,7 @@ namespace PrismaUI::Bootstrapper {
 
         IsInitialized = InitializeImpl();
         if (IsInitialized) {
-            InputHandler::GetSingleton().OnExit([] {
-                MainThreadScheduler.Post([] { Shutdown(); });
-            });
+            InputHandler::GetSingleton().OnExit([] { MainThreadScheduler.Post([] { Shutdown(); }); });
         } else {
             Shutdown();
         }

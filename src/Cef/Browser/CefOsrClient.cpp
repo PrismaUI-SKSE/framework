@@ -384,7 +384,7 @@ namespace PrismaUI::Cef {
             [&](const RTBMessages::RendererToBrowserMessage& result) {
                 return CefRuntime::GetSingleton().OnRendererMessage(frame->GetName(), result);
             },
-            [](const Messaging::DeserializeMessageError e) {
+            [](const Messaging::DeserializeMessageError) {
                 LOG(WARNING) << "CEF OnProcessMessageReceived failed to deserialize message";
                 return false;
             });

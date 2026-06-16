@@ -1,7 +1,7 @@
 #include <spdlog/sinks/basic_file_sink.h>
 
-#include "Globals.h"
 #include "API/API.h"
+#include "Globals.h"
 #include "Hooks/HookInstaller.h"
 #include "Hooks/HooksLib.h"
 #include "Menus/CursorMenu/CursorMenu.h"

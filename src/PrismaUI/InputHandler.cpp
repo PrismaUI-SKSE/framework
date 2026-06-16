@@ -292,8 +292,8 @@ namespace PrismaUI {
         return std::wstring{high, low};
     }
 
-    LRESULT CALLBACK InputHandler::SubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam,
-                                                UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
+    LRESULT CALLBACK InputHandler::SubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR,
+                                                DWORD_PTR dwRefData) {
         InputHandler& self = *reinterpret_cast<InputHandler*>(dwRefData);
         LRESULT imeControlResult = 0;
         if (self._imeHelper.HandleControlMessage(hwnd, uMsg, wParam, lParam, &imeControlResult)) {

@@ -11,6 +11,13 @@ namespace PrismaUI::Cef {
             return;
         }
 
+        // CEF/Chromium M138+ auto de-elevates when launched as admin: it relaunches the main
+        // executable de-elevated and CefInitialize returns false (CefGetExitCode == 38,
+        // CEF_RESULT_CODE_NORMAL_EXIT_AUTO_DE_ELEVATED). Inside SkyrimSE.exe that would try to
+        // relaunch the game itself, ignoring browser_subprocess_path. Disable it so PrismaUI
+        // initializes normally when the game/mod manager runs elevated.
+        command_line->AppendSwitch("do-not-de-elevate");
+
         command_line->AppendSwitch("disable-smooth-scrolling");
         command_line->AppendSwitch("allow-file-access-from-files");
         command_line->AppendSwitch("allow-universal-access-from-files");

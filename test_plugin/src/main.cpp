@@ -233,6 +233,17 @@ namespace {
         }
 
         const std::string_view command = argument ? std::string_view(argument) : std::string_view();
+        if (command == "unfocus:main"sv) {
+            if (!g_testView) {
+                logger::warn("View control unfocus skipped: mainView unavailable");
+                return;
+            }
+
+            g_apiV3->Unfocus(g_testView);
+            logger::info("View control unfocus mainView={}", g_testView);
+            return;
+        }
+
         std::size_t index = 0;
         if (const PrismaView view = GetEchoView(command, "focus:"sv, index); view) {
             const bool focused = g_apiV3->Focus(view, false, true);

@@ -598,7 +598,6 @@ static bool ParseNifModel(const std::vector<uint8_t>& data, std::vector<CpuShape
 	uint8_t endian;
 	if (!c.get(ver) || !c.get(endian) || !c.get(userver) || !c.get(nblocks) || !c.get(bsver)) return false;
 	if (nblocks == 0 || nblocks > 100000) return false;
-	const bool le = bsver < 100;       // oldrim stream: NiTriShape geometry
 	const bool leProps = bsver <= 34;  // only FO3-era streams carry AVObject property lists
 	for (int i = 0; i < 3; ++i) {
 		uint8_t len;

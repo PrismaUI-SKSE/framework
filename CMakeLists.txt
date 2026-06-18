@@ -133,7 +133,10 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     
     # Copy PrismaUI DLL to SKSE/plugins
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:${PROJECT_NAME}>" "${DIST_SKSE_PLUGINS_DIR}/"
-    
+
+    # Copy ModelPreview ini template to SKSE/plugins
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/PrismaUI_ModelPreview.ini" "${DIST_SKSE_PLUGINS_DIR}/"
+
     # Copy PrismaUI PDB to SKSE/plugins (if exists)
     COMMAND ${CMAKE_COMMAND} -E $<IF:$<BOOL:$<TARGET_PDB_FILE:${PROJECT_NAME}>>,copy,true>
         "$<$<BOOL:$<TARGET_PDB_FILE:${PROJECT_NAME}>>:$<TARGET_PDB_FILE:${PROJECT_NAME}>>"

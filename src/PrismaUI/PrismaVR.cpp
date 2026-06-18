@@ -7,6 +7,7 @@
 
 #include "PrismaVR.h"
 #include "PrismaVR_Bridge.h"
+#include "ModelPreview.h"
 
 #include <Windows.h>
 #include <commctrl.h>
@@ -684,6 +685,8 @@ static void DestroyVROverlay(uint64_t viewId)
 				g_mouseActiveHand = -1;
 		}
 	}
+	// VR funnel for panel destruction - clears any previews riding this panel
+	PrismaUI::ModelPreview::OnPanelDestroyed(viewId);
 	logger::info("PrismaVR: Destroyed VR overlay for view {}", viewId);
 }
 
@@ -1951,6 +1954,23 @@ namespace PrismaVR {
 	//  11. CreateLaserOverlays: one-time laser beam texture/overlay creation
 	//  12. UpdateLasers: position beams from controllers to panels
 	//  13. Text focus polling for OCU keyboard routing
+
+	// Lookup passed to ModelPreview::TickVR so it can place each preview on its panel.
+	static bool ModelPreviewPanelLookup(uint64_t viewId, PrismaUI::ModelPreview::PanelInfo& out)
+	{
+		auto it = g_vrOverlays.find(viewId);
+		if (it == g_vrOverlays.end()) return false;
+		auto& s = it->second;
+		out.valid = true;
+		out.pos[0] = s.posX; out.pos[1] = s.posY; out.pos[2] = s.posZ;
+		out.fwd[0] = s.fwdX; out.fwd[1] = s.fwdY; out.fwd[2] = s.fwdZ;
+		out.up[0] = s.upX; out.up[1] = s.upY; out.up[2] = s.upZ;
+		out.widthMeters = s.widthMeters;
+		out.texWidth = s.texWidth;
+		out.texHeight = s.texHeight;
+		return true;
+	}
+
 	void OnFrame()
 	{
 		if (!g_vrActive) return;
@@ -2015,6 +2035,10 @@ namespace PrismaVR {
 		CleanupDistantOverlays();
 		CreateLaserOverlays();
 		UpdateLasers();
+
+		// Drive the 3D model preview overlays (panel transforms are final here)
+		if (PrismaUI::ModelPreview::Enabled())
+			PrismaUI::ModelPreview::TickVR(g_overlay, &ModelPreviewPanelLookup);
 
 		// Poll text input focus state every ~10 frames (~110ms at 90fps).
 		// Catches Enter/Tab/click-away that blur the text field without a new laser click.

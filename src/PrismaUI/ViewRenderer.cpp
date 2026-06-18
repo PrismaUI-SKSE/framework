@@ -3,6 +3,7 @@
 #include "Core.h"
 #include "InputHandler.h"
 #include "Inspector.h"
+#include "ModelPreview.h"
 
 namespace PrismaUI::ViewRenderer {
     using namespace Core;
@@ -327,6 +328,13 @@ namespace PrismaUI::ViewRenderer {
 
         spriteBatch->Draw(viewData->textureView, position, &sourceRect, DirectX::Colors::White, 0.f,
                           DirectX::SimpleMath::Vector2::Zero, 1.0f, DirectX::SpriteEffects_None, 0.f);
+
+        // 3D model preview sprites ride the same batch, over this view's placeholder rects
+        std::vector<ModelPreview::FlatDraw> previews;
+        ModelPreview::GetFlatOverlays(viewData->id, previews);
+        for (const auto& p : previews) {
+            if (p.srv) spriteBatch->Draw(p.srv, p.dest);
+        }
 
         // Draw inspector overlay if visible
         if (viewData->inspectorVisible.load() && viewData->inspectorTextureView &&

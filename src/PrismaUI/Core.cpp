@@ -6,6 +6,7 @@
 #include "InputHandler.h"
 #include "Inspector.h"
 #include "Listeners.h"
+#include "ModelPreview.h"
 #include "Utils/DllLoader.h"
 #include "ViewManager.h"
 #include "ViewOperationQueue.h"
@@ -507,6 +508,9 @@ namespace PrismaUI::Core {
             UpdateSingleTextureFromBuffer(viewData);
         }
 
+        // Render the 3D model preview RTs before compositing (no-op when unused)
+        ModelPreview::TickCore(d3dDevice, d3dContext);
+
         DrawViews();
         DrawCursor();
 
@@ -516,6 +520,7 @@ namespace PrismaUI::Core {
 
     void Shutdown() {
         PrismaVR::Shutdown();
+        ModelPreview::Shutdown();
         logger::info("Shutting down PrismaUI Core System...");
 
         std::vector<PrismaViewId> viewIdsToDestroy;

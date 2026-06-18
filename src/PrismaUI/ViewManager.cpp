@@ -4,6 +4,7 @@
 #include "InputHandler.h"
 #include "Inspector.h"
 #include "Listeners.h"
+#include "ModelPreview.h"
 #include "PrismaVR.h"
 #include "ViewOperationQueue.h"
 
@@ -436,6 +437,9 @@ namespace PrismaUI::ViewManager {
 
         viewDataToDestroy->isHidden = true;
         logger::debug("Destroy: Marked View [{}] as hidden", viewId);
+
+        // Flat funnel for view destruction - clears any previews owned by this view
+        ModelPreview::OnPanelDestroyed(viewId);
 
         {
             std::lock_guard<std::mutex> lock(jsCallbacksMutex);

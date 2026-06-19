@@ -26,6 +26,14 @@ namespace PrismaVR_Bridge {
 		return v ? v->texture : nullptr;
 	}
 
+	inline bool IsPendingRelease(PrismaUI::Core::PrismaView* v) {
+		return v ? v->pendingResourceRelease.load() : true;
+	}
+
+	inline bool HasTextureView(PrismaUI::Core::PrismaView* v) {
+		return v && v->textureView != nullptr;
+	}
+
 	inline uint32_t GetTextureWidth(PrismaUI::Core::PrismaView* v) {
 		return v ? v->textureWidth : 0;
 	}

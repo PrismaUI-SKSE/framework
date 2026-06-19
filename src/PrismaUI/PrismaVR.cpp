@@ -197,6 +197,7 @@ typedef void* (*VR_GetGenericInterface_t)(const char* pchInterfaceVersion, int* 
 
 struct VROverlayState {
 	openvr::VROverlayHandle_t handle = 0;
+	bool textureBound = false;  // has a live texture submitted; gates show/hide during teardown
 
 	// 3D position and orientation
 	float posX = 0.0f, posY = 0.0f, posZ = 0.0f;
@@ -653,6 +654,7 @@ static void CreateVROverlay(uint64_t viewId, PrismaVR_Bridge::ViewInfo& viewInfo
 		VCallOvl(g_overlay, OVL_SLOT::SetOverlayTexture, "SetOverlayTexture",
 			state.handle, &vrTex);
 	}
+	state.textureBound = (tex != nullptr);
 
 	// Show it
 	VCallOvl(g_overlay, OVL_SLOT::ShowOverlay, "ShowOverlay", state.handle);
@@ -722,9 +724,11 @@ static void SyncOverlays()
 
 		if (it != g_vrOverlays.end()) {
 			auto* view = viewInfo.view.get();
-			ID3D11Texture2D* tex = PrismaVR_Bridge::GetTexture(view);
+			// UAF guard: never hand the compositor a tearing-down/rebuilding texture
+			// (mirrors the 2D draw-path guard). Hide the overlay while it has none.
+			const bool tearingDown = PrismaVR_Bridge::IsPendingRelease(view) || !PrismaVR_Bridge::HasTextureView(view);
+			ID3D11Texture2D* tex = tearingDown ? nullptr : PrismaVR_Bridge::GetTexture(view);
 
-			// Update texture each frame (Prisma may have redrawn)
 			if (tex && it->second.handle) {
 				openvr::Texture_t vrTex;
 				vrTex.handle = tex;
@@ -732,6 +736,13 @@ static void SyncOverlays()
 				vrTex.eColorSpace = openvr::ColorSpace_Auto;
 				VCallOvl(g_overlay, OVL_SLOT::SetOverlayTexture, "SetOverlayTexture",
 					it->second.handle, &vrTex);
+				if (!it->second.textureBound) {
+					VCallOvl(g_overlay, OVL_SLOT::ShowOverlay, "ShowOverlay(retex)", it->second.handle);
+					it->second.textureBound = true;
+				}
+			} else if (it->second.handle && it->second.textureBound) {
+				VCallOvl(g_overlay, OVL_SLOT::HideOverlay, "HideOverlay(teardown)", it->second.handle);
+				it->second.textureBound = false;
 			}
 
 			// Update cached dimensions

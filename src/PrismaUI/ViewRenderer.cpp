@@ -299,8 +299,17 @@ namespace PrismaUI::ViewRenderer {
 
             spriteBatch->Begin(DirectX::SpriteSortMode_Deferred, commonStates->AlphaBlend());
 
+            // Guard each view's draw individually so one bad draw can never skip End().
+            // A skipped End() leaves the batch open, so the next Begin() throws
+            // "Cannot nest Begin calls" -> uncaught -> CTD (the AddItem-search crash).
             for (const auto& viewData : viewsToDraw) {
-                DrawSingleTexture(viewData);
+                try {
+                    DrawSingleTexture(viewData);
+                } catch (const std::exception& e) {
+                    logger::error("DrawSingleTexture failed (view skipped): {}", e.what());
+                } catch (...) {
+                    logger::error("DrawSingleTexture failed (view skipped): unknown error");
+                }
             }
 
             spriteBatch->End();

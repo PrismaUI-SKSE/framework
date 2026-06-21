@@ -69,9 +69,7 @@ namespace PrismaUI::Bootstrapper {
             .Install();
 
         Hooks::HookInstaller<Hooks::D3DPresentHook>::Create()
-            .AddPreHandler([](uint32_t) {
-                Renderer::GetSingleton().EndRender();
-            })
+            .AddPreHandler([](uint32_t) { Renderer::GetSingleton().EndRender(); })
             .Install();
 
         logger::info("PrismaUI successfully initialized");

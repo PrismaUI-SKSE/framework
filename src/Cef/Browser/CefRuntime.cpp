@@ -1,3 +1,4 @@
+#include "Cef/Shared/Constants.h"
 #include "PCH.h"
 
 #ifdef GetNextSibling
@@ -33,13 +34,10 @@
 #include "Utils/VariantUtils.h"
 #include "include/cef_app.h"
 #include "include/cef_browser.h"
-#include "include/cef_process_message.h"
 #include "include/cef_task.h"
-#include "include/cef_values.h"
 #include "include/wrapper/cef_helpers.h"
 
 namespace {
-    constexpr int kCefWindowlessFrameRate = 120;
     constexpr std::chrono::milliseconds kBrowserCloseTimeout{5000};
     std::wstring ToFileUrl(const std::filesystem::path& path) {
         std::wstring generic = std::filesystem::absolute(path).generic_wstring();
@@ -333,7 +331,7 @@ namespace PrismaUI::Cef {
             windowInfo.external_begin_frame_enabled = true;
 
             CefBrowserSettings browserSettings;
-            browserSettings.windowless_frame_rate = kCefWindowlessFrameRate;
+            browserSettings.windowless_frame_rate = Constants::TargetFps;
             browserSettings.background_color = CefColorSetARGB(0, 0, 0, 0);
 
             CefString url;

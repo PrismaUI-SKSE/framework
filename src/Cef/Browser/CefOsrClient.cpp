@@ -1,3 +1,4 @@
+#include "Cef/Shared/Constants.h"
 #include "PCH.h"
 
 #ifdef GetNextSibling
@@ -13,13 +14,7 @@
 #include "Cef/Browser/CefRuntime.h"
 #include "Cef/Shared/RendererToBrowserMessages.h"
 #include "include/cef_process_message.h"
-#include "include/cef_values.h"
 #include "include/wrapper/cef_helpers.h"
-
-namespace {
-    constexpr int kCefWindowlessFrameRate = 240;
-
-}
 
 namespace PrismaUI::Cef {
     CefOsrClient::CefOsrClient(uint32_t width, uint32_t height)
@@ -151,7 +146,7 @@ namespace PrismaUI::Cef {
         browser_ = browser;
         hasBrowser_.store(true, std::memory_order_release);
         closing_.store(false, std::memory_order_release);
-        browser_->GetHost()->SetWindowlessFrameRate(kCefWindowlessFrameRate);
+        browser_->GetHost()->SetWindowlessFrameRate(Constants::TargetFps);
         logger::info("CEF OSR browser [{}] created.", browser_->GetIdentifier());
     }
 

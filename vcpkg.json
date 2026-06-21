@@ -3,6 +3,7 @@
   "dependencies": [
     "directxmath",
     "directxtk",
+    "minhook",
     "rapidcsv",
     "fmt",
     {

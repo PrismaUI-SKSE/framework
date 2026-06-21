@@ -99,6 +99,11 @@ namespace PrismaUI {
     }
 
     void Renderer::BeginRender() {
+        [[unlikely]]
+        if (!_isInitialized) {
+            return;
+        }
+
         if (auto* renderManager = RE::BSGraphics::Renderer::GetSingleton()) {
             const auto currentScreenSize = renderManager->GetScreenSize();
             if (currentScreenSize.width != 0 && currentScreenSize.height != 0 &&
@@ -114,6 +119,11 @@ namespace PrismaUI {
     }
 
     void Renderer::EndRender() const {
+        [[unlikely]]
+        if (!_isInitialized) {
+            return;
+        }
+
         _cefRuntime->UpdateOverlayTexture(_d3dDevice, _d3dContext);
 
         Utils::D3DStateGuard stateGuard(_d3dContext);

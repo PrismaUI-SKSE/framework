@@ -223,16 +223,53 @@ namespace PrismaUI::ViewRenderer {
         d3dContext->Unmap(viewData->texture, 0);
     }
 
-    // Begin the shared sprite batch, recovering if a prior draw left it open.
-    // SpriteBatch has no "is open" query, so on the nest-Begin throw we End and retry.
-    // This turns a single bad draw into a logged hiccup instead of a permanent CTD spiral.
-    static void BeginSpriteBatchSafe() {
+    // Once a SpriteBatch queue is poisoned (a flushed sprite faults in the driver),
+    // End() throws and leaves the batch stuck "open" -- every later Begin() then
+    // nest-throws -> CTD spiral. There is no public "abort"/"reset", so recovery
+    // DISCARDS the batch and builds a fresh one (clean flag, empty queue). The
+    // destructor never flushes, so dropping a poisoned batch is safe.
+    static void RecreateSpriteBatch() {
+        try { spriteBatch.reset(); } catch (...) {}
+        if (!d3dContext) return;
+        try {
+            spriteBatch = std::make_unique<DirectX::SpriteBatch>(d3dContext);
+        } catch (...) {
+            spriteBatch.reset();
+            logger::error("Failed to recreate SpriteBatch.");
+        }
+    }
+
+    // Begin the shared batch; returns false if no usable batch exists this frame.
+    static bool BeginSpriteBatchSafe() {
+        if (!spriteBatch) RecreateSpriteBatch();
+        if (!spriteBatch || !commonStates) return false;
         try {
             spriteBatch->Begin(DirectX::SpriteSortMode_Deferred, commonStates->AlphaBlend());
+            return true;
         } catch (...) {
-            logger::warn("SpriteBatch was left open by an earlier draw; resetting it.");
-            try { spriteBatch->End(); } catch (...) {}
-            spriteBatch->Begin(DirectX::SpriteSortMode_Deferred, commonStates->AlphaBlend());
+            logger::warn("SpriteBatch was poisoned on Begin; discarding and recreating it.");
+            RecreateSpriteBatch();
+            if (!spriteBatch) return false;
+            try {
+                spriteBatch->Begin(DirectX::SpriteSortMode_Deferred, commonStates->AlphaBlend());
+                return true;
+            } catch (...) {
+                logger::error("SpriteBatch Begin failed even after recreate; skipping frame.");
+                spriteBatch.reset();  // force a clean rebuild next frame
+                return false;
+            }
+        }
+    }
+
+    // End the batch; if the flush faults (poisoned queue) discard the batch so the
+    // next frame starts clean instead of inheriting a stuck-open one.
+    static void EndSpriteBatchSafe() {
+        if (!spriteBatch) return;
+        try {
+            spriteBatch->End();
+        } catch (...) {
+            logger::warn("SpriteBatch End faulted; discarding the batch.");
+            RecreateSpriteBatch();
         }
     }
 
@@ -261,16 +298,17 @@ namespace PrismaUI::ViewRenderer {
         d3dContext->OMGetDepthStencilState(&backupDepthStencilState, &backupStencilRef);
         d3dContext->RSGetState(&backupRasterizerState);
 
-        BeginSpriteBatchSafe();
-        try {
-            DirectX::SimpleMath::Vector2 position(cursor->cursorPosX, cursor->cursorPosY);
-            spriteBatch->Draw(cursorTexture.Get(), position);
-        } catch (const std::exception& e) {
-            logger::error("DrawCursor draw failed: {}", e.what());
-        } catch (...) {
-            logger::error("DrawCursor draw failed: unknown error");
+        if (BeginSpriteBatchSafe()) {
+            try {
+                DirectX::SimpleMath::Vector2 position(cursor->cursorPosX, cursor->cursorPosY);
+                spriteBatch->Draw(cursorTexture.Get(), position);
+            } catch (const std::exception& e) {
+                logger::error("DrawCursor draw failed: {}", e.what());
+            } catch (...) {
+                logger::error("DrawCursor draw failed: unknown error");
+            }
+            EndSpriteBatchSafe();
         }
-        spriteBatch->End();
 
         d3dContext->OMSetBlendState(backupBlendState, backupBlendFactor, backupSampleMask);
         d3dContext->OMSetDepthStencilState(backupDepthStencilState, backupStencilRef);
@@ -314,22 +352,22 @@ namespace PrismaUI::ViewRenderer {
             d3dContext->OMGetDepthStencilState(&backupDepthStencilState, &backupStencilRef);
             d3dContext->RSGetState(&backupRasterizerState);
 
-            BeginSpriteBatchSafe();
-
-            // Guard each view's draw individually so one bad draw can never skip End().
-            // A skipped End() leaves the batch open, so the next Begin() throws
-            // "Cannot nest Begin calls" -> uncaught -> CTD (the AddItem-search crash).
-            for (const auto& viewData : viewsToDraw) {
-                try {
-                    DrawSingleTexture(viewData);
-                } catch (const std::exception& e) {
-                    logger::error("DrawSingleTexture failed (view skipped): {}", e.what());
-                } catch (...) {
-                    logger::error("DrawSingleTexture failed (view skipped): unknown error");
+            if (BeginSpriteBatchSafe()) {
+                // Guard each view's draw individually so one bad draw can never skip End().
+                // A skipped End() leaves the batch open, so the next Begin() throws
+                // "Cannot nest Begin calls" -> uncaught -> CTD (the AddItem-search crash).
+                for (const auto& viewData : viewsToDraw) {
+                    try {
+                        DrawSingleTexture(viewData);
+                    } catch (const std::exception& e) {
+                        logger::error("DrawSingleTexture failed (view skipped): {}", e.what());
+                    } catch (...) {
+                        logger::error("DrawSingleTexture failed (view skipped): unknown error");
+                    }
                 }
-            }
 
-            spriteBatch->End();
+                EndSpriteBatchSafe();
+            }
 
             d3dContext->OMSetBlendState(backupBlendState, backupBlendFactor, backupSampleMask);
             d3dContext->OMSetDepthStencilState(backupDepthStencilState, backupStencilRef);

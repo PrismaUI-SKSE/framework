@@ -223,6 +223,19 @@ namespace PrismaUI::ViewRenderer {
         d3dContext->Unmap(viewData->texture, 0);
     }
 
+    // Begin the shared sprite batch, recovering if a prior draw left it open.
+    // SpriteBatch has no "is open" query, so on the nest-Begin throw we End and retry.
+    // This turns a single bad draw into a logged hiccup instead of a permanent CTD spiral.
+    static void BeginSpriteBatchSafe() {
+        try {
+            spriteBatch->Begin(DirectX::SpriteSortMode_Deferred, commonStates->AlphaBlend());
+        } catch (...) {
+            logger::warn("SpriteBatch was left open by an earlier draw; resetting it.");
+            try { spriteBatch->End(); } catch (...) {}
+            spriteBatch->Begin(DirectX::SpriteSortMode_Deferred, commonStates->AlphaBlend());
+        }
+    }
+
     void DrawCursor() {
         if (!spriteBatch || !commonStates || !cursorTexture) {
             return;
@@ -248,11 +261,15 @@ namespace PrismaUI::ViewRenderer {
         d3dContext->OMGetDepthStencilState(&backupDepthStencilState, &backupStencilRef);
         d3dContext->RSGetState(&backupRasterizerState);
 
-        spriteBatch->Begin(DirectX::SpriteSortMode_Deferred, commonStates->AlphaBlend());
-
-        DirectX::SimpleMath::Vector2 position(cursor->cursorPosX, cursor->cursorPosY);
-        spriteBatch->Draw(cursorTexture.Get(), position);
-
+        BeginSpriteBatchSafe();
+        try {
+            DirectX::SimpleMath::Vector2 position(cursor->cursorPosX, cursor->cursorPosY);
+            spriteBatch->Draw(cursorTexture.Get(), position);
+        } catch (const std::exception& e) {
+            logger::error("DrawCursor draw failed: {}", e.what());
+        } catch (...) {
+            logger::error("DrawCursor draw failed: unknown error");
+        }
         spriteBatch->End();
 
         d3dContext->OMSetBlendState(backupBlendState, backupBlendFactor, backupSampleMask);
@@ -297,7 +314,7 @@ namespace PrismaUI::ViewRenderer {
             d3dContext->OMGetDepthStencilState(&backupDepthStencilState, &backupStencilRef);
             d3dContext->RSGetState(&backupRasterizerState);
 
-            spriteBatch->Begin(DirectX::SpriteSortMode_Deferred, commonStates->AlphaBlend());
+            BeginSpriteBatchSafe();
 
             // Guard each view's draw individually so one bad draw can never skip End().
             // A skipped End() leaves the batch open, so the next Begin() throws

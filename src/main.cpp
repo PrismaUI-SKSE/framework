@@ -50,8 +50,6 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
                 logger::critical("Failed to initialize PrismaUI, exiting...");
                 std::terminate();
             }
-
-            MainThreadScheduler.ExecuteTasks();
         })
         .Install();
 

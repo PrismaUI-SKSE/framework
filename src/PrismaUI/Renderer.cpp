@@ -98,17 +98,7 @@ namespace PrismaUI {
         spriteBatch->Draw(cursorTexture.Get(), position);
     }
 
-    void Renderer::Render() const {
-        Utils::D3DStateGuard stateGuard(_d3dContext);
-        _spriteBatch->Begin(DirectX::SpriteSortMode_Deferred, _commonStates->AlphaBlend());
-
-        RenderCefOverlay(_spriteBatch, *_cefRuntime);
-        RenderCursor(_spriteBatch, _cursorTexture, *_inputHandler);
-
-        _spriteBatch->End();
-    }
-
-    void Renderer::DoRender() {
+    void Renderer::BeginRender() {
         if (auto* renderManager = RE::BSGraphics::Renderer::GetSingleton()) {
             const auto currentScreenSize = renderManager->GetScreenSize();
             if (currentScreenSize.width != 0 && currentScreenSize.height != 0 &&
@@ -121,9 +111,18 @@ namespace PrismaUI {
         ViewOperationQueue::ProcessAllViewOperations();
 
         _cefRuntime->BeginFrame();
+    }
+
+    void Renderer::EndRender() const {
         _cefRuntime->UpdateOverlayTexture(_d3dDevice, _d3dContext);
 
-        Render();
+        Utils::D3DStateGuard stateGuard(_d3dContext);
+        _spriteBatch->Begin(DirectX::SpriteSortMode_Deferred, _commonStates->AlphaBlend());
+
+        RenderCefOverlay(_spriteBatch, *_cefRuntime);
+        RenderCursor(_spriteBatch, _cursorTexture, *_inputHandler);
+
+        _spriteBatch->End();
     }
 
     bool Renderer::Initialize(Cef::CefRuntime* cefRuntime, InputHandler* inputHandler) {

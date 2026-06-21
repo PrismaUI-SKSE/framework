@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Utils/TraitUtils.h"
 #include "MinHook.h"
+#include "Utils/TraitUtils.h"
 
 namespace Hooks {
     enum class HookType {
@@ -22,7 +22,8 @@ namespace Hooks {
     REL::Relocation<typename THook::FuncDefinition> Install(typename THook::FuncDefinition* func) {
         auto targetAddress = REL::Relocation<>(THook::Id, THook::Offset).address();
         if constexpr (THook::Type == HookType::WriteCall) {
-            return REL::Relocation<typename THook::FuncDefinition>(SKSE::GetTrampoline().write_call<5>(targetAddress, func));
+            return REL::Relocation<typename THook::FuncDefinition>(
+                SKSE::GetTrampoline().write_call<5>(targetAddress, func));
         } else if constexpr (THook::Type == HookType::Direct) {
             auto status = MH_Initialize();
             if (status != MH_OK && status != MH_ERROR_ALREADY_INITIALIZED) {

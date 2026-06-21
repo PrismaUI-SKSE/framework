@@ -1,4 +1,4 @@
-﻿#include "Bootstrapper.h"
+#include "Bootstrapper.h"
 
 #include "Cef/Browser/CefRuntime.h"
 #include "Core.h"
@@ -60,10 +60,17 @@ namespace PrismaUI::Bootstrapper {
         }
 
         CursorMenuEx::InstallHook();
+        Hooks::HookInstaller<Hooks::RendererBegin>::Create()
+            .AddPreHandler([](RE::BSGraphics::Renderer*, uint32_t) {
+                MainThreadScheduler.ExecuteTasks();
+                InputHandler::GetSingleton().ProcessEvents();
+                Renderer::GetSingleton().BeginRender();
+            })
+            .Install();
+
         Hooks::HookInstaller<Hooks::D3DPresentHook>::Create()
             .AddPreHandler([](uint32_t) {
-                InputHandler::GetSingleton().ProcessEvents();
-                Renderer::GetSingleton().DoRender();
+                Renderer::GetSingleton().EndRender();
             })
             .Install();
 

@@ -438,9 +438,7 @@ namespace PrismaUI::Cef {
         impl_->overlay.UploadBgra32(cpuFrame.data(), cpuWidth, cpuHeight, cpuStride);
     }
 
-    std::optional<OverlayTextureInfo> CefRuntime::GetOverlayInfo() const {
-        return impl_->overlay.GetInfo();
-    }
+    std::optional<OverlayTextureInfo> CefRuntime::GetOverlayInfo() const { return impl_->overlay.GetInfo(); }
 
     void CefRuntime::SubmitAcceleratedFrameDuringCallback(HANDLE sharedTextureHandle) const {
         if (!impl_->initialized.load(std::memory_order_acquire) ||

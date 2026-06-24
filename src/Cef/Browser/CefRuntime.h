@@ -11,8 +11,8 @@
 #include <variant>
 #include <vector>
 
-#include "OverlayTexture.h"
 #include "Cef/Shared/RendererToBrowserMessages.h"
+#include "OverlayTexture.h"
 
 namespace PrismaUI::Cef {
     enum class CefInputMouseButton : uint8_t { Left, Middle, Right };

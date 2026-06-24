@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "PCH.h"
+#include "Utils/D3DTextureCopy.h"
 
 namespace PrismaUI::Cef {
     const char* OverlayTexture::ModeName(Mode mode) {
@@ -186,7 +187,13 @@ namespace PrismaUI::Cef {
             return false;
         }
 
-        renderContext_->CopyResource(targetTexture.Get(), sharedTexture.Get());
+        hr = Utils::CopyResourceAndWait(renderDevice_.Get(), renderContext_.Get(), targetTexture.Get(),
+                                        sharedTexture.Get());
+        if (FAILED(hr)) {
+            logger::error("Failed to synchronously copy CEF accelerated shared texture. HR={:#X}",
+                          static_cast<unsigned int>(hr));
+            return false;
+        }
         if (!overlayMatches) {
             texture_ = std::move(targetTexture);
             _srv = std::move(targetSrv);
@@ -277,9 +284,9 @@ namespace PrismaUI::Cef {
 
     std::optional<OverlayTextureInfo> OverlayTexture::GetInfo() const {
         std::lock_guard lock(_mutex);
-        return _hasFrame
-            ? std::make_optional(OverlayTextureInfo { .Srv = _srv.Get(), .Width = _desc.width, .Height = _desc.height })
-            : std::nullopt;
+        return _hasFrame ? std::make_optional(
+                               OverlayTextureInfo{.Srv = _srv.Get(), .Width = _desc.width, .Height = _desc.height})
+                         : std::nullopt;
     }
 
     bool OverlayTexture::HasFrame() const {

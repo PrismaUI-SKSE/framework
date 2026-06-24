@@ -11,6 +11,7 @@
 #include <variant>
 #include <vector>
 
+#include "OverlayTexture.h"
 #include "Cef/Shared/RendererToBrowserMessages.h"
 
 namespace PrismaUI::Cef {
@@ -61,12 +62,11 @@ namespace PrismaUI::Cef {
 
         bool Initialize(HWND hwnd, uint32_t width, uint32_t height);
         void Resize(uint32_t width, uint32_t height);
-        void BeginFrame();
-        void UpdateOverlayTexture(ID3D11Device* device, ID3D11DeviceContext* context);
-        ID3D11ShaderResourceView* GetOverlaySrv() const;
-        uint32_t GetOverlayWidth() const;
-        uint32_t GetOverlayHeight() const;
-        bool SubmitAcceleratedFrameDuringCallback(HANDLE sharedTextureHandle);
+        void BeginFrame() const;
+        void InitOverlayTexture(ID3D11Device* device, ID3D11DeviceContext* context) const;
+        void UpdateOverlayTexture() const;
+        std::optional<OverlayTextureInfo> GetOverlayInfo() const;
+        void SubmitAcceleratedFrameDuringCallback(HANDLE sharedTextureHandle) const;
         void Shutdown();
         bool IsInitialized() const;
         bool HasBrowser() const;

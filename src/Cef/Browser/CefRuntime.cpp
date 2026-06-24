@@ -219,7 +219,6 @@ namespace PrismaUI::Cef {
         std::string shellUrl;
 
         OverlayTexture overlay;
-        bool missingD3DLogged = false;
 
         // ---- Step 7 JS bridge state ----
         struct InvokeEntry {
@@ -370,7 +369,7 @@ namespace PrismaUI::Cef {
         PostToCefUi([client, width, height]() { client->SetSize(width, height); });
     }
 
-    void CefRuntime::BeginFrame() {
+    void CefRuntime::BeginFrame() const {
         if (!impl_->initialized.load(std::memory_order_acquire)) {
             return;
         }
@@ -385,10 +384,14 @@ namespace PrismaUI::Cef {
             return;
         }
 
-        PostToCefUi([client]() { client->SendExternalBeginFrame(); });
+        PostToCefUi([client] { client->SendExternalBeginFrame(); });
     }
 
-    void CefRuntime::UpdateOverlayTexture(ID3D11Device* device, ID3D11DeviceContext* context) {
+    void CefRuntime::InitOverlayTexture(ID3D11Device* device, ID3D11DeviceContext* context) const {
+        impl_->overlay.BindRenderDevice(device, context);
+    }
+
+    void CefRuntime::UpdateOverlayTexture() const {
         if (!impl_->initialized.load(std::memory_order_acquire)) {
             return;
         }
@@ -403,19 +406,7 @@ namespace PrismaUI::Cef {
             return;
         }
 
-        if (!device || !context) {
-            if (!impl_->missingD3DLogged) {
-                logger::warn("CEF overlay texture update skipped: D3D device/context is missing.");
-                impl_->missingD3DLogged = true;
-            }
-            return;
-        }
-        impl_->missingD3DLogged = false;
-
-        impl_->overlay.BindRenderDevice(device, context);
-
-        const bool copiedAcceleratedFrame = impl_->overlay.CopyPendingAcceleratedFrame();
-        if (copiedAcceleratedFrame) {
+        if (impl_->overlay.CopyPendingAcceleratedFrame()) {
             return;
         }
 
@@ -447,19 +438,17 @@ namespace PrismaUI::Cef {
         impl_->overlay.UploadBgra32(cpuFrame.data(), cpuWidth, cpuHeight, cpuStride);
     }
 
-    ID3D11ShaderResourceView* CefRuntime::GetOverlaySrv() const { return impl_->overlay.GetSrv(); }
+    std::optional<OverlayTextureInfo> CefRuntime::GetOverlayInfo() const {
+        return impl_->overlay.GetInfo();
+    }
 
-    uint32_t CefRuntime::GetOverlayWidth() const { return impl_->overlay.GetWidth(); }
-
-    uint32_t CefRuntime::GetOverlayHeight() const { return impl_->overlay.GetHeight(); }
-
-    bool CefRuntime::SubmitAcceleratedFrameDuringCallback(HANDLE sharedTextureHandle) {
+    void CefRuntime::SubmitAcceleratedFrameDuringCallback(HANDLE sharedTextureHandle) const {
         if (!impl_->initialized.load(std::memory_order_acquire) ||
             impl_->shuttingDown.load(std::memory_order_acquire) || !sharedTextureHandle) {
-            return false;
+            return;
         }
 
-        return impl_->overlay.SubmitAcceleratedFrameDuringCallback(sharedTextureHandle);
+        impl_->overlay.SubmitAcceleratedFrameDuringCallback(sharedTextureHandle);
     }
 
     void CefRuntime::AppendShellArg(std::string& out, uint64_t value) {
@@ -972,7 +961,6 @@ namespace PrismaUI::Cef {
         }
 
         impl_->overlay.ReleaseResources();
-        impl_->missingD3DLogged = false;
 
         logger::info("CEF runtime shutdown started.");
 

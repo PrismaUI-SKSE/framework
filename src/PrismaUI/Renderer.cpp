@@ -69,16 +69,16 @@ namespace PrismaUI {
 
     static void RenderCefOverlay(const std::unique_ptr<DirectX::SpriteBatch>& spriteBatch,
                                  const Cef::CefRuntime& cefRuntime) {
-        ID3D11ShaderResourceView* overlaySrv = cefRuntime.GetOverlaySrv();
-        const uint32_t overlayWidth = cefRuntime.GetOverlayWidth();
-        const uint32_t overlayHeight = cefRuntime.GetOverlayHeight();
-        if (!overlaySrv || overlayWidth == 0 || overlayHeight == 0) {
+        cefRuntime.UpdateOverlayTexture();
+        auto overlayInfoOpt = cefRuntime.GetOverlayInfo();
+        if (!overlayInfoOpt.has_value()) {
             return;
         }
 
+        auto overlayInfo = overlayInfoOpt.value();
         constexpr Vector2 position(0.0f, 0.0f);
-        const RECT sourceRect = {0, 0, static_cast<long>(overlayWidth), static_cast<long>(overlayHeight)};
-        spriteBatch->Draw(overlaySrv, position, &sourceRect, DirectX::Colors::White, 0.f, Vector2::Zero, 1.0f,
+        const RECT sourceRect = {0, 0, static_cast<long>(overlayInfo.Width), static_cast<long>(overlayInfo.Height)};
+        spriteBatch->Draw(overlayInfo.Srv, position, &sourceRect, DirectX::Colors::White, 0.f, Vector2::Zero, 1.0f,
                           DirectX::SpriteEffects_None, 0.f);
     }
 
@@ -109,12 +109,13 @@ namespace PrismaUI {
             if (currentScreenSize.width != 0 && currentScreenSize.height != 0 &&
                 (currentScreenSize.width != _screenSize.width || currentScreenSize.height != _screenSize.height)) {
                 _screenSize = currentScreenSize;
-                Cef::CefRuntime::GetSingleton().Resize(_screenSize.width, _screenSize.height);
+                _cefRuntime->Resize(_screenSize.width, _screenSize.height);
             }
         }
 
         ViewOperationQueue::ProcessAllViewOperations();
 
+        _cefRuntime->UpdateOverlayTexture();
         _cefRuntime->BeginFrame();
     }
 
@@ -123,8 +124,6 @@ namespace PrismaUI {
         if (!_isInitialized) {
             return;
         }
-
-        _cefRuntime->UpdateOverlayTexture(_d3dDevice, _d3dContext);
 
         Utils::D3DStateGuard stateGuard(_d3dContext);
         _spriteBatch->Begin(DirectX::SpriteSortMode_Deferred, _commonStates->AlphaBlend());
@@ -145,6 +144,7 @@ namespace PrismaUI {
         ui->Register(FocusMenu::MENU_NAME, FocusMenu::Creator);
 
         _cefRuntime = cefRuntime;
+        _cefRuntime->InitOverlayTexture(_d3dDevice, _d3dContext);
         _inputHandler = inputHandler;
         _isInitialized = true;
 

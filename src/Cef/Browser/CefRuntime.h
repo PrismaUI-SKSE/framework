@@ -66,7 +66,7 @@ namespace PrismaUI::Cef {
         ID3D11ShaderResourceView* GetOverlaySrv() const;
         uint32_t GetOverlayWidth() const;
         uint32_t GetOverlayHeight() const;
-        bool CopyAcceleratedFrameDuringCallback(HANDLE sharedTextureHandle);
+        bool SubmitAcceleratedFrameDuringCallback(HANDLE sharedTextureHandle);
         void Shutdown();
         bool IsInitialized() const;
         bool HasBrowser() const;

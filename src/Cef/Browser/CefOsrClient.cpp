@@ -58,17 +58,6 @@ namespace PrismaUI::Cef {
         browser_->GetHost()->SendExternalBeginFrame();
     }
 
-    void CefOsrClient::InvalidateView() {
-        CEF_REQUIRE_UI_THREAD();
-
-        if (!browser_) {
-            return;
-        }
-
-        browser_->GetHost()->Invalidate(PET_VIEW);
-        logger::debug("CEF OSR browser view invalidated for repaint.");
-    }
-
     void CefOsrClient::CloseBrowser() {
         CEF_REQUIRE_UI_THREAD();
 
@@ -254,7 +243,7 @@ namespace PrismaUI::Cef {
             return;
         }
 
-        CefRuntime::GetSingleton().CopyAcceleratedFrameDuringCallback(info.shared_texture_handle);
+        CefRuntime::GetSingleton().SubmitAcceleratedFrameDuringCallback(info.shared_texture_handle);
     }
 
     void CefOsrClient::OnBeforeContextMenu(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, CefRefPtr<CefContextMenuParams>,

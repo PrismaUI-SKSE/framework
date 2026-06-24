@@ -414,11 +414,9 @@ namespace PrismaUI::Cef {
 
         impl_->overlay.BindRenderDevice(device, context);
 
-        if (impl_->overlay.RealizePendingAccelerated()) {
-            PostToCefUi([client]() {
-                client->InvalidateView();
-                client->SendExternalBeginFrame();
-            });
+        const bool copiedAcceleratedFrame = impl_->overlay.CopyPendingAcceleratedFrame();
+        if (copiedAcceleratedFrame) {
+            return;
         }
 
         std::vector<std::byte> cpuFrame;
@@ -455,8 +453,13 @@ namespace PrismaUI::Cef {
 
     uint32_t CefRuntime::GetOverlayHeight() const { return impl_->overlay.GetHeight(); }
 
-    bool CefRuntime::CopyAcceleratedFrameDuringCallback(HANDLE sharedTextureHandle) {
-        return impl_->overlay.CopyFromSharedHandle(sharedTextureHandle);
+    bool CefRuntime::SubmitAcceleratedFrameDuringCallback(HANDLE sharedTextureHandle) {
+        if (!impl_->initialized.load(std::memory_order_acquire) ||
+            impl_->shuttingDown.load(std::memory_order_acquire) || !sharedTextureHandle) {
+            return false;
+        }
+
+        return impl_->overlay.SubmitAcceleratedFrameDuringCallback(sharedTextureHandle);
     }
 
     void CefRuntime::AppendShellArg(std::string& out, uint64_t value) {
@@ -953,9 +956,6 @@ namespace PrismaUI::Cef {
     }
 
     void CefRuntime::Shutdown() {
-        impl_->overlay.ReleaseResources();
-        impl_->missingD3DLogged = false;
-
         CefRefPtr<CefOsrClient> client;
         {
             std::lock_guard lock(impl_->stateMutex);
@@ -970,6 +970,9 @@ namespace PrismaUI::Cef {
 
             client = impl_->client;
         }
+
+        impl_->overlay.ReleaseResources();
+        impl_->missingD3DLogged = false;
 
         logger::info("CEF runtime shutdown started.");
 

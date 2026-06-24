@@ -34,7 +34,6 @@ namespace PrismaUI::Cef {
         bool HasBrowser() const;
         void SetSize(uint32_t width, uint32_t height);
         void SendExternalBeginFrame();
-        void InvalidateView();
         void CloseBrowser();
         bool ConsumeCpuFrame(std::vector<std::byte>& pixels, uint32_t& width, uint32_t& height, uint32_t& stride);
         void ResetCloseSignal();

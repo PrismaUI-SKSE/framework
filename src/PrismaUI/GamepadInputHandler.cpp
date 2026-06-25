@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -34,8 +35,17 @@ namespace PrismaUI::GamepadInputHandler {
         constexpr uint32_t GAMEPAD_AXIS_COUNT = 4;     // W3C standard gamepad with left and right X and Y axes
         constexpr uint32_t GAMEPAD_BUTTON_COUNT = 17;  // W3C standard gamepad with 17 buttons
 
-        // A queued gamepad event: a button change or an axis change.
-        using GamepadQueuedEvent = std::variant<ultralight::GamepadButtonEvent, ultralight::GamepadAxisEvent>;
+        // A JavaScript event (prismagamepadbuttondown or prismagamepadbuttonup) to dispatch into a view.
+        // It queued right after the button's state change so it runs on the Ultralight thread
+        // only once that state is applied, letting a handler read the new state via navigator.getGamepads().
+        struct JsButtonDispatch {
+            Core::PrismaViewId viewId;
+            std::string script;
+        };
+
+        // A queued gamepad event: a button change, an axis change, or a JS event dispatch.
+        using GamepadQueuedEvent =
+            std::variant<ultralight::GamepadButtonEvent, ultralight::GamepadAxisEvent, JsButtonDispatch>;
         std::mutex g_gamepadQueueMutex;  // Guards g_gamepadQueue across the input and Ultralight threads
         std::vector<GamepadQueuedEvent>
             g_gamepadQueue;  // Input thread adds to this vector. Ultralight thread consumes.
@@ -44,7 +54,13 @@ namespace PrismaUI::GamepadInputHandler {
         SingleThreadExecutor* g_ultralightThreadExecutor = nullptr;
         // Ensure virtual gamepad is declared to the Renderer once upon the first input.
         std::atomic<bool> g_gamepadRegistered = false;
-        float g_gamepadButtonValues[GAMEPAD_BUTTON_COUNT] = {};  // Last observed value per button.
+        // Identifies the current Initialize -> Shutdown session. Incremented in both of those functions.
+        // See use in ProcessEvents.
+        std::atomic<uint64_t> g_session = 0;
+        // Last observed value per button. Atomic because the input thread reads and writes to it
+        // while a focus change (off-thread) may reset it.
+        // std::memory_order_relaxed is used to prevent a torn read, no ordering needed.
+        std::atomic<float> g_gamepadButtonValues[GAMEPAD_BUTTON_COUNT] = {};
 
         // Converts Skyrim ID Code to W3C index (-1 if not recognized, e.g., guide button)
         int SkyrimIDCodeToW3CIndex(uint32_t skyrimCode) {
@@ -68,14 +84,16 @@ namespace PrismaUI::GamepadInputHandler {
                                                        : -1;
         }
 
-        // Resolves the menu role of the button via the control map and dispatches a named CustomEvent
-        // (detail: { w3cButtonIndex: number, skyrimIdCode: number, action: string }) to the focused view.
-        // These events are dispatched on window.
+        // Resolves the menu role of the button via the control map and builds a named CustomEvent
+        // (detail: { w3cButtonIndex: number, skyrimIdCode: number, action: string }) dispatched on window.
         // eventName is "prismagamepadbuttondown" on a press or "prismagamepadbuttonup" on a release.
-        void DispatchButtonEvent(const char* eventName, uint32_t w3cButtonIndex, uint32_t skyrimIDCode) {
+        // Returns nullopt when no view is focused. The caller queues the result behind the button's state
+        // change so the event fires only after navigator.getGamepads() reflects it.
+        std::optional<JsButtonDispatch> BuildButtonDispatch(const char* eventName, uint32_t w3cButtonIndex,
+                                                            uint32_t skyrimIDCode) {
             const Core::PrismaViewId viewId = InputHandler::GetFocusedViewId();
             if (viewId == 0) {
-                return;
+                return std::nullopt;
             }
 
             const char* action = "";
@@ -94,11 +112,11 @@ namespace PrismaUI::GamepadInputHandler {
                 }
             }
 
-            const std::string script = std::string("window.dispatchEvent(new CustomEvent(\"") + eventName +
-                                       "\", {detail: {w3cButtonIndex: " + std::to_string(w3cButtonIndex) +
-                                       ", skyrimIdCode: " + std::to_string(skyrimIDCode) + ", action: \"" + action +
-                                       "\"}}))";
-            Communication::Invoke(viewId, script.c_str());
+            std::string script = std::string("window.dispatchEvent(new CustomEvent(\"") + eventName +
+                                 "\", {detail: {w3cButtonIndex: " + std::to_string(w3cButtonIndex) +
+                                 ", skyrimIdCode: " + std::to_string(skyrimIDCode) + ", action: \"" + action +
+                                 "\"}}))";
+            return JsButtonDispatch{viewId, std::move(script)};
         }
 
         // --- Input thread: capture into the queue ---
@@ -114,31 +132,38 @@ namespace PrismaUI::GamepadInputHandler {
 
             const uint32_t w3cButtonIndex = static_cast<uint32_t>(w3cButtonIndexInt);
 
-            // Fire buttondown on the press edge and buttonup on the release edge.
+            // Build the buttondown/up dispatch (if any) before taking the queue lock.
+            // It reads the focused view and control map,
+            // which we don't want to do while holding g_gamepadQueueMutex.
+            std::optional<JsButtonDispatch> dispatch;
             if (buttonEvent->IsDown()) {
-                DispatchButtonEvent("prismagamepadbuttondown", w3cButtonIndex, buttonIDCode);
+                dispatch = BuildButtonDispatch("prismagamepadbuttondown", w3cButtonIndex, buttonIDCode);
             } else if (buttonEvent->IsUp()) {
-                DispatchButtonEvent("prismagamepadbuttonup", w3cButtonIndex, buttonIDCode);
+                dispatch = BuildButtonDispatch("prismagamepadbuttonup", w3cButtonIndex, buttonIDCode);
             }
 
             // A trigger ranges from 0 to 1 (float); a digital button returns 0 or 1.
             const float value = buttonEvent->Value();
-            if (g_gamepadButtonValues[w3cButtonIndex] == value) {
-                // Button value unchanged since last event. Don't send unnecessarily.
-                return;
+            const float oldValue = g_gamepadButtonValues[w3cButtonIndex].load(std::memory_order_relaxed);
+            const bool valueChanged = oldValue != value;
+            if (valueChanged) {
+                // Save button value for future calls to this function.
+                g_gamepadButtonValues[w3cButtonIndex].store(value, std::memory_order_relaxed);
             }
-            // Save button value for future calls to this function.
-            g_gamepadButtonValues[w3cButtonIndex] = value;
 
-            // Build event to be received by the Renderer
-            ultralight::GamepadButtonEvent ev{};
-            ev.index = GAMEPAD_INDEX;
-            ev.button_index = w3cButtonIndex;
-            ev.value = value;
-
-            // Add to gamepad queue so it can be picked up later on the Ultralight thread.
+            // Queue the state change first, then the JS dispatch, so the event fires (on the Ultralight
+            // thread) only after the Renderer state is applied. A handler can then read it via getGamepads().
             std::lock_guard lock(g_gamepadQueueMutex);
-            g_gamepadQueue.emplace_back(ev);
+            if (valueChanged) {
+                ultralight::GamepadButtonEvent ev{};
+                ev.index = GAMEPAD_INDEX;
+                ev.button_index = w3cButtonIndex;
+                ev.value = value;
+                g_gamepadQueue.emplace_back(ev);
+            }
+            if (dispatch) {
+                g_gamepadQueue.emplace_back(std::move(*dispatch));
+            }
         }
 
         // Maps a thumbstick event to its standard axis pair and queues both axes together.
@@ -174,6 +199,30 @@ namespace PrismaUI::GamepadInputHandler {
             std::lock_guard lock(g_gamepadQueueMutex);
             g_gamepadQueue.emplace_back(xev);
             g_gamepadQueue.emplace_back(yev);
+        }
+
+        // Queues a zeroed event for every button and axis so the Renderer's virtual pad reads neutral.
+        // The input sink is gated on focus (see ProcessEvent), so a release or recenter that happens while
+        // unfocused is dropped.
+        // A common example is the Cancel button held to close a view and then released after blur.
+        // Without this, navigator.getGamepads() would stay latched with that press and the next focused
+        // view would inherit the stale state. Called on focus loss from ResetButtonValues.
+        void QueueNeutralizeAll() {
+            std::lock_guard lock(g_gamepadQueueMutex);
+            for (uint32_t buttonIndex = 0; buttonIndex < GAMEPAD_BUTTON_COUNT; ++buttonIndex) {
+                ultralight::GamepadButtonEvent ev{};
+                ev.index = GAMEPAD_INDEX;
+                ev.button_index = buttonIndex;
+                ev.value = 0.0f;
+                g_gamepadQueue.emplace_back(ev);
+            }
+            for (uint32_t axisIndex = 0; axisIndex < GAMEPAD_AXIS_COUNT; ++axisIndex) {
+                ultralight::GamepadAxisEvent ev{};
+                ev.index = GAMEPAD_INDEX;
+                ev.axis_index = axisIndex;
+                ev.value = 0.0f;
+                g_gamepadQueue.emplace_back(ev);
+            }
         }
 
         // Captures Skyrim gamepad input and queues it for ProcessEvents(). Gated on input capture, like mouse/keyboard.
@@ -227,8 +276,9 @@ namespace PrismaUI::GamepadInputHandler {
             Core::renderer->FireGamepadEvent(connectEvent);
         }
 
-        // Fires one queued event on the Renderer, picking the call that matches its variant type
-        // This does not trigger any JavaScript event. It just changes gamepad state.
+        // Applies one queued event on the Ultralight thread. Button and axis changes update the Renderer's
+        // gamepad state (no JavaScript event). A JsButtonDispatch runs the buttondown/up CustomEvent in the
+        // view. Because a dispatch is queued after its state change, getGamepads() is current when it fires.
         void FireGamepadQueuedEvent(const GamepadQueuedEvent& event) {
             std::visit(
                 [](const auto& arg) {
@@ -237,6 +287,11 @@ namespace PrismaUI::GamepadInputHandler {
                         Core::renderer->FireGamepadButtonEvent(arg);
                     } else if constexpr (std::is_same_v<T, ultralight::GamepadAxisEvent>) {
                         Core::renderer->FireGamepadAxisEvent(arg);
+                    } else if constexpr (std::is_same_v<T, JsButtonDispatch>) {
+                        // Communication::Invoke(arg.viewId, arg.script.c_str());
+                        // We're already on the Ultralight thread, and the button's state event was fired just above,
+                        // so getGamepads() is current inside the handler.
+                        Communication::InvokeFromUltralightThread(arg.viewId, arg.script.c_str());
                     }
                 },
                 event);
@@ -244,12 +299,20 @@ namespace PrismaUI::GamepadInputHandler {
     }
 
     void ResetButtonValues() {
+        // Clear the local edge-detection cache so a still-held button re-fires as a fresh 0 -> 1 change.
         for (auto& v : g_gamepadButtonValues) {
-            v = 0.0f;
+            v.store(0.0f, std::memory_order_relaxed);
+        }
+        // Neutralize the Renderer's pad on focus loss only (no view focused). Capture is already disabled
+        // by then, so nothing races the zero batch. Doing it on focus gain instead could clobber a
+        // concurrent press and would be redundant since the preceding loss already cleared the pad.
+        if (InputHandler::GetFocusedViewId() == 0) {
+            QueueNeutralizeAll();
         }
     }
 
     void Initialize(SingleThreadExecutor* ultralightThreadExecutor) {
+        ++g_session;  // New session: invalidate any batch still queued from a prior one.
         g_ultralightThreadExecutor = ultralightThreadExecutor;
         g_gamepadRegistered = false;  // Declare the pad to the Renderer on the next input. (The renderer may be new.)
         ResetButtonValues();          // Start with no inputs pressed
@@ -286,8 +349,13 @@ namespace PrismaUI::GamepadInputHandler {
         }
 
         // Renderer calls must run on the Ultralight thread, so post the firing there.
-        g_ultralightThreadExecutor->submit([events = std::move(gamepadEvents)]() {
-            if (!Core::renderer) return;  // renderer was torn down between queueing and running.
+        // Save the current session so it can be checked within g_ultralightThreadExecutor->submit.
+        const uint64_t session = g_session.load();
+        g_ultralightThreadExecutor->submit([events = std::move(gamepadEvents), session]() {
+            if (!Core::renderer || session != g_session.load()) {
+                // If renderer was torn down or session changed, stop.
+                return;
+            }
             EnsureGamepadRegistered();
             for (const auto& event : events) {
                 FireGamepadQueuedEvent(event);
@@ -296,6 +364,7 @@ namespace PrismaUI::GamepadInputHandler {
     }
 
     void Shutdown() {
+        ++g_session;  // Session ending: any batch still queued from it must now be dropped.
         auto inputEventSource = RE::BSInputDeviceManager::GetSingleton();
         if (inputEventSource) {
             inputEventSource->RemoveEventSink(GamepadEventListener::GetSingleton());  // stop receiving input events.

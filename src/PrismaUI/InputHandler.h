@@ -43,6 +43,9 @@ namespace PrismaUI::InputHandler {
 
     bool IsAnyInputCaptureActive();
 
+    // The currently focused view ID (0 if none)
+    Core::PrismaViewId GetFocusedViewId();
+
     bool InstallWndProcHook();
     void UninstallWndProcHook();
 

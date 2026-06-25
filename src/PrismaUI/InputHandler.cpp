@@ -4,6 +4,7 @@
 
 #include "Communication.h"
 #include "Core.h"
+#include "GamepadInputHandler.h"
 #include "ImeHelper.h"
 #include "PrismaVR.h"
 #include "Utils/Encoding.h"
@@ -667,6 +668,8 @@ namespace PrismaUI::InputHandler {
         } else {
             logger::error("Failed to register MouseEventListener: BSInputDeviceManager is null");
         }
+
+        GamepadInputHandler::Initialize(g_ultralightThreadExecutor);
     }
 
     bool InstallWndProcHook() {
@@ -737,6 +740,9 @@ namespace PrismaUI::InputHandler {
         g_imeHelper.SetAssociation(true);
 
         g_mouseButtonStates[0] = g_mouseButtonStates[1] = g_mouseButtonStates[2] = false;
+
+        //A view just gained focus. Clear stale button values so a held button re-fires on its next press:
+        GamepadInputHandler::ResetButtonValues();
     }
 
     void DisableInputCapture(const Core::PrismaViewId& viewIdToUnfocus) {
@@ -760,6 +766,9 @@ namespace PrismaUI::InputHandler {
                               currentFocusedBeforeDisable);
 
                 g_mouseButtonStates[0] = g_mouseButtonStates[1] = g_mouseButtonStates[2] = false;
+
+                //Focus released. Reset button values so it doesn't leak into the next focused view.
+                GamepadInputHandler::ResetButtonValues();
 
                 if (g_ultralightThreadExecutor && currentFocusedBeforeDisable != 0) {
                     g_ultralightThreadExecutor->submit([viewId_copy = currentFocusedBeforeDisable]() {
@@ -804,6 +813,11 @@ namespace PrismaUI::InputHandler {
 
     bool IsAnyInputCaptureActive() { return g_isAnyInputCaptureActive.load(); }
 
+    Core::PrismaViewId GetFocusedViewId() {
+        std::lock_guard lock(g_focusedViewIdMutex);
+        return g_currentlyFocusedViewId;
+    }
+
     bool IsInputCaptureActiveForView(const Core::PrismaViewId& viewId) {
         Core::PrismaViewId currentFocused;
         {
@@ -816,6 +830,8 @@ namespace PrismaUI::InputHandler {
 
     void ProcessEvents() {
         if (!g_ultralightThreadExecutor || !g_viewsMap || !g_viewsMapMutex) return;
+
+        GamepadInputHandler::ProcessEvents();
 
         Core::PrismaViewId focusedViewIdCopy;
         {
@@ -937,6 +953,8 @@ namespace PrismaUI::InputHandler {
             inputEventSource->RemoveEventSink(MouseEventListener::GetSingleton());
             logger::debug("MouseEventListener removed from BSInputDeviceManager");
         }
+
+        GamepadInputHandler::Shutdown();
 
         UninstallWndProcHook();
 

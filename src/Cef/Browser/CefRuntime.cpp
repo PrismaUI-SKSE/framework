@@ -5,6 +5,8 @@
     #undef GetNextSibling
 #endif
 
+#include <dxgi.h>
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -14,6 +16,7 @@
 #include <limits>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -54,6 +57,46 @@ namespace {
             result.push_back(ch >= 0 && ch <= 0x7F ? static_cast<char>(ch) : '?');
         }
         return result;
+    }
+
+    // Derives the "<HighPart>,<LowPart>" decimal LUID of the DXGI adapter backing
+    // `device` so Chromium's GPU process can be pinned to the same adapter Skyrim
+    // renders on (use-adapter-luid). Returns an empty string when the adapter LUID
+    // cannot be resolved, leaving CEF on its default GPU selection.
+    std::string BuildAdapterLuidSwitch(ID3D11Device* device) {
+        if (!device) {
+            logger::warn("CEF GPU adapter not pinned: render device is null.");
+            return {};
+        }
+
+        Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
+        HRESULT hr = device->QueryInterface(IID_PPV_ARGS(dxgiDevice.GetAddressOf()));
+        if (FAILED(hr)) {
+            logger::warn("CEF GPU adapter not pinned: ID3D11Device exposes no IDXGIDevice. HR={:#X}",
+                         static_cast<unsigned int>(hr));
+            return {};
+        }
+
+        Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+        hr = dxgiDevice->GetAdapter(adapter.GetAddressOf());
+        if (FAILED(hr)) {
+            logger::warn("CEF GPU adapter not pinned: IDXGIDevice::GetAdapter failed. HR={:#X}",
+                         static_cast<unsigned int>(hr));
+            return {};
+        }
+
+        DXGI_ADAPTER_DESC desc{};
+        hr = adapter->GetDesc(&desc);
+        if (FAILED(hr)) {
+            logger::warn("CEF GPU adapter not pinned: IDXGIAdapter::GetDesc failed. HR={:#X}",
+                         static_cast<unsigned int>(hr));
+            return {};
+        }
+
+        std::string value = std::to_string(desc.AdapterLuid.HighPart) + "," + std::to_string(desc.AdapterLuid.LowPart);
+        logger::info("Pinning CEF GPU process to Skyrim render adapter '{}' (LUID {}).", NarrowAscii(desc.Description),
+                     value);
+        return value;
     }
 
     std::string MakeIframeName(uint64_t viewId) { return std::to_string(viewId); }
@@ -239,7 +282,7 @@ namespace PrismaUI::Cef {
         return instance;
     }
 
-    bool CefRuntime::Initialize(HWND hwnd, uint32_t width, uint32_t height) const {
+    bool CefRuntime::Initialize(HWND hwnd, uint32_t width, uint32_t height, ID3D11Device* renderDevice) const {
         std::lock_guard lock(_impl->stateMutex);
 
         if (_impl->initialized.load(std::memory_order_acquire)) {
@@ -304,7 +347,7 @@ namespace PrismaUI::Cef {
         CefString(&settings.log_file).FromWString(logFile.wstring());
         CefString(&settings.locale).FromASCII("en-US");
 
-        _impl->app = CreatePrismaCefApp();
+        _impl->app = CreatePrismaCefApp(BuildAdapterLuidSwitch(renderDevice));
         logger::info("Calling CefInitialize.");
         if (!CefInitialize(mainArgs, settings, _impl->app, nullptr)) {
             auto errorCode = CefGetExitCode();

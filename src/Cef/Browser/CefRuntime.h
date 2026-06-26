@@ -60,7 +60,7 @@ namespace PrismaUI::Cef {
     public:
         static CefRuntime& GetSingleton();
 
-        bool Initialize(HWND hwnd, uint32_t width, uint32_t height) const;
+        bool Initialize(HWND hwnd, uint32_t width, uint32_t height, ID3D11Device* renderDevice) const;
         void Resize(uint32_t width, uint32_t height);
         void BeginFrame() const;
         void InitOverlayTexture(ID3D11Device* device, ID3D11DeviceContext* context) const;

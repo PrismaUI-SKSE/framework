@@ -14,7 +14,7 @@ namespace PrismaUI::Bootstrapper {
     static inline bool IsInitialized = false;
     static inline std::atomic_bool IsShutdownStarted = false;
 
-    static std::optional<std::tuple<HWND, RE::BSGraphics::ScreenSize>> TryGetRenderWindow() {
+    static std::optional<std::tuple<HWND, RE::BSGraphics::ScreenSize, ID3D11Device*>> TryGetRenderWindow() {
         auto renderManager = RE::BSGraphics::Renderer::GetSingleton();
         if (!renderManager) {
             logger::critical("RenderManager is null!");
@@ -27,7 +27,8 @@ namespace PrismaUI::Bootstrapper {
             return std::nullopt;
         }
 
-        return std::make_tuple(reinterpret_cast<HWND>(runtimeData.renderWindows->hWnd), renderManager->GetScreenSize());
+        return std::make_tuple(reinterpret_cast<HWND>(runtimeData.renderWindows->hWnd), renderManager->GetScreenSize(),
+                               reinterpret_cast<ID3D11Device*>(runtimeData.forwarder));
     }
 
     static bool InitializeImpl() {
@@ -43,8 +44,8 @@ namespace PrismaUI::Bootstrapper {
             return false;
         }
 
-        auto [hWnd, screenSize] = renderWindowOpt.value();
-        if (!Cef::CefRuntime::GetSingleton().Initialize(hWnd, screenSize.width, screenSize.height)) {
+        auto [hWnd, screenSize, d3dDevice] = renderWindowOpt.value();
+        if (!Cef::CefRuntime::GetSingleton().Initialize(hWnd, screenSize.width, screenSize.height, d3dDevice)) {
             logger::critical("CefRuntime initialization failed");
             return false;
         }

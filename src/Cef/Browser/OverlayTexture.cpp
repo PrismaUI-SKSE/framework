@@ -43,7 +43,7 @@ namespace PrismaUI::Cef {
 
     bool OverlayTexture::CreateAcceleratedResourcesLocked(const Desc& desc,
                                                           Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture,
-                                                          Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv) {
+                                                          Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv) const {
         if (!_renderDevice) {
             return false;
         }

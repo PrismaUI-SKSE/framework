@@ -80,7 +80,7 @@ namespace PrismaUI::Cef {
 
         bool CopySharedHandleOnRenderThreadLocked(HANDLE sharedTextureHandle);
         bool CreateAcceleratedResourcesLocked(const Desc& desc, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture,
-                                              Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv);
+                                              Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv) const;
         bool CreateCpuResourcesLocked(const Desc& desc, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture,
                                       Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv) const;
         void NoteActiveModeChangeLocked(Mode newMode);

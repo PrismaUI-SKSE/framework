@@ -82,15 +82,15 @@ namespace PrismaUI::Cef {
         bool CreateAcceleratedResourcesLocked(const Desc& desc, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture,
                                               Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv);
         bool CreateCpuResourcesLocked(const Desc& desc, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture,
-                                      Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv);
+                                      Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv) const;
         void NoteActiveModeChangeLocked(Mode newMode);
         static const char* ModeName(Mode mode);
 
         mutable std::mutex _mutex;
 
-        Microsoft::WRL::ComPtr<ID3D11Device> renderDevice_;
-        Microsoft::WRL::ComPtr<ID3D11Device1> renderDevice1_;
-        Microsoft::WRL::ComPtr<ID3D11DeviceContext> renderContext_;
+        Microsoft::WRL::ComPtr<ID3D11Device> _renderDevice;
+        Microsoft::WRL::ComPtr<ID3D11Device1> _renderDevice1;
+        Microsoft::WRL::ComPtr<ID3D11DeviceContext> _renderContext;
         Microsoft::WRL::ComPtr<ID3D11Texture2D> texture_;
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> _srv;
 
@@ -99,6 +99,8 @@ namespace PrismaUI::Cef {
         Mode _activeMode = Mode::None;
         bool _hasFrame = false;
         bool _firstAcceleratedCopyLogged = false;
+        std::uint64_t _acceleratedOpenFailureCount = 0;
+        bool _acceleratedRequiresLegacyOpen = false;
 
         ResourceLock<HANDLE> _pendingAcceleratedTextureHandle{nullptr};
         std::binary_semaphore _waitForRenderThreadCopyEvent{0};

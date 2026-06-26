@@ -26,25 +26,25 @@ namespace PrismaUI::Cef {
             return;
         }
 
-        if (renderDevice_.Get() != device) {
-            renderDevice_ = device;
-            renderDevice1_.Reset();
-            const HRESULT hr = device->QueryInterface(IID_PPV_ARGS(renderDevice1_.ReleaseAndGetAddressOf()));
+        if (_renderDevice.Get() != device) {
+            _renderDevice = device;
+            _renderDevice1.Reset();
+            const HRESULT hr = device->QueryInterface(IID_PPV_ARGS(_renderDevice1.ReleaseAndGetAddressOf()));
             if (FAILED(hr)) {
                 logger::error("CEF accelerated OSR disabled: D3D device does not expose ID3D11Device1. HR={:#X}",
                               static_cast<unsigned int>(hr));
             }
         }
 
-        if (renderContext_.Get() != context) {
-            renderContext_ = context;
+        if (_renderContext.Get() != context) {
+            _renderContext = context;
         }
     }
 
     bool OverlayTexture::CreateAcceleratedResourcesLocked(const Desc& desc,
                                                           Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture,
                                                           Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv) {
-        if (!renderDevice_) {
+        if (!_renderDevice) {
             return false;
         }
 
@@ -59,7 +59,7 @@ namespace PrismaUI::Cef {
         textureDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
 
         Microsoft::WRL::ComPtr<ID3D11Texture2D> newTexture;
-        HRESULT hr = renderDevice_->CreateTexture2D(&textureDesc, nullptr, newTexture.ReleaseAndGetAddressOf());
+        HRESULT hr = _renderDevice->CreateTexture2D(&textureDesc, nullptr, newTexture.ReleaseAndGetAddressOf());
         if (FAILED(hr)) {
             logger::error("Failed to create accelerated CEF overlay texture {}x{} format {}. HR={:#X}",
                           textureDesc.Width, textureDesc.Height, static_cast<unsigned int>(textureDesc.Format),
@@ -68,7 +68,7 @@ namespace PrismaUI::Cef {
         }
 
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> newSrv;
-        hr = renderDevice_->CreateShaderResourceView(newTexture.Get(), nullptr, newSrv.ReleaseAndGetAddressOf());
+        hr = _renderDevice->CreateShaderResourceView(newTexture.Get(), nullptr, newSrv.ReleaseAndGetAddressOf());
         if (FAILED(hr)) {
             logger::error("Failed to create accelerated CEF overlay SRV {}x{} format {}. HR={:#X}", textureDesc.Width,
                           textureDesc.Height, static_cast<unsigned int>(textureDesc.Format),
@@ -82,8 +82,8 @@ namespace PrismaUI::Cef {
     }
 
     bool OverlayTexture::CreateCpuResourcesLocked(const Desc& desc, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture,
-                                                  Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv) {
-        if (!renderDevice_) {
+                                                  Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv) const {
+        if (!_renderDevice) {
             return false;
         }
 
@@ -99,7 +99,7 @@ namespace PrismaUI::Cef {
         textureDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
         Microsoft::WRL::ComPtr<ID3D11Texture2D> newTexture;
-        HRESULT hr = renderDevice_->CreateTexture2D(&textureDesc, nullptr, newTexture.ReleaseAndGetAddressOf());
+        HRESULT hr = _renderDevice->CreateTexture2D(&textureDesc, nullptr, newTexture.ReleaseAndGetAddressOf());
         if (FAILED(hr)) {
             logger::error("Failed to create CPU fallback CEF overlay texture {}x{}. HR={:#X}", textureDesc.Width,
                           textureDesc.Height, static_cast<unsigned int>(hr));
@@ -107,7 +107,7 @@ namespace PrismaUI::Cef {
         }
 
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> newSrv;
-        hr = renderDevice_->CreateShaderResourceView(newTexture.Get(), nullptr, newSrv.ReleaseAndGetAddressOf());
+        hr = _renderDevice->CreateShaderResourceView(newTexture.Get(), nullptr, newSrv.ReleaseAndGetAddressOf());
         if (FAILED(hr)) {
             logger::error("Failed to create CPU fallback CEF overlay SRV {}x{}. HR={:#X}", textureDesc.Width,
                           textureDesc.Height, static_cast<unsigned int>(hr));
@@ -163,11 +163,43 @@ namespace PrismaUI::Cef {
 
     bool OverlayTexture::CopySharedHandleOnRenderThreadLocked(HANDLE sharedTextureHandle) {
         Microsoft::WRL::ComPtr<ID3D11Texture2D> sharedTexture;
-        HRESULT hr = renderDevice1_->OpenSharedResource1(sharedTextureHandle,
-                                                         IID_PPV_ARGS(sharedTexture.ReleaseAndGetAddressOf()));
-        if (FAILED(hr)) {
-            logger::error("Failed to open CEF accelerated shared texture. HR={:#X}", static_cast<unsigned int>(hr));
-            return false;
+        HRESULT primaryHr = E_NOINTERFACE;
+        bool triedPrimaryOpen = false;
+        if (!_acceleratedRequiresLegacyOpen && _renderDevice1) {
+            triedPrimaryOpen = true;
+            primaryHr = _renderDevice1->OpenSharedResource1(sharedTextureHandle,
+                                                            IID_PPV_ARGS(sharedTexture.ReleaseAndGetAddressOf()));
+        }
+
+        if (!triedPrimaryOpen || FAILED(primaryHr)) {
+            sharedTexture.Reset();
+            const HRESULT legacyHr = _renderDevice->OpenSharedResource(
+                sharedTextureHandle, IID_PPV_ARGS(sharedTexture.ReleaseAndGetAddressOf()));
+            if (FAILED(legacyHr)) {
+                const auto failureCount = ++_acceleratedOpenFailureCount;
+                if (failureCount == 1 || failureCount % 300 == 0) {
+                    if (triedPrimaryOpen) {
+                        logger::error(
+                            "Failed to open CEF accelerated shared texture. OpenSharedResource1 HR={:#X}; "
+                            "OpenSharedResource HR={:#X}; failures={}.",
+                            static_cast<unsigned int>(primaryHr), static_cast<unsigned int>(legacyHr), failureCount);
+                    } else {
+                        logger::error(
+                            "Failed to open CEF accelerated shared texture with legacy OpenSharedResource. HR={:#X}; "
+                            "failures={}.",
+                            static_cast<unsigned int>(legacyHr), failureCount);
+                    }
+                }
+
+                return false;
+            }
+
+            if (!_acceleratedRequiresLegacyOpen) {
+                logger::warn(
+                    "CEF accelerated shared texture required legacy OpenSharedResource path; skipping "
+                    "OpenSharedResource1 for future frames.");
+                _acceleratedRequiresLegacyOpen = true;
+            }
         }
 
         D3D11_TEXTURE2D_DESC sharedDesc = {};
@@ -187,8 +219,8 @@ namespace PrismaUI::Cef {
             return false;
         }
 
-        hr = Utils::CopyResourceAndWait(renderDevice_.Get(), renderContext_.Get(), targetTexture.Get(),
-                                        sharedTexture.Get());
+        HRESULT hr = Utils::CopyResourceAndWait(_renderDevice.Get(), _renderContext.Get(), targetTexture.Get(),
+                                                sharedTexture.Get());
         if (FAILED(hr)) {
             logger::error("Failed to synchronously copy CEF accelerated shared texture. HR={:#X}",
                           static_cast<unsigned int>(hr));
@@ -219,7 +251,7 @@ namespace PrismaUI::Cef {
         }
 
         std::lock_guard lock(_mutex);
-        if (!renderDevice_ || !renderContext_) {
+        if (!_renderDevice || !_renderContext) {
             return false;
         }
 
@@ -234,7 +266,7 @@ namespace PrismaUI::Cef {
         }
 
         D3D11_MAPPED_SUBRESOURCE mapped = {};
-        const HRESULT hr = renderContext_->Map(targetTexture.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+        const HRESULT hr = _renderContext->Map(targetTexture.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
         if (FAILED(hr)) {
             logger::error("Failed to map CPU fallback CEF overlay texture. HR={:#X}", static_cast<unsigned int>(hr));
             return false;
@@ -246,7 +278,7 @@ namespace PrismaUI::Cef {
             std::memcpy(destination + static_cast<std::size_t>(row) * mapped.RowPitch,
                         pixels + static_cast<std::size_t>(row) * srcStride, rowBytes);
         }
-        renderContext_->Unmap(targetTexture.Get(), 0);
+        _renderContext->Unmap(targetTexture.Get(), 0);
 
         if (!overlayMatches) {
             texture_ = std::move(targetTexture);
@@ -268,14 +300,14 @@ namespace PrismaUI::Cef {
 
         _waitForRenderThreadCopyEvent.release();
         std::lock_guard lock(_mutex);
-        if (texture_ || _srv || renderDevice_ || renderContext_) {
+        if (texture_ || _srv || _renderDevice || _renderContext) {
             logger::info("Releasing CEF overlay D3D resources.");
         }
         _srv.Reset();
         texture_.Reset();
-        renderContext_.Reset();
-        renderDevice1_.Reset();
-        renderDevice_.Reset();
+        _renderContext.Reset();
+        _renderDevice1.Reset();
+        _renderDevice.Reset();
         _desc = {};
         _mode = Mode::None;
         _activeMode = Mode::None;

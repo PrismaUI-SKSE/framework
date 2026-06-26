@@ -54,9 +54,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
         .Install();
 
     Hooks::HookInstaller<Hooks::LateUpdateHook>::Create()
-        .AddPreHandler([] {
-            MainThreadScheduler.ExecuteTasks();
-        })
+        .AddPreHandler([] { MainThreadScheduler.ExecuteTasks(); })
         .Install();
 
     return true;

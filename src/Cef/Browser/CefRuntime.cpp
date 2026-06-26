@@ -199,6 +199,7 @@ namespace PrismaUI::Cef {
         std::atomic<bool> devToolsOpen = false;
         std::atomic<int> devToolsTargetBrowserId = -1;
         std::atomic<int> devToolsBrowserId = -1;
+        std::thread::id mainThreadId;
 
         struct ShellViewState {
             uint64_t viewId = 0;
@@ -230,7 +231,7 @@ namespace PrismaUI::Cef {
         std::map<uint64_t, InvokeEntry> pendingInvokes;
     };
 
-    CefRuntime::CefRuntime() : impl_(std::make_unique<Impl>()) {}
+    CefRuntime::CefRuntime() : _impl(std::make_unique<Impl>()) {}
 
     CefRuntime::~CefRuntime() = default;
 
@@ -239,10 +240,10 @@ namespace PrismaUI::Cef {
         return instance;
     }
 
-    bool CefRuntime::Initialize(HWND hwnd, uint32_t width, uint32_t height) {
-        std::lock_guard lock(impl_->stateMutex);
+    bool CefRuntime::Initialize(HWND hwnd, uint32_t width, uint32_t height) const {
+        std::lock_guard lock(_impl->stateMutex);
 
-        if (impl_->initialized.load(std::memory_order_acquire)) {
+        if (_impl->initialized.load(std::memory_order_acquire)) {
             return true;
         }
 
@@ -251,7 +252,7 @@ namespace PrismaUI::Cef {
             return false;
         }
 
-        if (impl_->initializeAttempted.exchange(true, std::memory_order_acq_rel)) {
+        if (_impl->initializeAttempted.exchange(true, std::memory_order_acq_rel)) {
             logger::debug("CEF initialization was already attempted and did not complete successfully.");
             return false;
         }
@@ -304,23 +305,25 @@ namespace PrismaUI::Cef {
         CefString(&settings.log_file).FromWString(logFile.wstring());
         CefString(&settings.locale).FromASCII("en-US");
 
-        impl_->app = CreatePrismaCefApp();
+        _impl->app = CreatePrismaCefApp();
         logger::info("Calling CefInitialize.");
-        if (!CefInitialize(mainArgs, settings, impl_->app, nullptr)) {
+        if (!CefInitialize(mainArgs, settings, _impl->app, nullptr)) {
             auto errorCode = CefGetExitCode();
             logger::error("CefInitialize failed, exit code: {}", errorCode);
-            impl_->app = nullptr;
+            _impl->app = nullptr;
             return false;
         }
 
-        impl_->initialized.store(true, std::memory_order_release);
-        impl_->width = width;
-        impl_->height = height;
-        impl_->hwnd = hwnd;
+        _impl->initialized.store(true, std::memory_order_release);
+        _impl->width = width;
+        _impl->height = height;
+        _impl->hwnd = hwnd;
         logger::info("CefInitialize succeeded.");
 
-        impl_->client = new CefOsrClient(width, height);
-        CefRefPtr<CefOsrClient> client = impl_->client;
+        _impl->client = new CefOsrClient(width, height);
+        CefRefPtr<CefOsrClient> client = _impl->client;
+
+        _impl->mainThreadId = std::this_thread::get_id();
 
         logger::info("Scheduling CEF OSR browser creation at {}x{}.", width, height);
         PostToCefUi([hwnd, client, shellUrl]() {
@@ -347,19 +350,19 @@ namespace PrismaUI::Cef {
     }
 
     void CefRuntime::Resize(uint32_t width, uint32_t height) {
-        if (!impl_->initialized.load(std::memory_order_acquire) || width == 0 || height == 0) {
+        if (!_impl->initialized.load(std::memory_order_acquire) || width == 0 || height == 0) {
             return;
         }
 
         CefRefPtr<CefOsrClient> client;
         {
-            std::lock_guard lock(impl_->stateMutex);
-            if (impl_->width == width && impl_->height == height) {
+            std::lock_guard lock(_impl->stateMutex);
+            if (_impl->width == width && _impl->height == height) {
                 return;
             }
-            impl_->width = width;
-            impl_->height = height;
-            client = impl_->client;
+            _impl->width = width;
+            _impl->height = height;
+            client = _impl->client;
         }
 
         if (!client) {
@@ -370,14 +373,14 @@ namespace PrismaUI::Cef {
     }
 
     void CefRuntime::BeginFrame() const {
-        if (!impl_->initialized.load(std::memory_order_acquire)) {
+        if (!_impl->initialized.load(std::memory_order_acquire)) {
             return;
         }
 
         CefRefPtr<CefOsrClient> client;
         {
-            std::lock_guard lock(impl_->stateMutex);
-            client = impl_->client;
+            std::lock_guard lock(_impl->stateMutex);
+            client = _impl->client;
         }
 
         if (!client || !client->HasBrowser()) {
@@ -388,25 +391,25 @@ namespace PrismaUI::Cef {
     }
 
     void CefRuntime::InitOverlayTexture(ID3D11Device* device, ID3D11DeviceContext* context) const {
-        impl_->overlay.BindRenderDevice(device, context);
+        _impl->overlay.BindRenderDevice(device, context);
     }
 
     void CefRuntime::UpdateOverlayTexture() const {
-        if (!impl_->initialized.load(std::memory_order_acquire)) {
+        if (!_impl->initialized.load(std::memory_order_acquire) || _impl->mainThreadId != std::this_thread::get_id()) {
             return;
         }
 
         CefRefPtr<CefOsrClient> client;
         {
-            std::lock_guard lock(impl_->stateMutex);
-            client = impl_->client;
+            std::lock_guard lock(_impl->stateMutex);
+            client = _impl->client;
         }
 
         if (!client) {
             return;
         }
 
-        if (impl_->overlay.CopyPendingAcceleratedFrame()) {
+        if (_impl->overlay.CopyPendingAcceleratedFrame()) {
             return;
         }
 
@@ -435,18 +438,18 @@ namespace PrismaUI::Cef {
             return;
         }
 
-        impl_->overlay.UploadBgra32(cpuFrame.data(), cpuWidth, cpuHeight, cpuStride);
+        _impl->overlay.UploadBgra32(cpuFrame.data(), cpuWidth, cpuHeight, cpuStride);
     }
 
-    std::optional<OverlayTextureInfo> CefRuntime::GetOverlayInfo() const { return impl_->overlay.GetInfo(); }
+    std::optional<OverlayTextureInfo> CefRuntime::GetOverlayInfo() const { return _impl->overlay.GetInfo(); }
 
     void CefRuntime::SubmitAcceleratedFrameDuringCallback(HANDLE sharedTextureHandle) const {
-        if (!impl_->initialized.load(std::memory_order_acquire) ||
-            impl_->shuttingDown.load(std::memory_order_acquire) || !sharedTextureHandle) {
+        if (!_impl->initialized.load(std::memory_order_acquire) ||
+            _impl->shuttingDown.load(std::memory_order_acquire) || !sharedTextureHandle) {
             return;
         }
 
-        impl_->overlay.SubmitAcceleratedFrameDuringCallback(sharedTextureHandle);
+        _impl->overlay.SubmitAcceleratedFrameDuringCallback(sharedTextureHandle);
     }
 
     void CefRuntime::AppendShellArg(std::string& out, uint64_t value) {
@@ -475,15 +478,15 @@ namespace PrismaUI::Cef {
     }
 
     bool CefRuntime::RunShellScript(std::string_view method, uint64_t viewId, std::string script) {
-        if (!impl_->initialized.load(std::memory_order_acquire)) {
+        if (!_impl->initialized.load(std::memory_order_acquire)) {
             logger::warn("CEF shell '{}' (view={}) ignored: CEF is not initialized.", method, viewId);
             return false;
         }
 
         CefRefPtr<CefOsrClient> client;
         {
-            std::lock_guard lock(impl_->stateMutex);
-            client = impl_->client;
+            std::lock_guard lock(_impl->stateMutex);
+            client = _impl->client;
         }
 
         if (!client || !client->HasBrowser()) {
@@ -492,8 +495,8 @@ namespace PrismaUI::Cef {
         }
 
         {
-            std::lock_guard lock(impl_->shellMutex);
-            if (!impl_->shellReady) {
+            std::lock_guard lock(_impl->shellMutex);
+            if (!_impl->shellReady) {
                 logger::warn("CEF shell '{}' (view={}) deferred: shell is not ready.", method, viewId);
                 return false;
             }
@@ -537,9 +540,9 @@ namespace PrismaUI::Cef {
     void CefRuntime::ReplayShellViews() {
         std::vector<Impl::ShellViewState> views;
         {
-            std::lock_guard lock(impl_->shellMutex);
-            views.reserve(impl_->shellViews.size());
-            for (const auto& state : impl_->shellViews | std::views::values) {
+            std::lock_guard lock(_impl->shellMutex);
+            views.reserve(_impl->shellViews.size());
+            for (const auto& state : _impl->shellViews | std::views::values) {
                 views.push_back(state);
             }
         }
@@ -557,8 +560,8 @@ namespace PrismaUI::Cef {
         const std::string iframeName = MakeIframeName(viewId);
         const std::string resolvedUrl = ResolveViewUrl(urlOrPath);
         {
-            std::lock_guard lock(impl_->shellMutex);
-            auto& state = impl_->shellViews[viewId];
+            std::lock_guard lock(_impl->shellMutex);
+            auto& state = _impl->shellViews[viewId];
             state.viewId = viewId;
             state.iframeName = iframeName;
             state.resolvedUrl = resolvedUrl;
@@ -579,8 +582,8 @@ namespace PrismaUI::Cef {
         const std::string iframeName = MakeIframeName(viewId);
         bool existed = false;
         {
-            std::lock_guard lock(impl_->shellMutex);
-            existed = impl_->shellViews.erase(viewId) != 0;
+            std::lock_guard lock(_impl->shellMutex);
+            existed = _impl->shellViews.erase(viewId) != 0;
         }
 
         logger::info("CEF shell destroy view: id={}, iframe='{}', existed={}.", viewId, iframeName, existed);
@@ -593,9 +596,9 @@ namespace PrismaUI::Cef {
     bool CefRuntime::SetShellViewHidden(uint64_t viewId, bool hidden) {
         const std::string iframeName = MakeIframeName(viewId);
         {
-            std::lock_guard lock(impl_->shellMutex);
-            auto it = impl_->shellViews.find(viewId);
-            if (it == impl_->shellViews.end()) {
+            std::lock_guard lock(_impl->shellMutex);
+            auto it = _impl->shellViews.find(viewId);
+            if (it == _impl->shellViews.end()) {
                 logger::warn("CEF shell set hidden ignored missing view: id={}, iframe='{}'.", viewId, iframeName);
                 return false;
             }
@@ -609,9 +612,9 @@ namespace PrismaUI::Cef {
     bool CefRuntime::SetShellViewOrder(uint64_t viewId, int order) {
         const std::string iframeName = MakeIframeName(viewId);
         {
-            std::lock_guard lock(impl_->shellMutex);
-            auto it = impl_->shellViews.find(viewId);
-            if (it == impl_->shellViews.end()) {
+            std::lock_guard lock(_impl->shellMutex);
+            auto it = _impl->shellViews.find(viewId);
+            if (it == _impl->shellViews.end()) {
                 logger::warn("CEF shell set order ignored missing view: id={}, iframe='{}'.", viewId, iframeName);
                 return false;
             }
@@ -625,13 +628,13 @@ namespace PrismaUI::Cef {
     bool CefRuntime::FocusShellView(uint64_t viewId) {
         const std::string iframeName = MakeIframeName(viewId);
         {
-            std::lock_guard lock(impl_->shellMutex);
-            auto it = impl_->shellViews.find(viewId);
-            if (it == impl_->shellViews.end()) {
+            std::lock_guard lock(_impl->shellMutex);
+            auto it = _impl->shellViews.find(viewId);
+            if (it == _impl->shellViews.end()) {
                 logger::warn("CEF shell focus ignored missing view: id={}, iframe='{}'.", viewId, iframeName);
                 return false;
             }
-            for (auto& [otherId, state] : impl_->shellViews) {
+            for (auto& [otherId, state] : _impl->shellViews) {
                 state.focused = otherId == viewId;
             }
         }
@@ -639,8 +642,8 @@ namespace PrismaUI::Cef {
         logger::info("CEF shell focus view: id={}, iframe='{}'.", viewId, iframeName);
         CefRefPtr<CefOsrClient> client;
         {
-            std::lock_guard lock(impl_->stateMutex);
-            client = impl_->client;
+            std::lock_guard lock(_impl->stateMutex);
+            client = _impl->client;
         }
         if (client && client->HasBrowser()) {
             PostToCefUi([client, viewId]() {
@@ -659,9 +662,9 @@ namespace PrismaUI::Cef {
     bool CefRuntime::BlurShellView(uint64_t viewId) {
         const std::string iframeName = MakeIframeName(viewId);
         {
-            std::lock_guard lock(impl_->shellMutex);
-            auto it = impl_->shellViews.find(viewId);
-            if (it == impl_->shellViews.end()) {
+            std::lock_guard lock(_impl->shellMutex);
+            auto it = _impl->shellViews.find(viewId);
+            if (it == _impl->shellViews.end()) {
                 logger::warn("CEF shell blur ignored missing view: id={}, iframe='{}'.", viewId, iframeName);
                 return false;
             }
@@ -673,9 +676,9 @@ namespace PrismaUI::Cef {
     }
 
     bool CefRuntime::TryGetShellFrameName(uint64_t viewId, std::string& outName) const {
-        std::lock_guard lock(impl_->shellMutex);
-        const auto it = impl_->shellViews.find(viewId);
-        if (it == impl_->shellViews.end()) {
+        std::lock_guard lock(_impl->shellMutex);
+        const auto it = _impl->shellViews.find(viewId);
+        if (it == _impl->shellViews.end()) {
             outName.clear();
             return false;
         }
@@ -684,14 +687,14 @@ namespace PrismaUI::Cef {
     }
 
     bool CefRuntime::IsShellReady() const {
-        std::lock_guard lock(impl_->shellMutex);
-        return impl_->shellReady;
+        std::lock_guard lock(_impl->shellMutex);
+        return _impl->shellReady;
     }
 
     void CefRuntime::OpenDevTools() {
         logger::info("CEF DevTools open requested.");
 
-        if (!impl_->initialized.load(std::memory_order_acquire)) {
+        if (!_impl->initialized.load(std::memory_order_acquire)) {
             logger::warn("CEF DevTools open ignored because CEF is not initialized.");
             return;
         }
@@ -699,9 +702,9 @@ namespace PrismaUI::Cef {
         CefRefPtr<CefOsrClient> client;
         HWND hwnd = nullptr;
         {
-            std::lock_guard lock(impl_->stateMutex);
-            client = impl_->client;
-            hwnd = impl_->hwnd;
+            std::lock_guard lock(_impl->stateMutex);
+            client = _impl->client;
+            hwnd = _impl->hwnd;
         }
 
         if (!client || !client->HasBrowser()) {
@@ -721,8 +724,8 @@ namespace PrismaUI::Cef {
             logger::info("CEF DevTools opening for shell browser [{}]; remote debugging is disabled.", targetBrowserId);
 
             if (host->HasDevTools()) {
-                impl_->devToolsOpen.store(true, std::memory_order_release);
-                impl_->devToolsTargetBrowserId.store(targetBrowserId, std::memory_order_release);
+                _impl->devToolsOpen.store(true, std::memory_order_release);
+                _impl->devToolsTargetBrowserId.store(targetBrowserId, std::memory_order_release);
                 logger::info("CEF DevTools already open for shell browser [{}]; focusing existing DevTools.",
                              targetBrowserId);
                 CefWindowInfo ignoredWindowInfo;
@@ -734,40 +737,40 @@ namespace PrismaUI::Cef {
             CefRefPtr<DevToolsClient> devToolsClient = new DevToolsClient(
                 [this, targetBrowserId](CefRefPtr<CefBrowser> devToolsBrowser) {
                     if (!devToolsBrowser) {
-                        impl_->devToolsOpen.store(false, std::memory_order_release);
-                        impl_->devToolsBrowserId.store(-1, std::memory_order_release);
+                        _impl->devToolsOpen.store(false, std::memory_order_release);
+                        _impl->devToolsBrowserId.store(-1, std::memory_order_release);
                         logger::error("CEF DevTools failed to report a browser for shell browser [{}].",
                                       targetBrowserId);
                         return;
                     }
 
                     {
-                        std::lock_guard lock(impl_->devToolsMutex);
-                        impl_->devToolsBrowser = devToolsBrowser;
+                        std::lock_guard lock(_impl->devToolsMutex);
+                        _impl->devToolsBrowser = devToolsBrowser;
                     }
-                    impl_->devToolsOpen.store(true, std::memory_order_release);
-                    impl_->devToolsTargetBrowserId.store(targetBrowserId, std::memory_order_release);
-                    impl_->devToolsBrowserId.store(devToolsBrowser->GetIdentifier(), std::memory_order_release);
+                    _impl->devToolsOpen.store(true, std::memory_order_release);
+                    _impl->devToolsTargetBrowserId.store(targetBrowserId, std::memory_order_release);
+                    _impl->devToolsBrowserId.store(devToolsBrowser->GetIdentifier(), std::memory_order_release);
                     logger::info("CEF DevTools browser [{}] opened for shell browser [{}].",
                                  devToolsBrowser->GetIdentifier(), targetBrowserId);
                 },
                 [this, targetBrowserId](CefRefPtr<CefBrowser> devToolsBrowser) {
                     const int devToolsBrowserId = devToolsBrowser ? devToolsBrowser->GetIdentifier() : -1;
                     {
-                        std::lock_guard lock(impl_->devToolsMutex);
-                        impl_->devToolsBrowser = nullptr;
-                        impl_->devToolsClient = nullptr;
+                        std::lock_guard lock(_impl->devToolsMutex);
+                        _impl->devToolsBrowser = nullptr;
+                        _impl->devToolsClient = nullptr;
                     }
-                    impl_->devToolsOpen.store(false, std::memory_order_release);
-                    impl_->devToolsTargetBrowserId.store(-1, std::memory_order_release);
-                    impl_->devToolsBrowserId.store(-1, std::memory_order_release);
+                    _impl->devToolsOpen.store(false, std::memory_order_release);
+                    _impl->devToolsTargetBrowserId.store(-1, std::memory_order_release);
+                    _impl->devToolsBrowserId.store(-1, std::memory_order_release);
                     logger::info("CEF DevTools browser [{}] closed for shell browser [{}].", devToolsBrowserId,
                                  targetBrowserId);
                 });
 
             {
-                std::lock_guard lock(impl_->devToolsMutex);
-                impl_->devToolsClient = devToolsClient;
+                std::lock_guard lock(_impl->devToolsMutex);
+                _impl->devToolsClient = devToolsClient;
             }
 
             CefWindowInfo windowInfo;
@@ -784,27 +787,27 @@ namespace PrismaUI::Cef {
     void CefRuntime::CloseDevTools() {
         logger::info("CEF DevTools close requested.");
 
-        if (!impl_->initialized.load(std::memory_order_acquire)) {
+        if (!_impl->initialized.load(std::memory_order_acquire)) {
             logger::warn("CEF DevTools close ignored because CEF is not initialized.");
             return;
         }
 
         CefRefPtr<CefOsrClient> client;
         {
-            std::lock_guard lock(impl_->stateMutex);
-            client = impl_->client;
+            std::lock_guard lock(_impl->stateMutex);
+            client = _impl->client;
         }
 
         if (!client || !client->HasBrowser()) {
             logger::warn("CEF DevTools close found no shell browser.");
             {
-                std::lock_guard lock(impl_->devToolsMutex);
-                impl_->devToolsBrowser = nullptr;
-                impl_->devToolsClient = nullptr;
+                std::lock_guard lock(_impl->devToolsMutex);
+                _impl->devToolsBrowser = nullptr;
+                _impl->devToolsClient = nullptr;
             }
-            impl_->devToolsOpen.store(false, std::memory_order_release);
-            impl_->devToolsTargetBrowserId.store(-1, std::memory_order_release);
-            impl_->devToolsBrowserId.store(-1, std::memory_order_release);
+            _impl->devToolsOpen.store(false, std::memory_order_release);
+            _impl->devToolsTargetBrowserId.store(-1, std::memory_order_release);
+            _impl->devToolsBrowserId.store(-1, std::memory_order_release);
             return;
         }
 
@@ -820,39 +823,39 @@ namespace PrismaUI::Cef {
             if (!host->HasDevTools()) {
                 logger::info("CEF DevTools close no-op: shell browser [{}] has no DevTools.", targetBrowserId);
                 {
-                    std::lock_guard lock(impl_->devToolsMutex);
-                    impl_->devToolsBrowser = nullptr;
-                    impl_->devToolsClient = nullptr;
+                    std::lock_guard lock(_impl->devToolsMutex);
+                    _impl->devToolsBrowser = nullptr;
+                    _impl->devToolsClient = nullptr;
                 }
-                impl_->devToolsOpen.store(false, std::memory_order_release);
-                impl_->devToolsTargetBrowserId.store(-1, std::memory_order_release);
-                impl_->devToolsBrowserId.store(-1, std::memory_order_release);
+                _impl->devToolsOpen.store(false, std::memory_order_release);
+                _impl->devToolsTargetBrowserId.store(-1, std::memory_order_release);
+                _impl->devToolsBrowserId.store(-1, std::memory_order_release);
                 return;
             }
 
             logger::info("CEF DevTools CloseDevTools submitted for shell browser [{}], tracked DevTools browser [{}].",
-                         targetBrowserId, impl_->devToolsBrowserId.load(std::memory_order_acquire));
+                         targetBrowserId, _impl->devToolsBrowserId.load(std::memory_order_acquire));
             host->CloseDevTools();
         });
     }
 
-    bool CefRuntime::IsDevToolsOpen() const { return impl_->devToolsOpen.load(std::memory_order_acquire); }
+    bool CefRuntime::IsDevToolsOpen() const { return _impl->devToolsOpen.load(std::memory_order_acquire); }
 
     void CefRuntime::NotifyShellLoadStart(const std::string& frameIdentifier, const std::string& url) {
-        std::lock_guard lock(impl_->shellMutex);
-        impl_->shellReady = false;
-        impl_->shellFrameIdentifier = frameIdentifier;
-        impl_->shellUrl = url;
+        std::lock_guard lock(_impl->shellMutex);
+        _impl->shellReady = false;
+        _impl->shellFrameIdentifier = frameIdentifier;
+        _impl->shellUrl = url;
         logger::info("CEF shell state: load start, frame id '{}', url '{}'.", frameIdentifier, url);
     }
 
     void CefRuntime::NotifyShellLoadEnd(int httpStatusCode, const std::string& frameIdentifier,
                                         const std::string& url) {
         {
-            std::lock_guard lock(impl_->shellMutex);
-            impl_->shellReady = true;
-            impl_->shellFrameIdentifier = frameIdentifier;
-            impl_->shellUrl = url;
+            std::lock_guard lock(_impl->shellMutex);
+            _impl->shellReady = true;
+            _impl->shellFrameIdentifier = frameIdentifier;
+            _impl->shellUrl = url;
         }
         logger::info("CEF shell state: ready, frame id '{}', status {}, url '{}'.", frameIdentifier, httpStatusCode,
                      url);
@@ -861,10 +864,10 @@ namespace PrismaUI::Cef {
 
     void CefRuntime::NotifyShellLoadError(int errorCode, const std::string& errorText, const std::string& failedUrl,
                                           const std::string& frameIdentifier, const std::string& url) {
-        std::lock_guard lock(impl_->shellMutex);
-        impl_->shellReady = false;
-        impl_->shellFrameIdentifier = frameIdentifier;
-        impl_->shellUrl = url;
+        std::lock_guard lock(_impl->shellMutex);
+        _impl->shellReady = false;
+        _impl->shellFrameIdentifier = frameIdentifier;
+        _impl->shellUrl = url;
         logger::error("CEF shell state: load error code={}, error='{}', failedUrl='{}', frame id '{}', url '{}'.",
                       errorCode, errorText, failedUrl, frameIdentifier, url);
     }
@@ -878,9 +881,9 @@ namespace PrismaUI::Cef {
             return;
         }
 
-        std::lock_guard lock(impl_->shellMutex);
-        auto it = impl_->shellViews.find(viewId);
-        if (it == impl_->shellViews.end()) {
+        std::lock_guard lock(_impl->shellMutex);
+        auto it = _impl->shellViews.find(viewId);
+        if (it == _impl->shellViews.end()) {
             logger::warn("CEF shell iframe load start for unknown view: id={}, iframe='{}', frame id '{}', url='{}'.",
                          viewId, frameName, frameIdentifier, url);
             return;
@@ -900,9 +903,9 @@ namespace PrismaUI::Cef {
             return;
         }
 
-        std::lock_guard lock(impl_->shellMutex);
-        auto it = impl_->shellViews.find(viewId);
-        if (it == impl_->shellViews.end()) {
+        std::lock_guard lock(_impl->shellMutex);
+        auto it = _impl->shellViews.find(viewId);
+        if (it == _impl->shellViews.end()) {
             logger::warn(
                 "CEF shell iframe load end for unknown view: id={}, iframe='{}', frame id '{}', status {}, url='{}'.",
                 viewId, frameName, frameIdentifier, httpStatusCode, url);
@@ -925,9 +928,9 @@ namespace PrismaUI::Cef {
             return;
         }
 
-        std::lock_guard lock(impl_->shellMutex);
-        auto it = impl_->shellViews.find(viewId);
-        if (it == impl_->shellViews.end()) {
+        std::lock_guard lock(_impl->shellMutex);
+        auto it = _impl->shellViews.find(viewId);
+        if (it == _impl->shellViews.end()) {
             logger::warn(
                 "CEF shell iframe load error for unknown view: id={}, iframe='{}', frame id '{}', code={}, "
                 "failedUrl='{}'.",
@@ -945,20 +948,20 @@ namespace PrismaUI::Cef {
     void CefRuntime::Shutdown() {
         CefRefPtr<CefOsrClient> client;
         {
-            std::lock_guard lock(impl_->stateMutex);
-            if (!impl_->initialized.load(std::memory_order_acquire)) {
+            std::lock_guard lock(_impl->stateMutex);
+            if (!_impl->initialized.load(std::memory_order_acquire)) {
                 return;
             }
 
-            if (impl_->shuttingDown.exchange(true, std::memory_order_acq_rel)) {
+            if (_impl->shuttingDown.exchange(true, std::memory_order_acq_rel)) {
                 logger::warn("CEF shutdown is already in progress.");
                 return;
             }
 
-            client = impl_->client;
+            client = _impl->client;
         }
 
-        impl_->overlay.ReleaseResources();
+        _impl->overlay.ReleaseResources();
 
         logger::info("CEF runtime shutdown started.");
 
@@ -970,7 +973,7 @@ namespace PrismaUI::Cef {
                 CefRefPtr<CefBrowserHost> host = browser ? browser->GetHost() : nullptr;
                 if (browser && host && host->HasDevTools()) {
                     logger::info("CEF shutdown closing DevTools for shell browser [{}], tracked DevTools browser [{}].",
-                                 browser->GetIdentifier(), impl_->devToolsBrowserId.load(std::memory_order_acquire));
+                                 browser->GetIdentifier(), _impl->devToolsBrowserId.load(std::memory_order_acquire));
                     host->CloseDevTools();
                 }
                 client->CloseBrowser();
@@ -987,52 +990,52 @@ namespace PrismaUI::Cef {
         }
 
         if (!browserClosed) {
-            impl_->shutdownSkipped.store(true, std::memory_order_release);
-            impl_->shuttingDown.store(false, std::memory_order_release);
+            _impl->shutdownSkipped.store(true, std::memory_order_release);
+            _impl->shuttingDown.store(false, std::memory_order_release);
             return;
         }
 
         {
-            std::lock_guard lock(impl_->shellMutex);
-            if (!impl_->shellViews.empty()) {
-                logger::info("Clearing {} CEF shell view states during shutdown.", impl_->shellViews.size());
+            std::lock_guard lock(_impl->shellMutex);
+            if (!_impl->shellViews.empty()) {
+                logger::info("Clearing {} CEF shell view states during shutdown.", _impl->shellViews.size());
             }
-            impl_->shellViews.clear();
-            impl_->shellReady = false;
-            impl_->shellFrameIdentifier.clear();
-            impl_->shellUrl.clear();
+            _impl->shellViews.clear();
+            _impl->shellReady = false;
+            _impl->shellFrameIdentifier.clear();
+            _impl->shellUrl.clear();
         }
 
         {
-            std::lock_guard lock(impl_->devToolsMutex);
-            impl_->devToolsBrowser = nullptr;
-            impl_->devToolsClient = nullptr;
+            std::lock_guard lock(_impl->devToolsMutex);
+            _impl->devToolsBrowser = nullptr;
+            _impl->devToolsClient = nullptr;
         }
-        impl_->devToolsOpen.store(false, std::memory_order_release);
-        impl_->devToolsTargetBrowserId.store(-1, std::memory_order_release);
-        impl_->devToolsBrowserId.store(-1, std::memory_order_release);
+        _impl->devToolsOpen.store(false, std::memory_order_release);
+        _impl->devToolsTargetBrowserId.store(-1, std::memory_order_release);
+        _impl->devToolsBrowserId.store(-1, std::memory_order_release);
 
         logger::info("Calling CefShutdown.");
         CefShutdown();
         logger::info("CefShutdown completed.");
 
         {
-            std::lock_guard lock(impl_->stateMutex);
-            impl_->client = nullptr;
-            impl_->app = nullptr;
-            impl_->width = 0;
-            impl_->height = 0;
-            impl_->hwnd = nullptr;
-            impl_->initialized.store(false, std::memory_order_release);
-            impl_->shuttingDown.store(false, std::memory_order_release);
+            std::lock_guard lock(_impl->stateMutex);
+            _impl->client = nullptr;
+            _impl->app = nullptr;
+            _impl->width = 0;
+            _impl->height = 0;
+            _impl->hwnd = nullptr;
+            _impl->initialized.store(false, std::memory_order_release);
+            _impl->shuttingDown.store(false, std::memory_order_release);
         }
     }
 
-    bool CefRuntime::IsInitialized() const { return impl_->initialized.load(std::memory_order_acquire); }
+    bool CefRuntime::IsInitialized() const { return _impl->initialized.load(std::memory_order_acquire); }
 
     bool CefRuntime::HasBrowser() const {
-        std::lock_guard lock(impl_->stateMutex);
-        return impl_->client && impl_->client->HasBrowser();
+        std::lock_guard lock(_impl->stateMutex);
+        return _impl->client && _impl->client->HasBrowser();
     }
 
     namespace {
@@ -1068,7 +1071,7 @@ namespace PrismaUI::Cef {
             return;
         }
 
-        if (!impl_->initialized.load(std::memory_order_acquire)) {
+        if (!_impl->initialized.load(std::memory_order_acquire)) {
             logger::warn("CEF input dispatch dropped {} event(s) for View [{}]: runtime unavailable.", events.size(),
                          viewId);
             return;
@@ -1076,8 +1079,8 @@ namespace PrismaUI::Cef {
 
         CefRefPtr<CefOsrClient> client;
         {
-            std::lock_guard lock(impl_->stateMutex);
-            client = impl_->client;
+            std::lock_guard lock(_impl->stateMutex);
+            client = _impl->client;
         }
 
         if (!client || !client->HasBrowser()) {
@@ -1089,9 +1092,9 @@ namespace PrismaUI::Cef {
         PostToCefUi([this, client, viewId, events = std::move(events)]() mutable {
             std::string iframeName;
             {
-                std::lock_guard lock(impl_->shellMutex);
-                const auto it = impl_->shellViews.find(viewId);
-                if (it == impl_->shellViews.end()) {
+                std::lock_guard lock(_impl->shellMutex);
+                const auto it = _impl->shellViews.find(viewId);
+                if (it == _impl->shellViews.end()) {
                     logger::warn("CEF input dispatch dropped {} event(s) for View [{}]: missing shell view.",
                                  events.size(), viewId);
                     return;
@@ -1101,7 +1104,7 @@ namespace PrismaUI::Cef {
                                   viewId);
                     return;
                 }
-                if (!impl_->shellReady) {
+                if (!_impl->shellReady) {
                     logger::debug("CEF input dispatch dropped {} event(s) for View [{}]: shell not ready.",
                                   events.size(), viewId);
                     return;
@@ -1189,26 +1192,26 @@ namespace PrismaUI::Cef {
     }
 
     void CefRuntime::InvokeScript(uint64_t viewId, std::string script, std::function<void(std::string)> callback) {
-        if (!impl_->initialized.load(std::memory_order_acquire)) {
+        if (!_impl->initialized.load(std::memory_order_acquire)) {
             logger::warn("InvokeScript: CEF not initialized; firing empty callback for view [{}].", viewId);
             if (callback) callback(std::string());
             return;
         }
 
-        const uint64_t requestId = impl_->nextRequestId.fetch_add(1, std::memory_order_relaxed);
+        const uint64_t requestId = _impl->nextRequestId.fetch_add(1, std::memory_order_relaxed);
 
         if (callback) {
-            std::lock_guard lock(impl_->invokeMutex);
+            std::lock_guard lock(_impl->invokeMutex);
             Impl::InvokeEntry entry;
             entry.viewId = viewId;
             entry.callback = std::move(callback);
-            impl_->pendingInvokes.emplace(requestId, std::move(entry));
+            _impl->pendingInvokes.emplace(requestId, std::move(entry));
         }
 
         CefRefPtr<CefOsrClient> client;
         {
-            std::lock_guard lock(impl_->stateMutex);
-            client = impl_->client;
+            std::lock_guard lock(_impl->stateMutex);
+            client = _impl->client;
         }
 
         const std::string scriptCopy = std::move(script);
@@ -1222,11 +1225,11 @@ namespace PrismaUI::Cef {
                 Impl::InvokeEntry drained;
                 bool have = false;
                 {
-                    std::lock_guard lock(impl_->invokeMutex);
-                    auto it = impl_->pendingInvokes.find(requestId);
-                    if (it != impl_->pendingInvokes.end()) {
+                    std::lock_guard lock(_impl->invokeMutex);
+                    auto it = _impl->pendingInvokes.find(requestId);
+                    if (it != _impl->pendingInvokes.end()) {
                         drained = std::move(it->second);
-                        impl_->pendingInvokes.erase(it);
+                        _impl->pendingInvokes.erase(it);
                         have = true;
                     }
                 }
@@ -1240,15 +1243,15 @@ namespace PrismaUI::Cef {
     }
 
     void CefRuntime::InteropCallInView(uint64_t viewId, std::string functionName, std::string argument) {
-        if (!impl_->initialized.load(std::memory_order_acquire)) {
+        if (!_impl->initialized.load(std::memory_order_acquire)) {
             logger::warn("InteropCall: CEF not initialized; ignoring call to '{}' on view [{}].", functionName, viewId);
             return;
         }
 
         CefRefPtr<CefOsrClient> client;
         {
-            std::lock_guard lock(impl_->stateMutex);
-            client = impl_->client;
+            std::lock_guard lock(_impl->stateMutex);
+            client = _impl->client;
         }
 
         PostToCefUi([client, viewId, fn = std::move(functionName), arg = std::move(argument)]() {
@@ -1269,7 +1272,7 @@ namespace PrismaUI::Cef {
         // the "install trampoline" message to the renderer so the iframe exposes a
         // window[name] = function(arg) bridge. Caller (Communication::RegisterJSListener)
         // is responsible for storing the callback first.
-        if (!impl_->initialized.load(std::memory_order_acquire)) {
+        if (!_impl->initialized.load(std::memory_order_acquire)) {
             logger::warn("RegisterListener: CEF not initialized; '{}' for view [{}] will be installed lazily.", name,
                          viewId);
             return;
@@ -1277,8 +1280,8 @@ namespace PrismaUI::Cef {
 
         CefRefPtr<CefOsrClient> client;
         {
-            std::lock_guard lock(impl_->stateMutex);
-            client = impl_->client;
+            std::lock_guard lock(_impl->stateMutex);
+            client = _impl->client;
         }
 
         const std::string nameCopy = std::move(name);
@@ -1303,11 +1306,11 @@ namespace PrismaUI::Cef {
     void CefRuntime::CancelInvokesForView(uint64_t viewId) {
         std::vector<Impl::InvokeEntry> drained;
         {
-            std::lock_guard lock(impl_->invokeMutex);
-            for (auto it = impl_->pendingInvokes.begin(); it != impl_->pendingInvokes.end();) {
+            std::lock_guard lock(_impl->invokeMutex);
+            for (auto it = _impl->pendingInvokes.begin(); it != _impl->pendingInvokes.end();) {
                 if (it->second.viewId == viewId) {
                     drained.push_back(std::move(it->second));
-                    it = impl_->pendingInvokes.erase(it);
+                    it = _impl->pendingInvokes.erase(it);
                 } else {
                     ++it;
                 }
@@ -1342,11 +1345,11 @@ namespace PrismaUI::Cef {
             [this](const RTBMessages::InvokeResultMessage& m) {
                 Impl::InvokeEntry entry;
                 {
-                    std::lock_guard lock(impl_->invokeMutex);
-                    auto it = impl_->pendingInvokes.find(m.RequestId);
-                    if (it != impl_->pendingInvokes.end()) {
+                    std::lock_guard lock(_impl->invokeMutex);
+                    auto it = _impl->pendingInvokes.find(m.RequestId);
+                    if (it != _impl->pendingInvokes.end()) {
                         entry = std::move(it->second);
-                        impl_->pendingInvokes.erase(it);
+                        _impl->pendingInvokes.erase(it);
                     }
                 }
                 if (entry.callback) {

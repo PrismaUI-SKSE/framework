@@ -62,7 +62,6 @@ namespace PrismaUI::Bootstrapper {
         CursorMenuEx::InstallHook();
         Hooks::HookInstaller<Hooks::RendererBegin>::Create()
             .AddPreHandler([](RE::BSGraphics::Renderer*, uint32_t) {
-                MainThreadScheduler.ExecuteTasks();
                 InputHandler::GetSingleton().ProcessEvents();
                 Renderer::GetSingleton().BeginRender();
             })

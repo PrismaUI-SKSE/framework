@@ -199,7 +199,6 @@ namespace PrismaUI::Cef {
         std::atomic<bool> devToolsOpen = false;
         std::atomic<int> devToolsTargetBrowserId = -1;
         std::atomic<int> devToolsBrowserId = -1;
-        std::thread::id mainThreadId;
 
         struct ShellViewState {
             uint64_t viewId = 0;
@@ -323,8 +322,6 @@ namespace PrismaUI::Cef {
         _impl->client = new CefOsrClient(width, height);
         CefRefPtr<CefOsrClient> client = _impl->client;
 
-        _impl->mainThreadId = std::this_thread::get_id();
-
         logger::info("Scheduling CEF OSR browser creation at {}x{}.", width, height);
         PostToCefUi([hwnd, client, shellUrl]() {
             CefWindowInfo windowInfo;
@@ -395,7 +392,7 @@ namespace PrismaUI::Cef {
     }
 
     void CefRuntime::UpdateOverlayTexture() const {
-        if (!_impl->initialized.load(std::memory_order_acquire) || _impl->mainThreadId != std::this_thread::get_id()) {
+        if (!_impl->initialized.load(std::memory_order_acquire)) {
             return;
         }
 

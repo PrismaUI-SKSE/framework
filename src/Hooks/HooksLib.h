@@ -8,6 +8,13 @@ namespace Hooks {
         static constexpr auto Type = HookType::WriteCall;
     };
 
+    struct LateUpdateHook {
+        using FuncDefinition = void();
+        static constexpr auto Id = REL::RelocationID(35565, 36564);
+        static constexpr auto Offset = REL::VariantOffset(0x748, 0xC26, 0x7EE);
+        static constexpr auto Type = HookType::WriteCall;
+    };
+
     struct D3DInitHook {
         using FuncDefinition = void();
         static constexpr auto Id = REL::RelocationID(75595, 77226);

@@ -163,43 +163,12 @@ namespace PrismaUI::Cef {
 
     bool OverlayTexture::CopySharedHandleOnRenderThreadLocked(HANDLE sharedTextureHandle) {
         Microsoft::WRL::ComPtr<ID3D11Texture2D> sharedTexture;
-        HRESULT primaryHr = E_NOINTERFACE;
-        bool triedPrimaryOpen = false;
-        if (!_acceleratedRequiresLegacyOpen && _renderDevice1) {
-            triedPrimaryOpen = true;
-            primaryHr = _renderDevice1->OpenSharedResource1(sharedTextureHandle,
+        auto hr = _renderDevice1->OpenSharedResource1(sharedTextureHandle,
                                                             IID_PPV_ARGS(sharedTexture.ReleaseAndGetAddressOf()));
-        }
 
-        if (!triedPrimaryOpen || FAILED(primaryHr)) {
-            sharedTexture.Reset();
-            const HRESULT legacyHr = _renderDevice->OpenSharedResource(
-                sharedTextureHandle, IID_PPV_ARGS(sharedTexture.ReleaseAndGetAddressOf()));
-            if (FAILED(legacyHr)) {
-                const auto failureCount = ++_acceleratedOpenFailureCount;
-                if (failureCount == 1 || failureCount % 300 == 0) {
-                    if (triedPrimaryOpen) {
-                        logger::error(
-                            "Failed to open CEF accelerated shared texture. OpenSharedResource1 HR={:#X}; "
-                            "OpenSharedResource HR={:#X}; failures={}.",
-                            static_cast<unsigned int>(primaryHr), static_cast<unsigned int>(legacyHr), failureCount);
-                    } else {
-                        logger::error(
-                            "Failed to open CEF accelerated shared texture with legacy OpenSharedResource. HR={:#X}; "
-                            "failures={}.",
-                            static_cast<unsigned int>(legacyHr), failureCount);
-                    }
-                }
-
-                return false;
-            }
-
-            if (!_acceleratedRequiresLegacyOpen) {
-                logger::warn(
-                    "CEF accelerated shared texture required legacy OpenSharedResource path; skipping "
-                    "OpenSharedResource1 for future frames.");
-                _acceleratedRequiresLegacyOpen = true;
-            }
+        if (FAILED(hr)) {
+            logger::error("Failed to open CEF accelerated shared texture. HR={:#X}.", static_cast<unsigned int>(hr));
+            return false;
         }
 
         D3D11_TEXTURE2D_DESC sharedDesc = {};
@@ -219,7 +188,7 @@ namespace PrismaUI::Cef {
             return false;
         }
 
-        HRESULT hr = Utils::CopyResourceAndWait(_renderDevice.Get(), _renderContext.Get(), targetTexture.Get(),
+        hr = Utils::CopyResourceAndWait(_renderDevice.Get(), _renderContext.Get(), targetTexture.Get(),
                                                 sharedTexture.Get());
         if (FAILED(hr)) {
             logger::error("Failed to synchronously copy CEF accelerated shared texture. HR={:#X}",
@@ -234,12 +203,8 @@ namespace PrismaUI::Cef {
             logger::info("Created accelerated CEF overlay texture {}x{} DXGI format {}.", _desc.width, _desc.height,
                          static_cast<unsigned int>(_desc.format));
         }
+
         _hasFrame = true;
-        if (!_firstAcceleratedCopyLogged) {
-            logger::info("First accelerated CEF overlay frame copied: {}x{} DXGI format {}.", _desc.width, _desc.height,
-                         static_cast<unsigned int>(_desc.format));
-            _firstAcceleratedCopyLogged = true;
-        }
         NoteActiveModeChangeLocked(Mode::Accelerated);
         return true;
     }

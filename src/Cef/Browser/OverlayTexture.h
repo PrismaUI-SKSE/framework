@@ -98,9 +98,6 @@ namespace PrismaUI::Cef {
         Mode _mode = Mode::None;
         Mode _activeMode = Mode::None;
         bool _hasFrame = false;
-        bool _firstAcceleratedCopyLogged = false;
-        std::uint64_t _acceleratedOpenFailureCount = 0;
-        bool _acceleratedRequiresLegacyOpen = false;
 
         ResourceLock<HANDLE> _pendingAcceleratedTextureHandle{nullptr};
         std::binary_semaphore _waitForRenderThreadCopyEvent{0};

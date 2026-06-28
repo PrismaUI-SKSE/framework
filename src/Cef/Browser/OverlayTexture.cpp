@@ -164,7 +164,7 @@ namespace PrismaUI::Cef {
     bool OverlayTexture::CopySharedHandleOnRenderThreadLocked(HANDLE sharedTextureHandle) {
         Microsoft::WRL::ComPtr<ID3D11Texture2D> sharedTexture;
         auto hr = _renderDevice1->OpenSharedResource1(sharedTextureHandle,
-                                                            IID_PPV_ARGS(sharedTexture.ReleaseAndGetAddressOf()));
+                                                      IID_PPV_ARGS(sharedTexture.ReleaseAndGetAddressOf()));
 
         if (FAILED(hr)) {
             logger::error("Failed to open CEF accelerated shared texture. HR={:#X}.", static_cast<unsigned int>(hr));
@@ -189,7 +189,7 @@ namespace PrismaUI::Cef {
         }
 
         hr = Utils::CopyResourceAndWait(_renderDevice.Get(), _renderContext.Get(), targetTexture.Get(),
-                                                sharedTexture.Get());
+                                        sharedTexture.Get());
         if (FAILED(hr)) {
             logger::error("Failed to synchronously copy CEF accelerated shared texture. HR={:#X}",
                           static_cast<unsigned int>(hr));

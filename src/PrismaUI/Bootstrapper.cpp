@@ -14,7 +14,14 @@ namespace PrismaUI::Bootstrapper {
     static inline bool IsInitialized = false;
     static inline std::atomic_bool IsShutdownStarted = false;
 
-    static std::optional<std::tuple<HWND, RE::BSGraphics::ScreenSize, ID3D11Device*>> TryGetRenderWindow() {
+    struct RenderData {
+        HWND Hwnd;
+        RE::BSGraphics::ScreenSize ScreenSize;
+        ID3D11Device* D3DDevice;
+        ID3D11DeviceContext* D3DContext;
+    };
+
+    static std::optional<RenderData> TryGetRenderData() {
         auto renderManager = RE::BSGraphics::Renderer::GetSingleton();
         if (!renderManager) {
             logger::critical("RenderManager is null!");
@@ -27,8 +34,12 @@ namespace PrismaUI::Bootstrapper {
             return std::nullopt;
         }
 
-        return std::make_tuple(reinterpret_cast<HWND>(runtimeData.renderWindows->hWnd), renderManager->GetScreenSize(),
-                               reinterpret_cast<ID3D11Device*>(runtimeData.forwarder));
+        return RenderData {
+            .Hwnd = reinterpret_cast<HWND>(runtimeData.renderWindows->hWnd),
+            .ScreenSize = renderManager->GetScreenSize(),
+            .D3DDevice = reinterpret_cast<ID3D11Device*>(runtimeData.forwarder),
+            .D3DContext = reinterpret_cast<ID3D11DeviceContext*>(runtimeData.context),
+        };
     }
 
     static bool InitializeImpl() {
@@ -39,23 +50,23 @@ namespace PrismaUI::Bootstrapper {
             return false;
         }
 
-        auto renderWindowOpt = TryGetRenderWindow();
-        if (!renderWindowOpt) {
+        auto renderDataOpt = TryGetRenderData();
+        if (!renderDataOpt) {
             return false;
         }
 
-        auto [hWnd, screenSize, d3dDevice] = renderWindowOpt.value();
-        if (!Cef::CefRuntime::GetSingleton().Initialize(hWnd, screenSize.width, screenSize.height, d3dDevice)) {
+        auto renderData = renderDataOpt.value();
+        if (!Cef::CefRuntime::GetSingleton().Initialize(renderData.Hwnd, renderData.ScreenSize.width, renderData.ScreenSize.height, renderData.D3DDevice, renderData.D3DContext)) {
             logger::critical("CefRuntime initialization failed");
             return false;
         }
 
-        if (!InputHandler::GetSingleton().Initialize(hWnd, &Core::views, &Core::viewsMutex)) {
+        if (!InputHandler::GetSingleton().Initialize(renderData.Hwnd, &Core::views, &Core::viewsMutex)) {
             logger::critical("InputHandler initialization failed");
             return false;
         }
 
-        if (!Renderer::GetSingleton().Initialize(&Cef::CefRuntime::GetSingleton(), &InputHandler::GetSingleton())) {
+        if (!Renderer::GetSingleton().Initialize(&Cef::CefRuntime::GetSingleton(), &InputHandler::GetSingleton(), renderData.Hwnd, renderData.D3DDevice, renderData.D3DContext)) {
             logger::critical("Renderer initialization failed");
             return false;
         }

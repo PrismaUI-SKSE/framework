@@ -225,6 +225,31 @@ namespace {
 }
 
 namespace PrismaUI::Cef {
+    struct InitState {
+    public:
+        bool WaitForInitialize() const {
+            _state.wait(0);
+            return _state == 1;
+        }
+
+        void SetInitialized() {
+            _state.store(1, std::memory_order_release);
+            _state.notify_one();
+        }
+
+        void SetFailed() {
+            _state.store(2, std::memory_order_release);
+            _state.notify_one();
+        }
+
+        void Reset() {
+            _state.store(0, std::memory_order_release);
+        }
+
+    private:
+        std::atomic<int> _state{0};
+    };
+
     struct CefRuntime::Impl {
         mutable std::mutex stateMutex;
         CefRefPtr<CefApp> app;
@@ -242,6 +267,7 @@ namespace PrismaUI::Cef {
         std::atomic<bool> devToolsOpen = false;
         std::atomic<int> devToolsTargetBrowserId = -1;
         std::atomic<int> devToolsBrowserId = -1;
+        InitState initState{};
 
         struct ShellViewState {
             uint64_t viewId = 0;
@@ -263,7 +289,6 @@ namespace PrismaUI::Cef {
 
         OverlayTexture overlay;
 
-        // ---- Step 7 JS bridge state ----
         struct InvokeEntry {
             uint64_t viewId = 0;
             std::function<void(std::string)> callback;
@@ -282,7 +307,7 @@ namespace PrismaUI::Cef {
         return instance;
     }
 
-    bool CefRuntime::Initialize(HWND hwnd, uint32_t width, uint32_t height, ID3D11Device* renderDevice) const {
+    bool CefRuntime::Initialize(HWND hwnd, uint32_t width, uint32_t height, ID3D11Device* renderDevice, ID3D11DeviceContext* context) const {
         std::lock_guard lock(_impl->stateMutex);
 
         if (_impl->initialized.load(std::memory_order_acquire)) {
@@ -356,6 +381,11 @@ namespace PrismaUI::Cef {
             return false;
         }
 
+        if (!_impl->overlay.Initialize(renderDevice, context)) {
+            logger::error("Failed to initialize CEF overlay texture.");
+            return false;
+        }
+
         _impl->initialized.store(true, std::memory_order_release);
         _impl->width = width;
         _impl->height = height;
@@ -363,12 +393,11 @@ namespace PrismaUI::Cef {
         logger::info("CefInitialize succeeded.");
 
         _impl->client = new CefOsrClient(width, height);
-        CefRefPtr<CefOsrClient> client = _impl->client;
 
         logger::info("Scheduling CEF OSR browser creation at {}x{}.", width, height);
-        PostToCefUi([hwnd, client, shellUrl]() {
+        PostToCefUi([this, shellUrl] {
             CefWindowInfo windowInfo;
-            windowInfo.SetAsWindowless(hwnd);
+            windowInfo.SetAsWindowless(_impl->hwnd);
             windowInfo.shared_texture_enabled = true;
             windowInfo.external_begin_frame_enabled = true;
 
@@ -380,16 +409,22 @@ namespace PrismaUI::Cef {
             url.FromWString(shellUrl);
             logger::info("Requesting CEF OSR browser creation for shell URL.");
             const bool requested =
-                CefBrowserHost::CreateBrowser(windowInfo, client, url, browserSettings, nullptr, nullptr);
+                CefBrowserHost::CreateBrowser(windowInfo, _impl->client, url, browserSettings, nullptr, nullptr);
             if (!requested) {
                 logger::error("CefBrowserHost::CreateBrowser returned false.");
+                _impl->initState.SetFailed();
             }
         });
 
-        return true;
+        auto isSuccess = _impl->initState.WaitForInitialize();
+        if (isSuccess) {
+            logger::info("Initialized");
+        }
+
+        return isSuccess;
     }
 
-    void CefRuntime::Resize(uint32_t width, uint32_t height) {
+    void CefRuntime::Resize(uint32_t width, uint32_t height) const {
         if (!_impl->initialized.load(std::memory_order_acquire) || width == 0 || height == 0) {
             return;
         }
@@ -430,55 +465,10 @@ namespace PrismaUI::Cef {
         PostToCefUi([client] { client->SendExternalBeginFrame(); });
     }
 
-    void CefRuntime::InitOverlayTexture(ID3D11Device* device, ID3D11DeviceContext* context) const {
-        _impl->overlay.BindRenderDevice(device, context);
-    }
-
     void CefRuntime::UpdateOverlayTexture() const {
-        if (!_impl->initialized.load(std::memory_order_acquire)) {
-            return;
+        if (_impl->initialized.load(std::memory_order_acquire)) {
+            _impl->overlay.CopyPendingAcceleratedFrame();
         }
-
-        CefRefPtr<CefOsrClient> client;
-        {
-            std::lock_guard lock(_impl->stateMutex);
-            client = _impl->client;
-        }
-
-        if (!client) {
-            return;
-        }
-
-        if (_impl->overlay.CopyPendingAcceleratedFrame()) {
-            return;
-        }
-
-        std::vector<std::byte> cpuFrame;
-        uint32_t cpuWidth = 0;
-        uint32_t cpuHeight = 0;
-        uint32_t cpuStride = 0;
-        if (!client->ConsumeCpuFrame(cpuFrame, cpuWidth, cpuHeight, cpuStride)) {
-            return;
-        }
-
-        if (cpuFrame.empty() || cpuWidth == 0 || cpuHeight == 0 || cpuStride == 0) {
-            logger::warn("CEF CPU fallback frame ignored because it was empty or dimensionless.");
-            return;
-        }
-
-        if (cpuWidth > std::numeric_limits<uint32_t>::max() / 4U) {
-            logger::error("CEF CPU fallback frame ignored because width {} overflows BGRA stride.", cpuWidth);
-            return;
-        }
-
-        const uint32_t rowBytes = cpuWidth * 4U;
-        if (cpuStride < rowBytes) {
-            logger::error("CEF CPU fallback frame ignored: stride {} is smaller than row bytes {}.", cpuStride,
-                          rowBytes);
-            return;
-        }
-
-        _impl->overlay.UploadBgra32(cpuFrame.data(), cpuWidth, cpuHeight, cpuStride);
     }
 
     std::optional<OverlayTextureInfo> CefRuntime::GetOverlayInfo() const { return _impl->overlay.GetInfo(); }
@@ -517,7 +507,7 @@ namespace PrismaUI::Cef {
         out += " }";
     }
 
-    bool CefRuntime::RunShellScript(std::string_view method, uint64_t viewId, std::string script) {
+    bool CefRuntime::RunShellScript(std::string_view method, uint64_t viewId, std::string script) const {
         if (!_impl->initialized.load(std::memory_order_acquire)) {
             logger::warn("CEF shell '{}' (view={}) ignored: CEF is not initialized.", method, viewId);
             return false;
@@ -731,7 +721,7 @@ namespace PrismaUI::Cef {
         return _impl->shellReady;
     }
 
-    void CefRuntime::OpenDevTools() {
+    void CefRuntime::OpenDevTools() const {
         logger::info("CEF DevTools open requested.");
 
         if (!_impl->initialized.load(std::memory_order_acquire)) {
@@ -824,7 +814,7 @@ namespace PrismaUI::Cef {
         });
     }
 
-    void CefRuntime::CloseDevTools() {
+    void CefRuntime::CloseDevTools() const {
         logger::info("CEF DevTools close requested.");
 
         if (!_impl->initialized.load(std::memory_order_acquire)) {
@@ -881,7 +871,7 @@ namespace PrismaUI::Cef {
 
     bool CefRuntime::IsDevToolsOpen() const { return _impl->devToolsOpen.load(std::memory_order_acquire); }
 
-    void CefRuntime::NotifyShellLoadStart(const std::string& frameIdentifier, const std::string& url) {
+    void CefRuntime::NotifyShellLoadStart(const std::string& frameIdentifier, const std::string& url) const {
         std::lock_guard lock(_impl->shellMutex);
         _impl->shellReady = false;
         _impl->shellFrameIdentifier = frameIdentifier;
@@ -900,20 +890,22 @@ namespace PrismaUI::Cef {
         logger::info("CEF shell state: ready, frame id '{}', status {}, url '{}'.", frameIdentifier, httpStatusCode,
                      url);
         ReplayShellViews();
+        _impl->initState.SetInitialized();
     }
 
     void CefRuntime::NotifyShellLoadError(int errorCode, const std::string& errorText, const std::string& failedUrl,
-                                          const std::string& frameIdentifier, const std::string& url) {
+                                          const std::string& frameIdentifier, const std::string& url) const {
         std::lock_guard lock(_impl->shellMutex);
         _impl->shellReady = false;
         _impl->shellFrameIdentifier = frameIdentifier;
         _impl->shellUrl = url;
         logger::error("CEF shell state: load error code={}, error='{}', failedUrl='{}', frame id '{}', url '{}'.",
                       errorCode, errorText, failedUrl, frameIdentifier, url);
+        _impl->initState.SetFailed();
     }
 
     void CefRuntime::NotifyShellFrameLoadStart(const std::string& frameName, const std::string& frameIdentifier,
-                                               const std::string& url) {
+                                               const std::string& url) const {
         uint64_t viewId = 0;
         if (!ViewUtils::TryParseViewIdFromFrameName(frameName, viewId)) {
             logger::debug("CEF shell ignored nested iframe load start: frame='{}', id='{}', url='{}'.", frameName,
@@ -935,7 +927,7 @@ namespace PrismaUI::Cef {
     }
 
     void CefRuntime::NotifyShellFrameLoadEnd(const std::string& frameName, const std::string& frameIdentifier,
-                                             const std::string& url, int httpStatusCode) {
+                                             const std::string& url, int httpStatusCode) const {
         uint64_t viewId = 0;
         if (!ViewUtils::TryParseViewIdFromFrameName(frameName, viewId)) {
             logger::debug("CEF shell ignored nested iframe load end: frame='{}', id='{}', status {}, url='{}'.",
@@ -960,7 +952,7 @@ namespace PrismaUI::Cef {
 
     void CefRuntime::NotifyShellFrameLoadError(const std::string& frameName, const std::string& frameIdentifier,
                                                const std::string& url, int errorCode, const std::string& errorText,
-                                               const std::string& failedUrl) {
+                                               const std::string& failedUrl) const {
         uint64_t viewId = 0;
         if (!ViewUtils::TryParseViewIdFromFrameName(frameName, viewId)) {
             logger::debug("CEF shell ignored nested iframe load error: frame='{}', id='{}', code={}, failedUrl='{}'.",
@@ -985,7 +977,7 @@ namespace PrismaUI::Cef {
             viewId, frameName, errorCode, errorText, failedUrl, url);
     }
 
-    void CefRuntime::Shutdown() {
+    void CefRuntime::Shutdown() const {
         CefRefPtr<CefOsrClient> client;
         {
             std::lock_guard lock(_impl->stateMutex);
@@ -1106,7 +1098,7 @@ namespace PrismaUI::Cef {
         }
     }
 
-    void CefRuntime::DispatchInputEvents(uint64_t viewId, std::vector<CefInputEvent> events) {
+    void CefRuntime::DispatchInputEvents(uint64_t viewId, std::vector<CefInputEvent> events) const {
         if (events.empty()) {
             return;
         }
@@ -1231,7 +1223,7 @@ namespace PrismaUI::Cef {
         }
     }
 
-    void CefRuntime::InvokeScript(uint64_t viewId, std::string script, std::function<void(std::string)> callback) {
+    void CefRuntime::InvokeScript(uint64_t viewId, std::string script, std::function<void(std::string)> callback) const {
         if (!_impl->initialized.load(std::memory_order_acquire)) {
             logger::warn("InvokeScript: CEF not initialized; firing empty callback for view [{}].", viewId);
             if (callback) callback(std::string());
@@ -1282,7 +1274,7 @@ namespace PrismaUI::Cef {
         });
     }
 
-    void CefRuntime::InteropCallInView(uint64_t viewId, std::string functionName, std::string argument) {
+    void CefRuntime::InteropCallInView(uint64_t viewId, std::string functionName, std::string argument) const {
         if (!_impl->initialized.load(std::memory_order_acquire)) {
             logger::warn("InteropCall: CEF not initialized; ignoring call to '{}' on view [{}].", functionName, viewId);
             return;
@@ -1307,7 +1299,7 @@ namespace PrismaUI::Cef {
     }
 
     void CefRuntime::RegisterListener(uint64_t viewId, std::string name,
-                                      std::function<void(const std::string&)> /*callback*/) {
+                                      std::function<void(const std::string&)> /*callback*/) const {
         // The callback itself lives in Core::jsCallbacks; this method only forwards
         // the "install trampoline" message to the renderer so the iframe exposes a
         // window[name] = function(arg) bridge. Caller (Communication::RegisterJSListener)
@@ -1343,7 +1335,7 @@ namespace PrismaUI::Cef {
         });
     }
 
-    void CefRuntime::CancelInvokesForView(uint64_t viewId) {
+    void CefRuntime::CancelInvokesForView(uint64_t viewId) const {
         std::vector<Impl::InvokeEntry> drained;
         {
             std::lock_guard lock(_impl->invokeMutex);
@@ -1366,7 +1358,7 @@ namespace PrismaUI::Cef {
     }
 
     bool CefRuntime::OnRendererMessage(const CefString& frameName,
-                                       const RTBMessages::RendererToBrowserMessage& message) {
+                                       const RTBMessages::RendererToBrowserMessage& message) const {
         std::uint64_t frameViewId = 0;
         const bool hasFrameViewId = ViewUtils::TryParseViewIdFromFrameName(frameName, frameViewId);
 

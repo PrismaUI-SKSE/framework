@@ -1,3 +1,4 @@
+#include "Globals.h"
 #include "Cef/Shared/Constants.h"
 #include "PCH.h"
 
@@ -70,31 +71,6 @@ namespace PrismaUI::Cef {
         logger::info("CEF browser close requested.");
         closing_.store(true, std::memory_order_release);
         browser_->GetHost()->CloseBrowser(false);
-    }
-
-    bool CefOsrClient::ConsumeCpuFrame(std::vector<std::byte>& pixels, uint32_t& width, uint32_t& height,
-                                       uint32_t& stride) {
-        if (!cpuFrameReady_.exchange(false, std::memory_order_acq_rel)) {
-            return false;
-        }
-
-        std::lock_guard lock(cpuFrameMutex_);
-        if (cpuPixelBuffer_.empty() || cpuFrameWidth_ == 0 || cpuFrameHeight_ == 0 || cpuFrameStride_ == 0) {
-            pixels.clear();
-            width = 0;
-            height = 0;
-            stride = 0;
-            return false;
-        }
-
-        pixels.swap(cpuPixelBuffer_);
-        width = cpuFrameWidth_;
-        height = cpuFrameHeight_;
-        stride = cpuFrameStride_;
-        cpuFrameWidth_ = 0;
-        cpuFrameHeight_ = 0;
-        cpuFrameStride_ = 0;
-        return true;
     }
 
     void CefOsrClient::ResetCloseSignal() {
@@ -177,53 +153,10 @@ namespace PrismaUI::Cef {
 
     void CefOsrClient::OnPaint(CefRefPtr<CefBrowser>, PaintElementType type, const RectList& dirtyRects,
                                const void* buffer, int width, int height) {
-        if (type != PET_VIEW) {
-            return;
-        }
-
-        if (!buffer || width <= 0 || height <= 0) {
-            logger::warn("CEF CPU paint callback ignored invalid frame: buffer={}, size={}x{}", buffer ? "set" : "null",
-                         width, height);
-            return;
-        }
-
-        const auto frameWidth = static_cast<uint32_t>(width);
-        const auto frameHeight = static_cast<uint32_t>(height);
-        if (frameWidth > std::numeric_limits<uint32_t>::max() / 4U) {
-            logger::error("CEF CPU paint callback ignored oversized frame width {}.", frameWidth);
-            return;
-        }
-
-        const uint32_t stride = frameWidth * 4U;
-        const size_t byteCount = static_cast<size_t>(frameHeight) * stride;
-        if (byteCount == 0) {
-            return;
-        }
-
-        try {
-            std::lock_guard lock(cpuFrameMutex_);
-            if (cpuPixelBuffer_.size() != byteCount) {
-                cpuPixelBuffer_.resize(byteCount);
-            }
-            std::memcpy(cpuPixelBuffer_.data(), buffer, byteCount);
-            cpuFrameWidth_ = frameWidth;
-            cpuFrameHeight_ = frameHeight;
-            cpuFrameStride_ = stride;
-            cpuFrameReady_.store(true, std::memory_order_release);
-        } catch (const std::exception& e) {
-            logger::error("CEF CPU paint fallback failed to buffer {}x{} frame: {}", width, height, e.what());
-            cpuFrameReady_.store(false, std::memory_order_release);
-            return;
-        }
-
-        if (!cpuFallbackLogged_.exchange(true, std::memory_order_acq_rel)) {
-            logger::warn("CEF CPU OnPaint fallback is active; GPU accelerated OSR is unavailable or delayed.");
-        }
-
-        const uint64_t count = paintCount_.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (count == 1 || count % 300 == 0) {
-            logger::debug("CEF CPU paint callback #{}: {}x{}, dirty rects {}", count, width, height, dirtyRects.size());
-        }
+        MainThreadScheduler.Post([] {
+            logger::critical("Fallback CPU OnPaint is called");
+            throw std::runtime_error("Fallback CPU OnPaint is called");
+        });
     }
 
     void CefOsrClient::OnAcceleratedPaint(CefRefPtr<CefBrowser>, PaintElementType type, const RectList& dirtyRects,

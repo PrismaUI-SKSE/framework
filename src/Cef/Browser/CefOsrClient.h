@@ -35,7 +35,6 @@ namespace PrismaUI::Cef {
         void SetSize(uint32_t width, uint32_t height);
         void SendExternalBeginFrame();
         void CloseBrowser();
-        bool ConsumeCpuFrame(std::vector<std::byte>& pixels, uint32_t& width, uint32_t& height, uint32_t& stride);
         void ResetCloseSignal();
         bool WaitForClose(std::chrono::milliseconds timeout);
         CefRefPtr<CefBrowser> GetBrowserOnUiThread() const;
@@ -63,7 +62,6 @@ namespace PrismaUI::Cef {
         void OnLoadEnd(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int httpStatusCode) override;
         void OnLoadError(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, ErrorCode errorCode,
                          const CefString& errorText, const CefString& failedUrl) override;
-        // CefClient (process-message routing) — Step 7.
         bool OnProcessMessageReceived(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                                       CefProcessId source_process, CefRefPtr<CefProcessMessage> message) override;
 

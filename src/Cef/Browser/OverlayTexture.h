@@ -32,17 +32,13 @@ namespace PrismaUI::Cef {
     // long enough for the render thread to copy CEF's callback-scoped resource.
     class OverlayTexture final {
     public:
-        enum class Mode : std::uint8_t { None, Accelerated, Cpu };
-
         OverlayTexture() = default;
         ~OverlayTexture() = default;
 
         OverlayTexture(const OverlayTexture&) = delete;
         OverlayTexture& operator=(const OverlayTexture&) = delete;
 
-        // Render-thread: bind (or refresh) the D3D device and context. Idempotent;
-        // safe to call every frame.
-        void BindRenderDevice(ID3D11Device* device, ID3D11DeviceContext* context);
+        bool Initialize(ID3D11Device* device, ID3D11DeviceContext* context);
 
         // CEF UI thread (OnAcceleratedPaint): publish a callback-scoped CEF shared
         // texture handle and wait until the render thread copies it into PrismaUI's
@@ -54,18 +50,11 @@ namespace PrismaUI::Cef {
         // callback is allowed to return.
         bool CopyPendingAcceleratedFrame();
 
-        // Render-thread: upload BGRA32 pixels into a CPU-mode overlay. Recreates the
-        // underlying texture when dimensions or mode change. `srcStride` is the byte
-        // stride of the source buffer and must be >= width * 4. Returns true on
-        // success.
-        bool UploadBgra32(const std::byte* pixels, std::uint32_t width, std::uint32_t height, std::uint32_t srcStride);
-
         // Render-thread: drop the texture, SRV, and cached device/context references.
         void ReleaseResources();
 
         std::optional<OverlayTextureInfo> GetInfo() const;
         bool HasFrame() const;
-        Mode GetActiveMode() const;
 
     private:
         struct Desc {
@@ -81,10 +70,6 @@ namespace PrismaUI::Cef {
         bool CopySharedHandleOnRenderThreadLocked(HANDLE sharedTextureHandle);
         bool CreateAcceleratedResourcesLocked(const Desc& desc, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture,
                                               Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv) const;
-        bool CreateCpuResourcesLocked(const Desc& desc, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture,
-                                      Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv) const;
-        void NoteActiveModeChangeLocked(Mode newMode);
-        static const char* ModeName(Mode mode);
 
         mutable std::mutex _mutex;
 
@@ -95,8 +80,6 @@ namespace PrismaUI::Cef {
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> _srv;
 
         Desc _desc;
-        Mode _mode = Mode::None;
-        Mode _activeMode = Mode::None;
         bool _hasFrame = false;
 
         ResourceLock<HANDLE> _pendingAcceleratedTextureHandle{nullptr};

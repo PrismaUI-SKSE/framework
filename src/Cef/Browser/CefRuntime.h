@@ -60,14 +60,13 @@ namespace PrismaUI::Cef {
     public:
         static CefRuntime& GetSingleton();
 
-        bool Initialize(HWND hwnd, uint32_t width, uint32_t height, ID3D11Device* renderDevice) const;
-        void Resize(uint32_t width, uint32_t height);
+        bool Initialize(HWND hwnd, uint32_t width, uint32_t height, ID3D11Device* renderDevice, ID3D11DeviceContext* context) const;
+        void Resize(uint32_t width, uint32_t height) const;
         void BeginFrame() const;
-        void InitOverlayTexture(ID3D11Device* device, ID3D11DeviceContext* context) const;
         void UpdateOverlayTexture() const;
         std::optional<OverlayTextureInfo> GetOverlayInfo() const;
         void SubmitAcceleratedFrameDuringCallback(HANDLE sharedTextureHandle) const;
-        void Shutdown();
+        void Shutdown() const;
         bool IsInitialized() const;
         bool HasBrowser() const;
         bool CreateShellView(uint64_t viewId, std::string_view urlOrPath, int order, bool hidden);
@@ -78,54 +77,54 @@ namespace PrismaUI::Cef {
         bool BlurShellView(uint64_t viewId);
         bool TryGetShellFrameName(uint64_t viewId, std::string& outName) const;
         bool IsShellReady() const;
-        void OpenDevTools();
-        void CloseDevTools();
+        void OpenDevTools() const;
+        void CloseDevTools() const;
         bool IsDevToolsOpen() const;
 
         // Dispatch a batch of native input events to the focused CEF OSR shell iframe.
         // The events are copied into a single CEF UI-thread task; callers must not call
         // CefBrowserHost input APIs directly from game, window, or render callbacks.
-        void DispatchInputEvents(uint64_t viewId, std::vector<CefInputEvent> events);
+        void DispatchInputEvents(uint64_t viewId, std::vector<CefInputEvent> events) const;
 
-        void NotifyShellLoadStart(const std::string& frameIdentifier, const std::string& url);
+        void NotifyShellLoadStart(const std::string& frameIdentifier, const std::string& url) const;
         void NotifyShellLoadEnd(int httpStatusCode, const std::string& frameIdentifier, const std::string& url);
         void NotifyShellLoadError(int errorCode, const std::string& errorText, const std::string& failedUrl,
-                                  const std::string& frameIdentifier, const std::string& url);
+                                  const std::string& frameIdentifier, const std::string& url) const;
         void NotifyShellFrameLoadStart(const std::string& frameName, const std::string& frameIdentifier,
-                                       const std::string& url);
+                                       const std::string& url) const;
         void NotifyShellFrameLoadEnd(const std::string& frameName, const std::string& frameIdentifier,
-                                     const std::string& url, int httpStatusCode);
+                                     const std::string& url, int httpStatusCode) const;
         void NotifyShellFrameLoadError(const std::string& frameName, const std::string& frameIdentifier,
                                        const std::string& url, int errorCode, const std::string& errorText,
-                                       const std::string& failedUrl);
+                                       const std::string& failedUrl) const;
 
         // ---- JavaScript bridge surface (Step 7) ----
         // Eval `script` inside the iframe associated with `viewId`. `callback` (if any)
         // is invoked exactly once with the coerced string result. On failure (view
         // unknown, frame missing, JS exception, view destroyed mid-flight) `callback`
         // fires with an empty string.
-        void InvokeScript(uint64_t viewId, std::string script, std::function<void(std::string)> callback);
+        void InvokeScript(uint64_t viewId, std::string script, std::function<void(std::string)> callback) const;
 
         // Forward a (functionName, argument) tuple to the iframe's window[functionName].
         // Fire-and-forget: missing target frame or non-callable property are logged but
         // do not surface to the caller.
-        void InteropCallInView(uint64_t viewId, std::string functionName, std::string argument);
+        void InteropCallInView(uint64_t viewId, std::string functionName, std::string argument) const;
 
         // Register a (viewId, name) -> SimpleJSCallback. The renderer installs a
         // window[name] trampoline that forwards to this callback the next time the
         // matching frame's V8 context is created. Re-registering replaces the prior
         // callback in place.
-        void RegisterListener(uint64_t viewId, std::string name, std::function<void(const std::string&)> callback);
+        void RegisterListener(uint64_t viewId, std::string name, std::function<void(const std::string&)> callback) const;
 
         // Drop any pending Invoke requests issued against `viewId`, firing their
         // callbacks with an empty string. Called from ViewManager::Destroy so the
         // caller is never left holding a never-fired callback.
-        void CancelInvokesForView(uint64_t viewId);
+        void CancelInvokesForView(uint64_t viewId) const;
 
         // Routes a process message received from a renderer subprocess to the
         // matching listener / Invoke / console / DOM-ready dispatcher. Returns true
         // if the message was recognised.
-        bool OnRendererMessage(const CefString& frameName, const RTBMessages::RendererToBrowserMessage& message);
+        bool OnRendererMessage(const CefString& frameName, const RTBMessages::RendererToBrowserMessage& message) const;
 
     private:
         CefRuntime();
@@ -147,7 +146,7 @@ namespace PrismaUI::Cef {
         static void AppendShellArg(std::string& out, std::string_view value);
         static void AppendShellArg(std::string& out, const ShellCreateViewArg& value);
 
-        bool RunShellScript(std::string_view method, uint64_t viewId, std::string script);
+        bool RunShellScript(std::string_view method, uint64_t viewId, std::string script) const;
 
         // Build `window.__prismaShell.<method>(<args>);` from typed arguments and
         // dispatch it through `RunShellScript`. If the caller is already on the CEF

@@ -3,9 +3,6 @@
 #include <CommonStates.h>
 #include <SpriteBatch.h>
 #include <WICTextureLoader.h>
-
-#include "Hooks/Hooks.h"
-#include "Hooks/HooksLib.h"
 #include "InputHandler.h"
 #include "Menus/FocusMenu/FocusMenu.h"
 #include "Utils/D3DStateGuard.h"
@@ -18,28 +15,11 @@ namespace PrismaUI {
         return instance;
     }
 
-    bool Renderer::InitGraphics() {
-        auto* renderManager = RE::BSGraphics::Renderer::GetSingleton();
-        if (!renderManager) {
-            logger::critical("RenderManager is null!");
-            return false;
-        }
-
-        auto runtimeData = renderManager->GetRuntimeData();
-        _d3dDevice = reinterpret_cast<ID3D11Device*>(runtimeData.forwarder);
-        _d3dContext = reinterpret_cast<ID3D11DeviceContext*>(runtimeData.context);
-        if (!_d3dDevice || !_d3dContext) {
-            logger::critical("D3D device or context is null!");
-            return false;
-        }
-
-        if (!runtimeData.renderWindows || !runtimeData.renderWindows->hWnd) {
-            logger::critical("HWND is null!");
-            return false;
-        }
-
-        _hWnd = reinterpret_cast<HWND>(runtimeData.renderWindows->hWnd);
-        _screenSize = renderManager->GetScreenSize();
+    bool Renderer::InitGraphics(HWND hwnd, ID3D11Device* d3dDevice, ID3D11DeviceContext* d3dContext) {
+        _d3dDevice = d3dDevice;
+        _d3dContext = d3dContext;
+        _hWnd = hwnd;
+        _screenSize = RE::BSGraphics::Renderer::GetSingleton()->GetScreenSize();
 
         try {
             _commonStates = std::make_unique<DirectX::CommonStates>(_d3dDevice);
@@ -134,9 +114,9 @@ namespace PrismaUI {
         _spriteBatch->End();
     }
 
-    bool Renderer::Initialize(Cef::CefRuntime* cefRuntime, InputHandler* inputHandler) {
+    bool Renderer::Initialize(Cef::CefRuntime* cefRuntime, InputHandler* inputHandler, HWND hwnd, ID3D11Device* d3dDevice, ID3D11DeviceContext* d3dContext) {
         logger::info("Initialization...");
-        if (!InitGraphics()) {
+        if (!InitGraphics(hwnd, d3dDevice, d3dContext)) {
             return false;
         }
 
@@ -144,7 +124,6 @@ namespace PrismaUI {
         ui->Register(FocusMenu::MENU_NAME, FocusMenu::Creator);
 
         _cefRuntime = cefRuntime;
-        _cefRuntime->InitOverlayTexture(_d3dDevice, _d3dContext);
         _inputHandler = inputHandler;
         _isInitialized = true;
 

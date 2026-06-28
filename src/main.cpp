@@ -48,7 +48,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
             [[unlikely]]
             if (!PrismaUI::Bootstrapper::Initialize()) {
                 logger::critical("Failed to initialize PrismaUI, exiting...");
-                std::terminate();
+                throw std::runtime_error("Failed to initialize PrismaUI");
             }
 
             MainThreadScheduler.ExecuteTasks();

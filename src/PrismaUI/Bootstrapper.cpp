@@ -34,7 +34,7 @@ namespace PrismaUI::Bootstrapper {
             return std::nullopt;
         }
 
-        return RenderData {
+        return RenderData{
             .Hwnd = reinterpret_cast<HWND>(runtimeData.renderWindows->hWnd),
             .ScreenSize = renderManager->GetScreenSize(),
             .D3DDevice = reinterpret_cast<ID3D11Device*>(runtimeData.forwarder),
@@ -56,7 +56,9 @@ namespace PrismaUI::Bootstrapper {
         }
 
         auto renderData = renderDataOpt.value();
-        if (!Cef::CefRuntime::GetSingleton().Initialize(renderData.Hwnd, renderData.ScreenSize.width, renderData.ScreenSize.height, renderData.D3DDevice, renderData.D3DContext)) {
+        if (!Cef::CefRuntime::GetSingleton().Initialize(renderData.Hwnd, renderData.ScreenSize.width,
+                                                        renderData.ScreenSize.height, renderData.D3DDevice,
+                                                        renderData.D3DContext)) {
             logger::critical("CefRuntime initialization failed");
             return false;
         }
@@ -66,7 +68,8 @@ namespace PrismaUI::Bootstrapper {
             return false;
         }
 
-        if (!Renderer::GetSingleton().Initialize(&Cef::CefRuntime::GetSingleton(), &InputHandler::GetSingleton(), renderData.Hwnd, renderData.D3DDevice, renderData.D3DContext)) {
+        if (!Renderer::GetSingleton().Initialize(&Cef::CefRuntime::GetSingleton(), &InputHandler::GetSingleton(),
+                                                 renderData.Hwnd, renderData.D3DDevice, renderData.D3DContext)) {
             logger::critical("Renderer initialization failed");
             return false;
         }

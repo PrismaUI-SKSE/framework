@@ -3,6 +3,7 @@
 #include <CommonStates.h>
 #include <SpriteBatch.h>
 #include <WICTextureLoader.h>
+
 #include "InputHandler.h"
 #include "Menus/FocusMenu/FocusMenu.h"
 #include "Utils/D3DStateGuard.h"
@@ -114,7 +115,8 @@ namespace PrismaUI {
         _spriteBatch->End();
     }
 
-    bool Renderer::Initialize(Cef::CefRuntime* cefRuntime, InputHandler* inputHandler, HWND hwnd, ID3D11Device* d3dDevice, ID3D11DeviceContext* d3dContext) {
+    bool Renderer::Initialize(Cef::CefRuntime* cefRuntime, InputHandler* inputHandler, HWND hwnd,
+                              ID3D11Device* d3dDevice, ID3D11DeviceContext* d3dContext) {
         logger::info("Initialization...");
         if (!InitGraphics(hwnd, d3dDevice, d3dContext)) {
             return false;

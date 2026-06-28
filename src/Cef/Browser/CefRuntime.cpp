@@ -242,9 +242,7 @@ namespace PrismaUI::Cef {
             _state.notify_one();
         }
 
-        void Reset() {
-            _state.store(0, std::memory_order_release);
-        }
+        void Reset() { _state.store(0, std::memory_order_release); }
 
     private:
         std::atomic<int> _state{0};
@@ -307,7 +305,8 @@ namespace PrismaUI::Cef {
         return instance;
     }
 
-    bool CefRuntime::Initialize(HWND hwnd, uint32_t width, uint32_t height, ID3D11Device* renderDevice, ID3D11DeviceContext* context) const {
+    bool CefRuntime::Initialize(HWND hwnd, uint32_t width, uint32_t height, ID3D11Device* renderDevice,
+                                ID3D11DeviceContext* context) const {
         std::lock_guard lock(_impl->stateMutex);
 
         if (_impl->initialized.load(std::memory_order_acquire)) {
@@ -1223,7 +1222,8 @@ namespace PrismaUI::Cef {
         }
     }
 
-    void CefRuntime::InvokeScript(uint64_t viewId, std::string script, std::function<void(std::string)> callback) const {
+    void CefRuntime::InvokeScript(uint64_t viewId, std::string script,
+                                  std::function<void(std::string)> callback) const {
         if (!_impl->initialized.load(std::memory_order_acquire)) {
             logger::warn("InvokeScript: CEF not initialized; firing empty callback for view [{}].", viewId);
             if (callback) callback(std::string());

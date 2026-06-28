@@ -12,7 +12,8 @@ namespace PrismaUI {
     public:
         static Renderer& GetSingleton();
 
-        bool Initialize(Cef::CefRuntime* cefRuntime, InputHandler* inputHandler, HWND hwnd, ID3D11Device* d3dDevice, ID3D11DeviceContext* d3dContext);
+        bool Initialize(Cef::CefRuntime* cefRuntime, InputHandler* inputHandler, HWND hwnd, ID3D11Device* d3dDevice,
+                        ID3D11DeviceContext* d3dContext);
 
         void BeginRender();
 

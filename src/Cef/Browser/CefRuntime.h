@@ -60,7 +60,8 @@ namespace PrismaUI::Cef {
     public:
         static CefRuntime& GetSingleton();
 
-        bool Initialize(HWND hwnd, uint32_t width, uint32_t height, ID3D11Device* renderDevice, ID3D11DeviceContext* context) const;
+        bool Initialize(HWND hwnd, uint32_t width, uint32_t height, ID3D11Device* renderDevice,
+                        ID3D11DeviceContext* context) const;
         void Resize(uint32_t width, uint32_t height) const;
         void BeginFrame() const;
         void UpdateOverlayTexture() const;
@@ -114,7 +115,8 @@ namespace PrismaUI::Cef {
         // window[name] trampoline that forwards to this callback the next time the
         // matching frame's V8 context is created. Re-registering replaces the prior
         // callback in place.
-        void RegisterListener(uint64_t viewId, std::string name, std::function<void(const std::string&)> callback) const;
+        void RegisterListener(uint64_t viewId, std::string name,
+                              std::function<void(const std::string&)> callback) const;
 
         // Drop any pending Invoke requests issued against `viewId`, firing their
         // callbacks with an empty string. Called from ViewManager::Destroy so the

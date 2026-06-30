@@ -22,7 +22,7 @@ window.addEventListener('prismaIME_state', (e) => {
 
 The **payload is in `event.detail`** - use it as the full IME state object.
 
-The event should be treated as a full snapshot, not a delta. Expect it to update whenever the visible IME state changes while the text field is active, including:
+The event should be treated as a full snapshot, not a delta. Expect it to update whenever the visible IME state changes while PrismaUI has input capture, including:
 
 - composition start
 - composition text changes
@@ -49,6 +49,8 @@ Field meanings:
 - `caret`: zero-based caret position inside `composition`; use it to split the composition string and draw an inline caret
 - `candidates`: the currently visible candidate page
 - `selectedIndex`: zero-based index of the highlighted candidate within `candidates`; use `-1` when there is no valid selection
+
+**Focus:** PrismaUI does not tie these events to which DOM control is focused. Updates can arrive even when no text input in your page has focus. Your app should track focus on your own text fields (including iframes or custom widgets) and only show the custom overlay when it makes sense.
 
 ## Step 2: Render A Custom Overlay
 

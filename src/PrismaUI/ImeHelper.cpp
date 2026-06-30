@@ -6,8 +6,6 @@
 
 #include "Communication.h"
 #include "Core.h"
-#include "ViewManager.h"
-
 namespace PrismaUI {
 
 namespace {
@@ -97,13 +95,9 @@ void ImeHelper::Initialize(HWND hwnd) {
         }
     }
 
-    // Start with IME disassociated. The active text input state drives
-    // association via posted window-thread messages.
+    // Start with IME disassociated. Prisma input capture drives association
+    // via posted window-thread messages.
     m_associated = false;
-}
-
-bool ImeHelper::IsTextInputFocused() const {
-    return m_ctx.isTextInputFocused && m_ctx.isTextInputFocused->load();
 }
 
 void ImeHelper::DispatchScriptToView(Core::PrismaViewId viewId, const std::string& script) {
@@ -141,7 +135,6 @@ void ImeHelper::DispatchScriptToView(Core::PrismaViewId viewId, const std::strin
 void ImeHelper::Shutdown(HWND hwnd) {
     if (!m_context) return;
 
-    m_lastKnownTextInputFocus = false;
     m_associated = false;
     if (hwnd) {
         ImmAssociateContext(hwnd, nullptr);
@@ -345,7 +338,6 @@ bool ImeHelper::HandleMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
     if (!outHandled || focusedViewId == 0) return false;
 
     if (!m_associated.load()) return false;
-    if (!IsTextInputFocused()) return false;
 
     switch (uMsg) {
         case WM_IME_STARTCOMPOSITION:
@@ -388,46 +380,6 @@ bool ImeHelper::HandleMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
         default:
             return false;
     }
-}
-
-void ImeHelper::UpdateStateImpl(Core::PrismaViewId viewId) {
-    if (!m_ctx.viewsMap || !m_ctx.viewsMapMutex || viewId == 0) {
-        m_lastKnownTextInputFocus = false;
-        return;
-    }
-
-    bool stillFocused = false;
-    if (m_ctx.focusedViewIdMutex && m_ctx.currentlyFocusedViewId && m_ctx.isAnyInputCaptureActive) {
-        std::lock_guard lock(*m_ctx.focusedViewIdMutex);
-        stillFocused =
-            m_ctx.isAnyInputCaptureActive->load() && *m_ctx.currentlyFocusedViewId == viewId;
-    }
-
-    if (!stillFocused) {
-        m_lastKnownTextInputFocus = false;
-        ClearStateInJS(viewId);
-        return;
-    }
-
-    const bool textInputFocused = IsTextInputFocused();
-    m_lastKnownTextInputFocus = textInputFocused;
-
-    if (!textInputFocused) {
-        ClearStateInJS(viewId);
-    }
-}
-
-void ImeHelper::UpdateStateForFocusedView(Core::PrismaViewId viewId) {
-    if (!m_executor) return;
-
-    if (m_executor->IsWorkerThread()) {
-        UpdateStateImpl(viewId);
-        return;
-    }
-
-    m_executor->submit_with_priority(
-        SingleThreadExecutor::Priority::HIGH,
-        [this, viewId]() { UpdateStateImpl(viewId); });
 }
 
 }  // namespace PrismaUI

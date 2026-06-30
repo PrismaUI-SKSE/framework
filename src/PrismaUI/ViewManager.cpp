@@ -101,6 +101,8 @@ namespace PrismaUI::ViewManager {
             controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kActivate, true, false);
             controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kPOVSwitch, true, false);
             controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kVATS, true, false);
+            // Added for gamepads:
+            controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kFighting, true, false);
         }
     }
 
@@ -260,6 +262,8 @@ namespace PrismaUI::ViewManager {
                 controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kActivate, false, false);
                 controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kPOVSwitch, false, false);
                 controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kVATS, false, false);
+                // Added for gamepads:
+                controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kFighting, false, false);
             }
 
             if (pauseGame && !PrismaVR::IsVRActive()) {

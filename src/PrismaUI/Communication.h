@@ -17,6 +17,9 @@ namespace PrismaUI::Core {
 namespace PrismaUI::Communication {
     void Invoke(const Core::PrismaViewId& viewId, const ultralight::String& script,
                 std::function<void(std::string)> callback = nullptr);
+    // Call only from Ultralight threads. Otherwise, use Invoke.
+    // This is a synchronous variant of Invoke.
+    void InvokeFromUltralightThread(const Core::PrismaViewId& viewId, const ultralight::String& script);
     void BindJSCallbacks(const Core::PrismaViewId& viewId);
     JSValueRef InvokeCppCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject, size_t argumentCount,
                                  const JSValueRef arguments[], JSValueRef* exception);

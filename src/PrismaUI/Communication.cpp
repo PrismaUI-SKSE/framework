@@ -44,6 +44,25 @@ namespace PrismaUI::Communication {
         });
     }
 
+    void InvokeFromUltralightThread(const Core::PrismaViewId& viewId, const String& script) {
+        std::shared_ptr<PrismaView> viewData = nullptr;
+        {
+            std::shared_lock lock(viewsMutex);
+            auto it = views.find(viewId);
+            if (it != views.end()) {
+                viewData = it->second;
+            }
+        }
+
+        if (!viewData || !viewData->ultralightView) {
+            logger::error("InvokeFromUltralightThread: View ID [{}] not found.", viewId);
+            return;
+        }
+
+        // Already on the Ultralight thread, so evaluate inline rather than submitting another task.
+        viewData->ultralightView->EvaluateScript(script, nullptr, "");
+    }
+
     void RegisterJSListener(const Core::PrismaViewId& viewId, const std::string& name,
                             Core::SimpleJSCallback callback) {
         if (!ViewManager::IsValid(viewId)) {

@@ -93,16 +93,17 @@ namespace PRISMA_UI_API {
         // Get view order.
         virtual int GetOrder(PrismaView view) noexcept = 0;
 
-        // Create inspector view for debugging.
+        // Deprecated: does nothing. Kept only for binary compatibility (vtable layout).
+        // Use OpenDevTools() from IVPrismaUI3 instead.
         virtual void CreateInspectorView(PrismaView view) noexcept = 0;
 
-        // Show or hide the inspector overlay.
+        // Deprecated: does nothing. Kept only for binary compatibility (vtable layout).
         virtual void SetInspectorVisibility(PrismaView view, bool visible) noexcept = 0;
 
-        // Returns true if inspector is visible.
+        // Deprecated: does nothing and always returns false. Kept only for binary compatibility (vtable layout).
         virtual bool IsInspectorVisible(PrismaView view) noexcept = 0;
 
-        // Set inspector window position and size.
+        // Deprecated: does nothing. Kept only for binary compatibility (vtable layout).
         virtual void SetInspectorBounds(PrismaView view, float topLeftX, float topLeftY, unsigned int width,
                                         unsigned int height) noexcept = 0;
 

@@ -26,7 +26,7 @@ Skyrim Next-Gen Web UI Framework.
 ### Getting Started
 
 ```bat
-git clone --recurse-submodules https://github.com/PrismaUI-SKSE/PrismaUI.git
+git clone --recurse-submodules https://github.com/kolebynov/PrismaUI.git
 cd PrismaUI
 ```
 

@@ -20,7 +20,7 @@ Skyrim Next-Gen Web UI Framework.
 - Visual Studio 2022 with C++23 support
 - C++23 Compiler (MSVC)
 - [Chromium Embedded Framework (CEF) binary distribution](https://cef-builds.spotifycdn.com/index.html) 147.0.14+g76d2442+chromium-147.0.7727.138 for Windows x64
-  - place `cef_binary_147.0.14+g76d2442+chromium-147.0.7727.138_windows64.tar.bz2` in the `external` folder, or configure `PRISMAUI_CEF_ARCHIVE`.
+  - downloaded automatically to the `external` folder during CMake configure; to skip the download, place `cef_binary_147.0.14+g76d2442+chromium-147.0.7727.138_windows64.tar.bz2` there yourself or configure `PRISMAUI_CEF_ARCHIVE`.
 - [Node.js](https://nodejs.org/) with npm for the nested CEF shell Vite build.
 
 ### Getting Started

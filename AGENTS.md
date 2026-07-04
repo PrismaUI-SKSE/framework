@@ -27,7 +27,8 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
   - `cmake -S . --preset=release`
   - `cmake --build --preset=release --parallel 8`
 - `BuildRelease.ps1` exists as a convenience wrapper, but do not use it as the default build instruction.
-- Requires `VCPKG_ROOT`, Ninja, VS 2022 C++ tooling, Node.js with `npm` on `PATH` (CMake `find_program(... npm ... REQUIRED)` fails configure without it), and `external/cef_binary_147.0.14+g76d2442+chromium-147.0.7727.138_windows64.tar.bz2` (or `PRISMAUI_CEF_ARCHIVE` pointing at an equivalent local archive).
+- Requires `VCPKG_ROOT`, Ninja, VS 2022 C++ tooling, and Node.js with `npm` on `PATH` (CMake `find_program(... npm ... REQUIRED)` fails configure without it).
+- The CEF binary archive `external/cef_binary_147.0.14+g76d2442+chromium-147.0.7727.138_windows64.tar.bz2` (or `PRISMAUI_CEF_ARCHIVE` pointing at an equivalent local archive) is downloaded automatically from `https://cef-builds.spotifycdn.com/` during configure when missing.
 - CMake extracts CEF to `build/external_builds/cef/<cef_binary_root>/`.
 - Two targets are built:
   - `PrismaUI` (the SKSE plugin DLL) → `build/<preset>/bin/PrismaUI.dll`.

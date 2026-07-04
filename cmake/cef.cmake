@@ -20,11 +20,37 @@ get_filename_component(PRISMAUI_CEF_ARCHIVE "${PRISMAUI_CEF_ARCHIVE}" ABSOLUTE)
 get_filename_component(PRISMAUI_CEF_EXTRACT_DIR "${PRISMAUI_CEF_EXTRACT_DIR}" ABSOLUTE)
 
 if(NOT EXISTS "${PRISMAUI_CEF_ARCHIVE}")
-    message(FATAL_ERROR
-        "CEF binary archive not found.\n"
-        "Expected: ${PRISMAUI_CEF_ARCHIVE}\n"
-        "Place cef_binary_147.0.14+g76d2442+chromium-147.0.7727.138_windows64.tar.bz2 in the external directory "
-        "or configure PRISMAUI_CEF_ARCHIVE to a local CEF binary archive.")
+    get_filename_component(_PRISMAUI_CEF_ARCHIVE_NAME "${PRISMAUI_CEF_ARCHIVE}" NAME)
+    # CEF build filenames contain '+' which must be percent-encoded in the download URL.
+    string(REPLACE "+" "%2B" _PRISMAUI_CEF_ARCHIVE_URL_NAME "${_PRISMAUI_CEF_ARCHIVE_NAME}")
+    set(_PRISMAUI_CEF_DOWNLOAD_URL "https://cef-builds.spotifycdn.com/${_PRISMAUI_CEF_ARCHIVE_URL_NAME}")
+
+    message(STATUS "CEF archive not found, downloading: ${_PRISMAUI_CEF_DOWNLOAD_URL}")
+    get_filename_component(_PRISMAUI_CEF_ARCHIVE_DIR "${PRISMAUI_CEF_ARCHIVE}" DIRECTORY)
+    file(MAKE_DIRECTORY "${_PRISMAUI_CEF_ARCHIVE_DIR}")
+
+    set(_PRISMAUI_CEF_ARCHIVE_PART "${PRISMAUI_CEF_ARCHIVE}.part")
+    file(DOWNLOAD
+        "${_PRISMAUI_CEF_DOWNLOAD_URL}"
+        "${_PRISMAUI_CEF_ARCHIVE_PART}"
+        SHOW_PROGRESS
+        TLS_VERIFY ON
+        STATUS _PRISMAUI_CEF_DOWNLOAD_STATUS)
+    list(GET _PRISMAUI_CEF_DOWNLOAD_STATUS 0 _PRISMAUI_CEF_DOWNLOAD_CODE)
+    list(GET _PRISMAUI_CEF_DOWNLOAD_STATUS 1 _PRISMAUI_CEF_DOWNLOAD_MESSAGE)
+
+    if(NOT _PRISMAUI_CEF_DOWNLOAD_CODE EQUAL 0)
+        file(REMOVE "${_PRISMAUI_CEF_ARCHIVE_PART}")
+        message(FATAL_ERROR
+            "CEF binary archive not found and download failed.\n"
+            "URL: ${_PRISMAUI_CEF_DOWNLOAD_URL}\n"
+            "Error: ${_PRISMAUI_CEF_DOWNLOAD_MESSAGE}\n"
+            "Place ${_PRISMAUI_CEF_ARCHIVE_NAME} in the external directory "
+            "or configure PRISMAUI_CEF_ARCHIVE to a local CEF binary archive.")
+    endif()
+
+    file(RENAME "${_PRISMAUI_CEF_ARCHIVE_PART}" "${PRISMAUI_CEF_ARCHIVE}")
+    message(STATUS "CEF archive downloaded: ${PRISMAUI_CEF_ARCHIVE}")
 endif()
 
 function(_prismaui_find_cef_root out_var search_dir)

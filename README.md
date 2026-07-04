@@ -66,15 +66,6 @@ The helper script launches the VS Developer Shell and forwards to the CMake pres
 - **DLL Output**: `build/release/bin/PrismaUI.dll`
 - **Distribution Package**: `dist/PrismaUI_<version>/` (created automatically after build)
 
-### Public API ABI Break: DevTools
-
-The CEF migration intentionally breaks the old Ultralight-inspector ABI. Mods must recompile against the current `src/PrismaUI_API.h`.
-
-- Supported `InterfaceVersion` values are now `V1 = 4`, `V2 = 5`, and `V3 = 6`.
-- Legacy binary requests using numeric interface values `0`, `1`, or `2` are rejected with `nullptr` instead of receiving a mismatched vtable.
-- `CreateInspectorView`, `SetInspectorVisibility`, `IsInspectorVisible`, and `SetInspectorBounds` were removed.
-- Use `OpenDevTools()`, `CloseDevTools()`, and `IsDevToolsOpen()` to inspect the single PrismaUI CEF shell browser. Individual Prisma views appear as iframes named with the decimal `PrismaView` id.
-
 ### Upgrading Packages (Optional)
 
 **vcpkg:**

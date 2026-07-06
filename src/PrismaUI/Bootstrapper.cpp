@@ -82,11 +82,10 @@ namespace PrismaUI::Bootstrapper {
                 originalFunc(renderer, a);
             });
 
-        Hooks::HookInstaller<Hooks::D3DPresentHook>::Install(
-            [](const auto& originalFunc, uint32_t a) {
-                Renderer::GetSingleton().EndRender();
-                originalFunc(a);
-            });
+        Hooks::HookInstaller<Hooks::D3DPresentHook>::Install([](const auto& originalFunc, uint32_t a) {
+            Renderer::GetSingleton().EndRender();
+            originalFunc(a);
+        });
 
         logger::info("PrismaUI successfully initialized");
 

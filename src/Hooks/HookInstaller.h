@@ -12,12 +12,11 @@ namespace Hooks {
         };
 
         template <HookDefinition THook, class THandler, class... TArgs>
-        requires (std::is_invocable_v<const std::decay_t<THandler>&, const REL::Relocation<typename THook::FuncDefinition>&, TArgs...>)
+            requires(std::is_invocable_v<const std::decay_t<THandler>&,
+                                         const REL::Relocation<typename THook::FuncDefinition>&, TArgs...>)
         struct HookFunc<THook, THandler, std::tuple<TArgs...>> {
         public:
-            static void Invoke(TArgs... args) {
-                std::invoke(CallPipeline, std::forward<TArgs>(args)...);
-            }
+            static void Invoke(TArgs... args) { std::invoke(CallPipeline, std::forward<TArgs>(args)...); }
 
             static inline CallPipeline<THandler, REL::Relocation<typename THook::FuncDefinition>&&> CallPipeline;
         };
@@ -33,7 +32,8 @@ namespace Hooks {
                 throw std::runtime_error(std::format("Hook {} is already installed", typeid(THook).name()));
             }
 
-            using HookFunc = Detail::HookFunc<THook, THandler, typename FunctionTraits<typename THook::FuncDefinition>::Parameters>;
+            using HookFunc =
+                Detail::HookFunc<THook, THandler, typename FunctionTraits<typename THook::FuncDefinition>::Parameters>;
             auto originalFunc = Hooks::Install<THook>(HookFunc::Invoke);
             HookFunc::CallPipeline = StartCallPipeline(originalFunc).Wrap(std::forward<THandler>(handler));
             IsInstalled = true;

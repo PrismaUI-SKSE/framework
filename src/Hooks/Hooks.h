@@ -10,13 +10,11 @@ namespace Hooks {
     };
 
     template <typename T>
-    concept HookDefinition =
-        FunctionTraits<typename T::FuncDefinition>::IsFunction &&
-        requires {
-            { T::Id } -> std::same_as<const REL::RelocationID&>;
-            { T::Offset } -> std::same_as<const REL::VariantOffset&>;
-            { T::Type } -> std::same_as<const HookType&>;
-        };
+    concept HookDefinition = FunctionTraits<typename T::FuncDefinition>::IsFunction && requires {
+        { T::Id } -> std::same_as<const REL::RelocationID&>;
+        { T::Offset } -> std::same_as<const REL::VariantOffset&>;
+        { T::Type } -> std::same_as<const HookType&>;
+    };
 
     template <HookDefinition THook>
     REL::Relocation<typename THook::FuncDefinition> Install(typename THook::FuncDefinition* func) {

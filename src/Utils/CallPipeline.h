@@ -14,9 +14,8 @@ public:
 
     CallPipeline(CallPipeline&&) = default;
 
-    CallPipeline(TAction&& action, TNext&& next) :
-        _action(std::forward<TAction>(action)), _next(std::forward<TNext>(next)) {
-    }
+    CallPipeline(TAction&& action, TNext&& next)
+        : _action(std::forward<TAction>(action)), _next(std::forward<TNext>(next)) {}
 
     template <class TWrap>
     auto Wrap(TWrap&& wrap) && {
@@ -24,7 +23,7 @@ public:
     }
 
     template <class... TArgs>
-    requires (std::is_invocable_v<const Action&, const Next&, TArgs...>)
+        requires(std::is_invocable_v<const Action&, const Next&, TArgs...>)
     auto operator()(TArgs... args) const {
         return std::invoke(_action, _next, std::forward<TArgs>(args)...);
     }
@@ -49,9 +48,7 @@ public:
 
     CallPipelineStart(CallPipelineStart&&) = default;
 
-    CallPipelineStart(TAction&& action) :
-        _action(std::forward<TAction>(action)) {
-    }
+    CallPipelineStart(TAction&& action) : _action(std::forward<TAction>(action)) {}
 
     template <class TWrap>
     auto Wrap(TWrap&& wrap) && {
@@ -59,7 +56,7 @@ public:
     }
 
     template <class... TArgs>
-    requires (std::is_invocable_v<const Action&, TArgs...>)
+        requires(std::is_invocable_v<const Action&, TArgs...>)
     auto operator()(TArgs... args) const {
         return std::invoke(_action, std::forward<TArgs>(args)...);
     }

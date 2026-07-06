@@ -43,17 +43,16 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 
     MainThreadScheduler.SetThreadId(std::this_thread::get_id());
 
-    Hooks::HookInstaller<Hooks::UpdateHook>::Install(
-        [](const auto& originalFunc, RE::Main* main, float delta) {
-            [[unlikely]]
-            if (!PrismaUI::Bootstrapper::Initialize()) {
-                logger::critical("Failed to initialize PrismaUI, exiting...");
-                throw std::runtime_error("Failed to initialize PrismaUI");
-            }
+    Hooks::HookInstaller<Hooks::UpdateHook>::Install([](const auto& originalFunc, RE::Main* main, float delta) {
+        [[unlikely]]
+        if (!PrismaUI::Bootstrapper::Initialize()) {
+            logger::critical("Failed to initialize PrismaUI, exiting...");
+            throw std::runtime_error("Failed to initialize PrismaUI");
+        }
 
-            MainThreadScheduler.ExecuteTasks();
-            originalFunc(main, delta);
-        });
+        MainThreadScheduler.ExecuteTasks();
+        originalFunc(main, delta);
+    });
 
     return true;
 }

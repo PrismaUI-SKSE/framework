@@ -12,7 +12,7 @@ namespace Hooks {
     template <typename T>
     concept HookDefinition =
         FunctionTraits<typename T::FuncDefinition>::IsFunction &&
-        std::same_as<typename FunctionTraits<typename T::FuncDefinition>::ReturnType, void> && requires {
+        requires {
             { T::Id } -> std::same_as<const REL::RelocationID&>;
             { T::Offset } -> std::same_as<const REL::VariantOffset&>;
             { T::Type } -> std::same_as<const HookType&>;

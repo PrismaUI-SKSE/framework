@@ -43,8 +43,8 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 
     MainThreadScheduler.SetThreadId(std::this_thread::get_id());
 
-    Hooks::HookInstaller<Hooks::UpdateHook>::Create()
-        .AddPreHandler([](RE::Main*, float) {
+    Hooks::HookInstaller<Hooks::UpdateHook>::Install(
+        [](const auto& originalFunc, RE::Main* main, float delta) {
             [[unlikely]]
             if (!PrismaUI::Bootstrapper::Initialize()) {
                 logger::critical("Failed to initialize PrismaUI, exiting...");
@@ -52,8 +52,8 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
             }
 
             MainThreadScheduler.ExecuteTasks();
-        })
-        .Install();
+            originalFunc(main, delta);
+        });
 
     return true;
 }

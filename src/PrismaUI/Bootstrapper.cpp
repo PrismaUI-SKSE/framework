@@ -75,16 +75,18 @@ namespace PrismaUI::Bootstrapper {
         }
 
         CursorMenuEx::InstallHook();
-        Hooks::HookInstaller<Hooks::RendererBegin>::Create()
-            .AddPreHandler([](RE::BSGraphics::Renderer*, uint32_t) {
+        Hooks::HookInstaller<Hooks::RendererBegin>::Install(
+            [](const auto& originalFunc, RE::BSGraphics::Renderer* renderer, uint32_t a) {
                 InputHandler::GetSingleton().ProcessEvents();
                 Renderer::GetSingleton().BeginRender();
-            })
-            .Install();
+                originalFunc(renderer, a);
+            });
 
-        Hooks::HookInstaller<Hooks::D3DPresentHook>::Create()
-            .AddPreHandler([](uint32_t) { Renderer::GetSingleton().EndRender(); })
-            .Install();
+        Hooks::HookInstaller<Hooks::D3DPresentHook>::Install(
+            [](const auto& originalFunc, uint32_t a) {
+                Renderer::GetSingleton().EndRender();
+                originalFunc(a);
+            });
 
         logger::info("PrismaUI successfully initialized");
 

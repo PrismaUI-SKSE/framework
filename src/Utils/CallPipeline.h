@@ -8,6 +8,12 @@ public:
     using Action = std::decay_t<TAction>;
     using Next = std::decay_t<TNext>;
 
+    CallPipeline() = default;
+
+    CallPipeline(const CallPipeline&) = default;
+
+    CallPipeline(CallPipeline&&) = default;
+
     CallPipeline(TAction&& action, TNext&& next) :
         _action(std::forward<TAction>(action)), _next(std::forward<TNext>(next)) {
     }
@@ -18,10 +24,14 @@ public:
     }
 
     template <class... TArgs>
-    requires (std::is_invocable_v<Action&, Next&, TArgs...>)
-    auto operator()(TArgs... args) {
+    requires (std::is_invocable_v<const Action&, const Next&, TArgs...>)
+    auto operator()(TArgs... args) const {
         return std::invoke(_action, _next, std::forward<TArgs>(args)...);
     }
+
+    CallPipeline& operator=(const CallPipeline& other) = default;
+
+    CallPipeline& operator=(CallPipeline&& other) = default;
 
 private:
     Action _action;
@@ -33,6 +43,12 @@ struct CallPipelineStart {
 public:
     using Action = std::decay_t<TAction>;
 
+    CallPipelineStart() = default;
+
+    CallPipelineStart(const CallPipelineStart&) = default;
+
+    CallPipelineStart(CallPipelineStart&&) = default;
+
     CallPipelineStart(TAction&& action) :
         _action(std::forward<TAction>(action)) {
     }
@@ -43,10 +59,14 @@ public:
     }
 
     template <class... TArgs>
-    requires (std::is_invocable_v<Action&, TArgs...>)
-    auto operator()(TArgs... args) {
+    requires (std::is_invocable_v<const Action&, TArgs...>)
+    auto operator()(TArgs... args) const {
         return std::invoke(_action, std::forward<TArgs>(args)...);
     }
+
+    CallPipelineStart& operator=(const CallPipelineStart& other) = default;
+
+    CallPipelineStart& operator=(CallPipelineStart&& other) = default;
 
 private:
     Action _action;

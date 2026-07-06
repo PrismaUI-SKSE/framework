@@ -19,7 +19,7 @@ public:
 
     template <class TWrap>
     auto Wrap(TWrap&& wrap) && {
-        return CallPipeline<TWrap, CallPipeline&&>(std::forward<TWrap>(wrap), std::move(*this));
+        return CallPipeline<std::decay_t<TWrap>, CallPipeline>(std::forward<TWrap>(wrap), std::move(*this));
     }
 
     template <class... TArgs>
@@ -42,17 +42,13 @@ struct CallPipelineStart {
 public:
     using Action = std::decay_t<TAction>;
 
-    CallPipelineStart() = default;
+    CallPipelineStart(const Action& action) : _action(action) {}
 
-    CallPipelineStart(const CallPipelineStart&) = default;
-
-    CallPipelineStart(CallPipelineStart&&) = default;
-
-    CallPipelineStart(TAction&& action) : _action(std::forward<TAction>(action)) {}
+    CallPipelineStart(Action&& action) : _action(action) {}
 
     template <class TWrap>
     auto Wrap(TWrap&& wrap) && {
-        return CallPipeline<TWrap, Action&&>(std::forward<TWrap>(wrap), std::move(_action));
+        return CallPipeline<std::decay_t<TWrap>, Action>(std::forward<TWrap>(wrap), std::move(_action));
     }
 
     template <class... TArgs>
@@ -61,15 +57,11 @@ public:
         return std::invoke(_action, std::forward<TArgs>(args)...);
     }
 
-    CallPipelineStart& operator=(const CallPipelineStart& other) = default;
-
-    CallPipelineStart& operator=(CallPipelineStart&& other) = default;
-
 private:
     Action _action;
 };
 
 template <class TAction>
-CallPipelineStart<TAction> StartCallPipeline(TAction&& action) {
-    return CallPipelineStart<TAction>(std::forward<TAction>(action));
+CallPipelineStart<std::decay_t<TAction>> StartCallPipeline(TAction&& action) {
+    return CallPipelineStart<std::decay_t<TAction>>(std::forward<TAction>(action));
 }

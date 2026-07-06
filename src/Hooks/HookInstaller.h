@@ -18,7 +18,8 @@ namespace Hooks {
         public:
             static void Invoke(TArgs... args) { std::invoke(CallPipeline, std::forward<TArgs>(args)...); }
 
-            static inline CallPipeline<THandler, REL::Relocation<typename THook::FuncDefinition>&&> CallPipeline;
+            static inline CallPipeline<std::decay_t<THandler>, REL::Relocation<typename THook::FuncDefinition>>
+                CallPipeline;
         };
     }
 

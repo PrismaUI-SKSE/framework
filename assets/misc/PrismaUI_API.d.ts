@@ -70,7 +70,7 @@ interface PrismaUiControls extends EventTarget {
     /** Latest key-binding snapshot. Populated on load. */
     map?: PrismaUiControlMap
 
-    /** Requests a fresh map snapshot from the game (in case the player remaps controls) */
+    /** Requests a fresh map snapshot from the game (in case the player remaps controls). Keybindings should refresh automatically. */
     refresh(): void
 
     /** Gets the Skyrim event ID using the W3C Standard Gamepad button index */

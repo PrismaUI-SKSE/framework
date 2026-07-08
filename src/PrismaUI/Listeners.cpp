@@ -53,7 +53,7 @@ namespace PrismaUI::Listeners {
         if (is_main_frame) {
             logger::info("View [{}]: LoadListener: Window object ready.", viewId_);
             // Create the window.prismaUi object before the page's own scripts run.
-            Communication::InvokeFromUltralightThread(viewId_, Communication::PrismaObjectEnsureExpression());
+            Communication::InvokeFromUltralightThread(viewId_, Communication::PrismaObjectEnsureExpression().c_str());
         }
     }
 

@@ -112,7 +112,7 @@ namespace PrismaUI::GamepadInputHandler {
                 }
             }
 
-            std::string script = std::string(Communication::PrismaControlsEnsureExpression()) +
+            std::string script = Communication::PrismaControlsEnsureExpression() +
                                  ".dispatchEvent(new CustomEvent(\"" + eventName +
                                  "\", {detail: {w3cButtonIndex: " + std::to_string(w3cButtonIndex) +
                                  ", skyrimIdCode: " + std::to_string(skyrimIDCode) + ", action: \"" + action + "\"}}))";

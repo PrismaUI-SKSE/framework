@@ -27,8 +27,8 @@ namespace PrismaUI::Communication {
     void InteropCall(const Core::PrismaViewId& viewId, const std::string& functionName, const std::string& argument);
 
     // Idempotent JS expressions. Each builds a new object or returns a previously built object.
-    const char* PrismaObjectEnsureExpression();    // Ensures and returns window.prismaUi
-    const char* PrismaControlsEnsureExpression();  // Ensures and returns window.prismaUi.controls
+    const std::string& PrismaObjectEnsureExpression();    // Ensures and returns window.prismaUi
+    const std::string& PrismaControlsEnsureExpression();  // Ensures and returns window.prismaUi.controls
 
     JSValueRef JSCallbackDispatcher(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
                                     size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);

@@ -8,7 +8,7 @@ namespace PrismaUI::Communication {
     using namespace Core;
     using namespace ViewManager;
 
-    const char* PrismaObjectEnsureExpression() {
+    const std::string& PrismaObjectEnsureExpression() {
         static const std::string kExpr =
             std::string(R"js(
 ((window.prismaUi && typeof window.prismaUi == "object")
@@ -35,12 +35,12 @@ namespace PrismaUI::Communication {
         return prismaUi;
     })())
 )js";
-        return kExpr.c_str();
+        return kExpr;
     }
 
-    const char* PrismaControlsEnsureExpression() {
-        static const std::string kExpr = std::string(PrismaObjectEnsureExpression()) + ".controls";
-        return kExpr.c_str();
+    const std::string& PrismaControlsEnsureExpression() {
+        static const std::string kExpr = PrismaObjectEnsureExpression() + ".controls";
+        return kExpr;
     }
 
     void Invoke(const Core::PrismaViewId& viewId, const String& script, std::function<void(std::string)> callback) {

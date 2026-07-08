@@ -313,11 +313,6 @@ namespace PrismaUI::Cef {
             return true;
         }
 
-        if (!hwnd || width == 0 || height == 0) {
-            logger::debug("CEF initialization deferred: hwnd={}, size={}x{}", hwnd ? "set" : "null", width, height);
-            return false;
-        }
-
         if (_impl->initializeAttempted.exchange(true, std::memory_order_acq_rel)) {
             logger::debug("CEF initialization was already attempted and did not complete successfully.");
             return false;

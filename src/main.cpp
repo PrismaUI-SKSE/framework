@@ -44,10 +44,11 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
     MainThreadScheduler.SetThreadId(std::this_thread::get_id());
 
     Hooks::HookInstaller<Hooks::UpdateHook>::Install([](const auto& originalFunc, RE::Main* main, float delta) {
+        auto initializeResult = PrismaUI::Bootstrapper::Initialize();
         [[unlikely]]
-        if (!PrismaUI::Bootstrapper::Initialize()) {
+        if (!initializeResult.has_value()) {
             logger::critical("Failed to initialize PrismaUI, exiting...");
-            throw std::runtime_error("Failed to initialize PrismaUI");
+            throw std::runtime_error(std::format("Failed to initialize PrismaUI: {}", initializeResult.error()));
         }
 
         MainThreadScheduler.ExecuteTasks();

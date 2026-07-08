@@ -21,17 +21,17 @@ namespace PrismaUI::Bootstrapper {
         ID3D11DeviceContext* D3DContext;
     };
 
-    static std::optional<RenderData> TryGetRenderData() {
+    static std::expected<RenderData, std::string> TryGetRenderData() {
         auto renderManager = RE::BSGraphics::Renderer::GetSingleton();
         if (!renderManager) {
-            logger::critical("RenderManager is null!");
-            return std::nullopt;
+            logger::critical("RenderManager is null");
+            return std::unexpected("RenderManager is null");
         }
 
         auto& runtimeData = renderManager->GetRuntimeData();
         if (!runtimeData.renderWindows || !runtimeData.renderWindows->hWnd) {
-            logger::critical("HWND is null!");
-            return std::nullopt;
+            logger::critical("HWND is null");
+            return std::unexpected("HWND is null");
         }
 
         return RenderData{
@@ -42,36 +42,36 @@ namespace PrismaUI::Bootstrapper {
         };
     }
 
-    static bool InitializeImpl() {
+    static std::expected<void, std::string> InitializeImpl() {
         logger::info("Initializing PrismaUI...");
 
         if (!MainThreadScheduler.IsTargetThread()) {
             logger::critical("PrismaUI must be initialized on the main thread");
-            return false;
+            return std::unexpected("PrismaUI must be initialized on the main thread");
         }
 
-        auto renderDataOpt = TryGetRenderData();
-        if (!renderDataOpt) {
-            return false;
+        auto renderDataResult = TryGetRenderData();
+        if (!renderDataResult.has_value()) {
+            return std::unexpected(renderDataResult.error());
         }
 
-        auto renderData = renderDataOpt.value();
+        auto renderData = renderDataResult.value();
         if (!Cef::CefRuntime::GetSingleton().Initialize(renderData.Hwnd, renderData.ScreenSize.width,
                                                         renderData.ScreenSize.height, renderData.D3DDevice,
                                                         renderData.D3DContext)) {
             logger::critical("CefRuntime initialization failed");
-            return false;
+            return std::unexpected("CefRuntime initialization failed");
         }
 
         if (!InputHandler::GetSingleton().Initialize(renderData.Hwnd, &Core::views, &Core::viewsMutex)) {
             logger::critical("InputHandler initialization failed");
-            return false;
+            return std::unexpected("InputHandler initialization failed");
         }
 
         if (!Renderer::GetSingleton().Initialize(&Cef::CefRuntime::GetSingleton(), &InputHandler::GetSingleton(),
                                                  renderData.Hwnd, renderData.D3DDevice, renderData.D3DContext)) {
             logger::critical("Renderer initialization failed");
-            return false;
+            return std::unexpected("Renderer initialization failed");
         }
 
         CursorMenuEx::InstallHook();
@@ -89,7 +89,7 @@ namespace PrismaUI::Bootstrapper {
 
         logger::info("PrismaUI successfully initialized");
 
-        return true;
+        return {};
     }
 
     static void Shutdown() {
@@ -106,23 +106,24 @@ namespace PrismaUI::Bootstrapper {
         logger::info("Shutdown complete");
     }
 
-    bool Initialize() {
+    std::expected<void, std::string> Initialize() {
         [[likely]]
         if (IsInitialized) {
-            return true;
+            return {};
         }
 
         if (IsShutdownStarted) {
-            return false;
+            return std::unexpected("PrismaUI is already shutting down");
         }
 
-        IsInitialized = InitializeImpl();
+        auto initializeResult = InitializeImpl();
+        IsInitialized = initializeResult.has_value();
         if (IsInitialized) {
             InputHandler::GetSingleton().OnExit([] { MainThreadScheduler.Post([] { Shutdown(); }); });
         } else {
             Shutdown();
         }
 
-        return IsInitialized;
+        return initializeResult;
     }
 }

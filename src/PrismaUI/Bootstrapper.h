@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include <expected>
+
 namespace PrismaUI::Bootstrapper {
-    bool Initialize();
+    std::expected<void, std::string> Initialize();
 }

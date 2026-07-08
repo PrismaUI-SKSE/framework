@@ -43,12 +43,9 @@ namespace PrismaUI::ControlMapBridge {
             out += '"';
         }
 
-        // JSON key for a standard input device slot; throws if called with an unexpected index.
+        // JSON key for a standard input device slot
         std::string GetDeviceKey(std::size_t index) {
-            return index == 0   ? "keyboard"
-                   : index == 1 ? "mouse"
-                   : index == 2 ? "gamepad"
-                                : throw std::runtime_error("GetDeviceKey: unhandled index " + std::to_string(index));
+            return index == 0 ? "keyboard" : index == 1 ? "mouse" : index == 2 ? "gamepad" : "unknown";
         }
 
         // Canonical name for an input context index
@@ -71,7 +68,7 @@ namespace PrismaUI::ControlMapBridge {
                    : index == 15 ? "Lockpicking"
                    : index == 16 ? "Favor/Marketplace"  // Favor on 1.5, Marketplace on 1.6
                    : index == 17 ? "Favor"
-                                 : throw std::runtime_error("GetContextName: unhandled index " + std::to_string(index));
+                                 : "Unknown";
         }
 
         std::string BuildJson() {

@@ -35,8 +35,8 @@ namespace PrismaUI::GamepadInputHandler {
         constexpr uint32_t GAMEPAD_AXIS_COUNT = 4;     // W3C standard gamepad with left and right X and Y axes
         constexpr uint32_t GAMEPAD_BUTTON_COUNT = 17;  // W3C standard gamepad with 17 buttons
 
-        // A JavaScript event (prismagamepadbuttondown or prismagamepadbuttonup) to dispatch into a view.
-        // It queued right after the button's state change so it runs on the Ultralight thread
+        // A JavaScript event (gamepadbuttondown or gamepadbuttonup on window.prismaUi.controls) to dispatch into a
+        // view. It is queued right after the button's state change so it runs on the Ultralight thread
         // only once that state is applied, letting a handler read the new state via navigator.getGamepads().
         struct JsButtonDispatch {
             Core::PrismaViewId viewId;
@@ -85,8 +85,8 @@ namespace PrismaUI::GamepadInputHandler {
         }
 
         // Resolves the menu role of the button via the control map and builds a named CustomEvent
-        // (detail: { w3cButtonIndex: number, skyrimIdCode: number, action: string }) dispatched on window.
-        // eventName is "prismagamepadbuttondown" on a press or "prismagamepadbuttonup" on a release.
+        // (detail: { w3cButtonIndex: number, skyrimIdCode: number, action: string }) dispatched on the
+        // window.prismaUi.controls. eventName is "gamepadbuttondown" on a press or "gamepadbuttonup" on a release.
         // Returns nullopt when no view is focused. The caller queues the result behind the button's state
         // change so the event fires only after navigator.getGamepads() reflects it.
         std::optional<JsButtonDispatch> BuildButtonDispatch(const char* eventName, uint32_t w3cButtonIndex,
@@ -112,10 +112,10 @@ namespace PrismaUI::GamepadInputHandler {
                 }
             }
 
-            std::string script = std::string("window.dispatchEvent(new CustomEvent(\"") + eventName +
+            std::string script = std::string(Communication::PrismaControlsEnsureExpression()) +
+                                 ".dispatchEvent(new CustomEvent(\"" + eventName +
                                  "\", {detail: {w3cButtonIndex: " + std::to_string(w3cButtonIndex) +
-                                 ", skyrimIdCode: " + std::to_string(skyrimIDCode) + ", action: \"" + action +
-                                 "\"}}))";
+                                 ", skyrimIdCode: " + std::to_string(skyrimIDCode) + ", action: \"" + action + "\"}}))";
             return JsButtonDispatch{viewId, std::move(script)};
         }
 
@@ -137,9 +137,9 @@ namespace PrismaUI::GamepadInputHandler {
             // which we don't want to do while holding g_gamepadQueueMutex.
             std::optional<JsButtonDispatch> dispatch;
             if (buttonEvent->IsDown()) {
-                dispatch = BuildButtonDispatch("prismagamepadbuttondown", w3cButtonIndex, buttonIDCode);
+                dispatch = BuildButtonDispatch("gamepadbuttondown", w3cButtonIndex, buttonIDCode);
             } else if (buttonEvent->IsUp()) {
-                dispatch = BuildButtonDispatch("prismagamepadbuttonup", w3cButtonIndex, buttonIDCode);
+                dispatch = BuildButtonDispatch("gamepadbuttonup", w3cButtonIndex, buttonIDCode);
             }
 
             // A trigger ranges from 0 to 1 (float); a digital button returns 0 or 1.
@@ -296,6 +296,51 @@ namespace PrismaUI::GamepadInputHandler {
                 },
                 event);
         }
+    }
+
+    const std::string& GetW3cToSkyrimJson() {
+        // Built once from SkyrimIDCodeToW3CIndex (the single source of truth for the W3C<->Skyrim mapping).
+        // Keys are W3C button indices, values are Skyrim gamepad button codes (BSWin32GamepadDevice::Key).
+        static const std::string json = [] {
+            using Key = RE::BSWin32GamepadDevice::Key;
+            constexpr uint32_t codes[] = {
+                Key::kA,
+                Key::kB,
+                Key::kX,
+                Key::kY,
+                Key::kLeftShoulder,
+                Key::kRightShoulder,
+                Key::kLeftTrigger,
+                Key::kRightTrigger,
+                Key::kBack,
+                Key::kStart,
+                Key::kLeftThumb,
+                Key::kRightThumb,
+                Key::kUp,
+                Key::kDown,
+                Key::kLeft,
+                Key::kRight,
+            };
+            std::string s = "{";
+            bool first = true;
+            for (const uint32_t code : codes) {
+                const int w3c = SkyrimIDCodeToW3CIndex(code);
+                if (w3c < 0) {
+                    continue;
+                }
+                if (!first) {
+                    s += ',';
+                }
+                first = false;
+                s += '"';
+                s += std::to_string(w3c);
+                s += "\":";
+                s += std::to_string(code);
+            }
+            s += '}';
+            return s;
+        }();
+        return json;
     }
 
     void ResetButtonValues() {

@@ -1,11 +1,47 @@
 ﻿#include "Communication.h"
 
 #include "Core.h"
+#include "GamepadInputHandler.h"
 #include "ViewManager.h"
 
 namespace PrismaUI::Communication {
     using namespace Core;
     using namespace ViewManager;
+
+    const char* PrismaObjectEnsureExpression() {
+        static const std::string kExpr =
+            std::string(R"js(
+((window.prismaUi && typeof window.prismaUi == "object")
+    ? window.prismaUi
+    : (function () {
+        const prismaUi = window.prismaUi || (window.prismaUi = {});
+        const controls = new EventTarget();
+        const w3cToSkyrim = )js") +
+            GamepadInputHandler::GetW3cToSkyrimJson() +
+            R"js(;
+        controls.refresh = function () { return window.__prismaRefreshControlMap("")/*Argument is unused.*/ };
+        controls.getEventIdByButtonIndex = function (w3cButtonIndex, contextName = "Gameplay") {
+            const code = w3cToSkyrim[w3cButtonIndex];
+            if (code == null) { throw new Error("code was undefined for w3cButtonIndex " + w3cButtonIndex); }
+            if (!controls.map) { throw new Error("controls.map was not set."); }
+            const context = controls.map.contexts.find(c => c.name === contextName);
+            if (context == null) { throw new Error("context was null for contextName " + contextName); }
+            const gamepad = context.devices.gamepad;
+            if (gamepad == null) { throw new Error("gamepad was null for context " + contextName); }
+            const mapping = gamepad.find(m => m.inputKey == code);
+            return mapping != null ? mapping.eventID : null;
+        };
+        prismaUi.controls = controls;
+        return prismaUi;
+    })())
+)js";
+        return kExpr.c_str();
+    }
+
+    const char* PrismaControlsEnsureExpression() {
+        static const std::string kExpr = std::string(PrismaObjectEnsureExpression()) + ".controls";
+        return kExpr.c_str();
+    }
 
     void Invoke(const Core::PrismaViewId& viewId, const String& script, std::function<void(std::string)> callback) {
         std::shared_ptr<PrismaView> viewData = nullptr;

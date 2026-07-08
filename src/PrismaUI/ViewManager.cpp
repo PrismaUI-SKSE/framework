@@ -1,5 +1,7 @@
 ﻿#include "ViewManager.h"
 
+#include "Communication.h"
+#include "ControlMapBridge.h"
 #include "Core.h"
 #include "InputHandler.h"
 #include "Inspector.h"
@@ -61,6 +63,11 @@ namespace PrismaUI::ViewManager {
         logger::info(
             "View [{}] creation requested for path: {} with order <{}>. Actual view will be created by UI thread.",
             newViewId, fileUrl, viewData->order);
+
+        // Internal binding behind the public window.prismaUi.controls.refresh() helper.
+        // The callback system can only bind global functions, not functions belonging to an object.
+        Communication::RegisterJSListener(newViewId, "__prismaRefreshControlMap",
+                                          [newViewId](std::string) { ControlMapBridge::RequestRefresh(newViewId); });
 
         return newViewId;
     }
@@ -247,6 +254,9 @@ namespace PrismaUI::ViewManager {
             // Focus this view
             viewData->ultralightView->Focus();
             PrismaUI::InputHandler::EnableInputCapture(viewId);
+
+            // Refresh the control-map snapshot so the view has the latest keybindings.
+            ControlMapBridge::RequestRefresh(viewId);
 
             if (!disableFocusMenu && !PrismaVR::IsVRActive()) {
                 FocusMenu::Open();  // Flatscreen cursor — in VR, PrismaVR laser handles interaction
@@ -622,8 +632,9 @@ namespace PrismaUI::ViewManager {
         }
     }
 
-    void RegisterConsoleCallback(const Core::PrismaViewId& viewId,
-                                 std::function<void(Core::PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> callback) {
+    void RegisterConsoleCallback(
+        const Core::PrismaViewId& viewId,
+        std::function<void(Core::PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> callback) {
         std::unique_lock lock(viewsMutex);
         auto it = views.find(viewId);
         if (it != views.end() && it->second) {

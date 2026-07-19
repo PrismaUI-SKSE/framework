@@ -25,7 +25,11 @@ namespace PrismaUI::ViewRenderer {
                     logger::warn("RenderViews: Found null shared_ptr in views map for ID [{}]", pair.first);
                     continue;
                 }
-                if (!viewPtr->isHidden.load()) {
+                // Render the view if it's visible OR if an external consumer
+                // (sister plugin) has claimed it. External consumers need a
+                // current bitmap regardless of whether the original mod hid
+                // the view in PrismaUI's flat-screen tracking.
+                if (!viewPtr->isHidden.load() || viewPtr->externalConsumer.load()) {
                     viewsToRender.push_back(viewPtr);
                 }
             }
@@ -96,10 +100,14 @@ namespace PrismaUI::ViewRenderer {
         }
 
         bitmap->UnlockPixels();
-        if (success)
+        if (success) {
             viewData->newFrameReady = true;
-        else
+            // Also mark for external consumers (independent flag so PrismaUI's
+            // internal GPU-upload path doesn't steal the signal from us).
+            viewData->externalFrameReady = true;
+        } else {
             viewData->newFrameReady = false;
+        }
     }
 
     void ReleaseViewTexture(Core::PrismaView* viewData) {
@@ -271,8 +279,13 @@ namespace PrismaUI::ViewRenderer {
             std::shared_lock lock(viewsMutex);
             viewsToDraw.reserve(views.size());
             for (const auto& pair : views) {
+                // Skip externalConsumer views: a sister plugin (e.g. PrismaUI
+                // SteamVR) is rendering these onto its own OpenVR overlay
+                // already. Drawing them into the game swap chain too would
+                // make them appear on the desktop mirror window (and obscure
+                // the player's HMD view in flat-screen compositing).
                 if (pair.second && !pair.second->isHidden.load() && !pair.second->pendingResourceRelease.load() &&
-                    pair.second->textureView) {
+                    pair.second->textureView && !pair.second->externalConsumer.load()) {
                     viewsToDraw.push_back(pair.second);
                 }
             }

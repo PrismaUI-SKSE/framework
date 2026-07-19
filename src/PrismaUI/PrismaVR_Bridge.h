@@ -137,7 +137,7 @@ namespace PrismaVR_Bridge {
 		PrismaUI::Core::ultralightThread.submit([view, script]() {
 			if (view->ultralightView)
 				view->ultralightView->EvaluateScript(
-					ultralight::String(script.c_str()), nullptr, ultralight::String(""));
+					ultralight::String(script.c_str()), nullptr, "");
 		});
 	}
 

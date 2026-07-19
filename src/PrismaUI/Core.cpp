@@ -408,9 +408,21 @@ namespace PrismaUI::Core {
                     // 4:3-ish size even when the headset render target is valid, which clips
                     // layouts built for the normal Prisma viewport. Physical quad size is
                     // independent of this and is controlled in PrismaVR.
+                    //
+                    // Detection is a direct GetModuleHandleA("SkyrimVR.exe") check rather
+                    // than PrismaVR::IsVRActive(): IsVRActive() only turns true after
+                    // PrismaVR::Initialize() has resolved the OpenVR interfaces, which can
+                    // race with an early sister-mod view-create and miss the override.
+                    // The module-handle check is true from process start, so every VR
+                    // session gets the fixed viewport deterministically.
                     uint32_t viewW = screenSize.width;
                     uint32_t viewH = screenSize.height;
-                    if (PrismaVR::IsVRActive()) {
+                    if (::GetModuleHandleA("SkyrimVR.exe")) {
+                        // VR: fixed 1920×1080 base viewport. An external consumer
+                        // (e.g. the SteamVR wrist-overlay bridge) can grow a view's
+                        // viewport at runtime via PrismaVR_ResizeView, so this is
+                        // just the low-bandwidth default and consumers opt into
+                        // bigger sizes per view.
                         viewW = 1920;
                         viewH = 1080;
                     }

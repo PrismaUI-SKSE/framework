@@ -57,6 +57,14 @@ namespace PrismaUI::Core {
         std::string originalUrl;    // Original URL from view creation (for recovery)
         std::string lastLoadedUrl;  // Track last successfully loaded URL
         std::atomic<bool> isHidden = false;
+        // Set true by sister plugins (e.g. PrismaUI SteamVR) that want to
+        // consume this view's bitmap on their own OpenVR overlay. When true:
+        // (a) PrismaUI's auto-VR-overlay creation skips this view (no laser
+        //     hijack), (b) the renderer keeps producing frames for this view
+        //     even when isHidden=true (so the external consumer can always
+        //     grab a current bitmap, regardless of the original mod's
+        //     show/hide state).
+        std::atomic<bool> externalConsumer = false;
         std::unique_ptr<Listeners::MyLoadListener> loadListener;
         std::unique_ptr<Listeners::MyViewListener> viewListener;
         std::atomic<bool> isLoadingFinished = false;
@@ -99,6 +107,14 @@ namespace PrismaUI::Core {
         std::mutex bufferMutex;
         std::atomic<bool> newFrameReady = false;
         std::atomic<bool> pendingResourceRelease = false;
+
+        // Independent "new frame" flag for external CPU consumers (sister
+        // plugins such as PrismaUI SteamVR rendering this view onto their own
+        // OpenVR overlay). Set alongside newFrameReady whenever pixelBuffer
+        // is refreshed, consumed by external readers via
+        // PrismaVR_GetViewBitmapIfNew (separate from internal GPU upload's
+        // newFrameReady so the two consumers don't race).
+        std::atomic<bool> externalFrameReady = false;
 
         // Operation queue fields for thread-safe sequential execution
         std::mutex operationMutex;

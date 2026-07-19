@@ -15,7 +15,9 @@
 #include <commctrl.h>
 #include <d3d11.h>
 #include <cmath>
+#include <cstring>
 #include <map>
+#include <set>
 #include <string>
 #include <chrono>
 
@@ -299,6 +301,14 @@ static void* g_system = nullptr;   // IVRSystem_022
 
 static std::map<uint64_t, VROverlayState> g_vrOverlays;
 static int g_overlayCounter = 0;
+
+// Views that have opted out of PrismaUI's auto-VR-overlay promotion.
+// A sister plugin (e.g. PrismaUI SteamVR) calls PrismaVR_SetViewVREnabled
+// to add itself here when it wants to manage its own OpenVR overlay and
+// just read the texture/bitmap from PrismaUI. This prevents PrismaUI from
+// creating a duplicate overlay (often at the wrong position) and stops
+// SteamVR going into laser-mouse mode on a phantom HMD-locked overlay.
+static std::set<uint64_t> g_vrExcludedViews;
 
 // Controller tracking
 struct ControllerInfo {
@@ -759,6 +769,17 @@ static void SyncOverlays()
 
 	for (auto& viewInfo : visibleViews) {
 		uint64_t id = viewInfo.id;
+
+		// Sister plugins (e.g. PrismaUI SteamVR) can opt views out of
+		// PrismaUI's auto-VR-overlay promotion. They handle their own
+		// overlay externally and only consume the view's texture/bitmap.
+		if (g_vrExcludedViews.count(id) > 0) {
+			// Mark as "current" so the cleanup pass below doesn't try to
+			// destroy a non-existent overlay, but skip everything else.
+			currentViews[id] = true;
+			continue;
+		}
+
 		currentViews[id] = true;
 
 		auto it = g_vrOverlays.find(id);
@@ -1189,7 +1210,7 @@ static void ProcessInput()
 							"return '0';"
 							"})()";
 						ultralight::String result = bestViewPtr->ultralightView->EvaluateScript(
-							ultralight::String(js.c_str()), nullptr, ultralight::String(""));
+							ultralight::String(js.c_str()), nullptr);
 						bool interactive = false;
 						if (!result.empty()) {
 							std::string r(result.utf8().data(), result.utf8().length());
@@ -1768,7 +1789,7 @@ static void CheckTextInputFocusAsync(std::shared_ptr<PrismaUI::Core::PrismaView>
 				"}"
 				"return '0';"
 				"})()"
-			), nullptr, ultralight::String(""));
+			), nullptr);
 		// EvaluateScript returns the JS result as a String — "1" or "0"
 		bool focused = false;
 		if (!result.empty()) {
@@ -2433,3 +2454,419 @@ extern "C" __declspec(dllexport) void PrismaVR_DeliverVKey(int vkCode)
 }
 
 } // namespace PrismaVR
+
+// -----------------------------------------------------------------------------
+// External texture access (PrismaUI SteamVR fork)
+// See PrismaVR.h for the rationale. Implementation reuses the existing
+// PrismaVR_Bridge accessors so the texture/dimensions come straight from the
+// PrismaView fields PrismaUI already maintains. The shared_lock on viewsMutex
+// matches every other read path through PrismaVR_Bridge::GetVisibleViews.
+// -----------------------------------------------------------------------------
+extern "C" __declspec(dllexport) void* PrismaVR_GetViewTexture(uint64_t viewId)
+{
+	std::shared_lock lock(PrismaUI::Core::viewsMutex);
+	auto it = PrismaUI::Core::views.find(viewId);
+	if (it == PrismaUI::Core::views.end() || !it->second) return nullptr;
+	return reinterpret_cast<void*>(PrismaVR_Bridge::GetTexture(it->second.get()));
+}
+
+extern "C" __declspec(dllexport) uint32_t PrismaVR_GetViewTextureWidth(uint64_t viewId)
+{
+	std::shared_lock lock(PrismaUI::Core::viewsMutex);
+	auto it = PrismaUI::Core::views.find(viewId);
+	if (it == PrismaUI::Core::views.end() || !it->second) return 0;
+	return PrismaVR_Bridge::GetTextureWidth(it->second.get());
+}
+
+extern "C" __declspec(dllexport) uint32_t PrismaVR_GetViewTextureHeight(uint64_t viewId)
+{
+	std::shared_lock lock(PrismaUI::Core::viewsMutex);
+	auto it = PrismaUI::Core::views.find(viewId);
+	if (it == PrismaUI::Core::views.end() || !it->second) return 0;
+	return PrismaVR_Bridge::GetTextureHeight(it->second.get());
+}
+
+// Snapshot the per-view CPU pixel buffer into caller's storage. This is the
+// thread-safe path for VR overlay submission: no D3D11 device context is
+// touched, no GPU resource is shared across threads, the copy happens under
+// the existing per-view bufferMutex that PrismaUI's own ViewRenderer uses.
+extern "C" __declspec(dllexport) bool PrismaVR_GetViewBitmap(
+    uint64_t  viewId,
+    void*     outPixels,
+    uint32_t  outBufSize,
+    uint32_t* outWidth,
+    uint32_t* outHeight,
+    uint32_t* outStride)
+{
+	if (outWidth)  *outWidth  = 0;
+	if (outHeight) *outHeight = 0;
+	if (outStride) *outStride = 0;
+
+	// Pin the shared_ptr while we work so the view can't be destroyed under us.
+	std::shared_ptr<PrismaUI::Core::PrismaView> view;
+	{
+		std::shared_lock lock(PrismaUI::Core::viewsMutex);
+		auto it = PrismaUI::Core::views.find(viewId);
+		if (it == PrismaUI::Core::views.end() || !it->second) return false;
+		view = it->second;
+	}
+
+	std::lock_guard bufLock(view->bufferMutex);
+	if (view->pixelBuffer.empty() || view->bufferWidth == 0 || view->bufferHeight == 0) return false;
+
+	if (outWidth)  *outWidth  = view->bufferWidth;
+	if (outHeight) *outHeight = view->bufferHeight;
+	if (outStride) *outStride = view->bufferStride;
+
+	// Size query mode
+	if (!outPixels) return true;
+
+	const size_t needed = view->pixelBuffer.size();
+	if (outBufSize < needed) return false;
+
+	std::memcpy(outPixels, view->pixelBuffer.data(), needed);
+	return true;
+}
+
+extern "C" __declspec(dllexport) void PrismaVR_SetViewVREnabled(uint64_t viewId, bool enabled)
+{
+	// Reflect the opt-out on BOTH the legacy file-static set (so SyncOverlays
+	// keeps working without changes) AND on the per-view flag (so ViewRenderer
+	// can see it without depending on PrismaVR.cpp's translation unit).
+	std::shared_ptr<PrismaUI::Core::PrismaView> view;
+	{
+		std::shared_lock lock(PrismaUI::Core::viewsMutex);
+		auto it = PrismaUI::Core::views.find(viewId);
+		if (it != PrismaUI::Core::views.end() && it->second) view = it->second;
+	}
+
+	if (enabled) {
+		g_vrExcludedViews.erase(viewId);
+		if (view) view->externalConsumer.store(false);
+	} else {
+		g_vrExcludedViews.insert(viewId);
+		if (view) view->externalConsumer.store(true);
+		// If PrismaUI already created an overlay for this view in a previous
+		// frame, tear it down now so it stops capturing laser-mouse input.
+		auto it = g_vrOverlays.find(viewId);
+		if (it != g_vrOverlays.end() && it->second.handle && g_overlay) {
+			VCallOvl(g_overlay, OVL_SLOT::DestroyOverlay, "DestroyOverlay", it->second.handle);
+			g_vrOverlays.erase(it);
+		}
+	}
+}
+
+extern "C" __declspec(dllexport) bool PrismaVR_ResizeView(uint64_t viewId, uint32_t width, uint32_t height)
+{
+	if (width == 0 || height == 0) return false;
+
+	std::shared_ptr<PrismaUI::Core::PrismaView> view;
+	{
+		std::shared_lock lock(PrismaUI::Core::viewsMutex);
+		auto it = PrismaUI::Core::views.find(viewId);
+		if (it == PrismaUI::Core::views.end() || !it->second) return false;
+		view = it->second;
+	}
+
+	if (!view->ultralightView) return false;
+
+	// Ultralight's Resize must run on the renderer thread.
+	PrismaUI::Core::ultralightThread.submit([view, width, height]() {
+		if (view->ultralightView) {
+			view->ultralightView->Resize(width, height);
+		}
+	});
+	return true;
+}
+
+// ---- View enumeration (Stage 2 universal-adapter foundation) ---------------
+
+extern "C" __declspec(dllexport) uint32_t PrismaVR_GetViewCount()
+{
+	std::shared_lock lock(PrismaUI::Core::viewsMutex);
+	return static_cast<uint32_t>(PrismaUI::Core::views.size());
+}
+
+extern "C" __declspec(dllexport) bool PrismaVR_GetViewInfo(
+	uint32_t  index,
+	uint64_t* outId,
+	char*     pathBuffer,
+	uint32_t  pathBufferSize)
+{
+	std::shared_lock lock(PrismaUI::Core::viewsMutex);
+	if (index >= PrismaUI::Core::views.size()) return false;
+
+	// std::map iterates in key order (uint64_t IDs ascending), stable across
+	// calls as long as the view set doesn't change. Good enough for our
+	// "let the bridge discover what's available" use case.
+	auto it = PrismaUI::Core::views.begin();
+	std::advance(it, index);
+	if (!it->second) return false;
+
+	if (outId) *outId = it->first;
+
+	if (pathBuffer && pathBufferSize > 0) {
+		const std::string& src = it->second->originalUrl;
+		size_t copy = (src.size() < pathBufferSize - 1) ? src.size() : pathBufferSize - 1;
+		std::memcpy(pathBuffer, src.c_str(), copy);
+		pathBuffer[copy] = '\0';
+	}
+	return true;
+}
+
+// Like PrismaVR_GetViewBitmap, but only returns the pixel data if the view has
+// rendered a fresh frame since the last successful call. Lets sister plugins
+// avoid resubmitting identical pixels to OpenVR — the OpenVR overlay subsystem
+// enters a sticky error state after ~20 s of sustained 10 Hz 8 MB uploads.
+extern "C" __declspec(dllexport) bool PrismaVR_GetViewBitmapIfNew(
+    uint64_t  viewId,
+    void*     outPixels,
+    uint32_t  outBufSize,
+    uint32_t* outWidth,
+    uint32_t* outHeight,
+    uint32_t* outStride)
+{
+	if (outWidth)  *outWidth  = 0;
+	if (outHeight) *outHeight = 0;
+	if (outStride) *outStride = 0;
+
+	std::shared_ptr<PrismaUI::Core::PrismaView> view;
+	{
+		std::shared_lock lock(PrismaUI::Core::viewsMutex);
+		auto it = PrismaUI::Core::views.find(viewId);
+		if (it == PrismaUI::Core::views.end() || !it->second) return false;
+		view = it->second;
+	}
+
+	std::lock_guard bufLock(view->bufferMutex);
+	if (view->pixelBuffer.empty() || view->bufferWidth == 0 || view->bufferHeight == 0) return false;
+
+	if (outWidth)  *outWidth  = view->bufferWidth;
+	if (outHeight) *outHeight = view->bufferHeight;
+	if (outStride) *outStride = view->bufferStride;
+
+	// Size-query mode: do NOT consume the new-frame flag — caller is just
+	// asking for current dimensions to size their destination buffer.
+	if (!outPixels) return true;
+
+	const size_t needed = view->pixelBuffer.size();
+	if (outBufSize < needed) return false;
+
+	// Consume the external-frame flag. If nothing has been painted since the
+	// last call, we return false WITHOUT copying — caller can keep showing
+	// their previous frame.
+	if (!view->externalFrameReady.exchange(false)) return false;
+
+	std::memcpy(outPixels, view->pixelBuffer.data(), needed);
+	return true;
+}
+
+// ---- Sister-plugin mouse-event injection (Stage 2.2.c) ---------------------
+// Bypasses PrismaUI's focus / capture system. Dispatches on the ultralight
+// thread the same way InputHandler::ProcessEvents does (see InputHandler.cpp
+// L961: g_ultralightThreadExecutor->submit(...)) so Ultralight sees the event
+// from its own thread and the JS-side handlers fire normally.
+extern "C" __declspec(dllexport) bool PrismaVR_FireMouseEvent(
+	uint64_t viewId,
+	int      eventType,
+	int      x,
+	int      y,
+	int      button)
+{
+	std::shared_ptr<PrismaUI::Core::PrismaView> view;
+	{
+		std::shared_lock lock(PrismaUI::Core::viewsMutex);
+		auto it = PrismaUI::Core::views.find(viewId);
+		if (it == PrismaUI::Core::views.end() || !it->second) {
+			logger::warn("PrismaVR_FireMouseEvent: view {} not found", viewId);
+			return false;
+		}
+		view = it->second;
+	}
+	if (!view->ultralightView) {
+		logger::warn("PrismaVR_FireMouseEvent: view {} has null ultralightView", viewId);
+		return false;
+	}
+
+	ultralight::MouseEvent ev;
+	switch (eventType) {
+		case 0: ev.type = ultralight::MouseEvent::kType_MouseMoved; break;
+		case 1: ev.type = ultralight::MouseEvent::kType_MouseDown;  break;
+		case 2: ev.type = ultralight::MouseEvent::kType_MouseUp;    break;
+		default: return false;
+	}
+	switch (button) {
+		case 0: ev.button = ultralight::MouseEvent::kButton_None;   break;
+		case 1: ev.button = ultralight::MouseEvent::kButton_Left;   break;
+		case 2: ev.button = ultralight::MouseEvent::kButton_Middle; break;
+		case 3: ev.button = ultralight::MouseEvent::kButton_Right;  break;
+		default: return false;
+	}
+	ev.x = x;
+	ev.y = y;
+
+	// Log down/up events so the sister plugin can verify clicks are crossing
+	// the DLL boundary. Moves are skipped (10 Hz noise) and only the first
+	// few of each type are logged via static counters to avoid log spam.
+	static std::atomic<int> downSeen{0};
+	static std::atomic<int> upSeen{0};
+	if (eventType == 1 && downSeen.fetch_add(1) < 5) {
+		logger::info("PrismaVR_FireMouseEvent: DOWN view={} pos=({},{}) btn={}", viewId, x, y, button);
+	} else if (eventType == 2 && upSeen.fetch_add(1) < 5) {
+		logger::info("PrismaVR_FireMouseEvent: UP view={} pos=({},{}) btn={}", viewId, x, y, button);
+	}
+
+	PrismaUI::Core::ultralightThread.submit([view, ev, viewId]() {
+		if (!view->ultralightView) {
+			logger::warn("PrismaVR_FireMouseEvent[lambda]: ultralightView became null for view {}", viewId);
+			return;
+		}
+		// Log inside the dispatch lambda so we can prove it actually ran.
+		static std::atomic<int> dispatched{0};
+		if (ev.type != ultralight::MouseEvent::kType_MouseMoved && dispatched.fetch_add(1) < 5) {
+			logger::info("PrismaVR_FireMouseEvent[lambda]: dispatching type={} btn={} pos=({},{}) view={}",
+				static_cast<int>(ev.type), static_cast<int>(ev.button), ev.x, ev.y, viewId);
+		}
+		view->ultralightView->FireMouseEvent(ev);
+	});
+	return true;
+}
+
+// ============================================================================
+// PrismaVR_DeliverCharToView — sister-plugin keyboard delivery.
+//
+// Same RawKeyDown + Char + KeyUp recipe as PrismaVR_DeliverChar, but takes
+// an explicit viewId and skips every "is PrismaUI owning the keyboard right
+// now" gate. Intended for sister plugins (e.g. PrismaUI SteamVR) that
+// render PrismaUI views on their own controller-attached overlays and drive
+// the SteamVR overlay keyboard themselves — they know which view should
+// receive each char.
+// ============================================================================
+extern "C" __declspec(dllexport) bool PrismaVR_DeliverCharToView(uint64_t viewId, wchar_t ch)
+{
+	if (viewId == 0) return false;
+
+	std::shared_ptr<PrismaUI::Core::PrismaView> view;
+	{
+		std::shared_lock lock(PrismaUI::Core::viewsMutex);
+		auto it = PrismaUI::Core::views.find(viewId);
+		if (it == PrismaUI::Core::views.end() || !it->second) return false;
+		view = it->second;
+	}
+	if (!view->ultralightView) return false;
+
+	// Only printable chars (and tab) — control chars must go through DeliverVKeyToView.
+	if (ch < 0x20 && ch != L'\t') return false;
+
+	// UTF-8 representation for Ultralight's text/unmodified_text fields.
+	wchar_t str[2] = { ch, 0 };
+	char utf8[8] = { 0 };
+	WideCharToMultiByte(CP_UTF8, 0, str, -1, utf8, sizeof(utf8), nullptr, nullptr);
+	ultralight::String ul_text(utf8);
+
+	ultralight::KeyEvent keyDown;
+	keyDown.type = ultralight::KeyEvent::kType_RawKeyDown;
+	keyDown.virtual_key_code = ultralight::KeyCodes::GK_UNKNOWN;
+	keyDown.native_key_code = 0;
+	keyDown.modifiers = 0;
+	keyDown.is_auto_repeat = false;
+	keyDown.text = ul_text;
+	keyDown.unmodified_text = ul_text;
+	keyDown.key_identifier = "";
+
+	ultralight::KeyEvent charEv;
+	charEv.type = ultralight::KeyEvent::kType_Char;
+	charEv.virtual_key_code = ultralight::KeyCodes::GK_UNKNOWN;
+	charEv.native_key_code = 0;
+	charEv.modifiers = 0;
+	charEv.is_auto_repeat = false;
+	charEv.text = ul_text;
+	charEv.unmodified_text = ul_text;
+	charEv.key_identifier = "";
+
+	ultralight::KeyEvent keyUp;
+	keyUp.type = ultralight::KeyEvent::kType_KeyUp;
+	keyUp.virtual_key_code = ultralight::KeyCodes::GK_UNKNOWN;
+	keyUp.native_key_code = 0;
+	keyUp.modifiers = 0;
+	keyUp.is_auto_repeat = false;
+	keyUp.text = ul_text;
+	keyUp.unmodified_text = ul_text;
+	keyUp.key_identifier = "";
+
+	PrismaVR_Bridge::FireKeyEvent(view, keyDown);
+	PrismaVR_Bridge::FireKeyEvent(view, charEv);
+	PrismaVR_Bridge::FireKeyEvent(view, keyUp);
+	return true;
+}
+
+// ============================================================================
+// PrismaVR_DeliverVKeyToView — sister-plugin delivery of control / navigation
+// keys (Backspace, Enter, Tab, Escape, arrows, …). Mirrors PrismaVR_DeliverVKey
+// but takes an explicit viewId and skips the gates.
+// ============================================================================
+extern "C" __declspec(dllexport) bool PrismaVR_DeliverVKeyToView(uint64_t viewId, int vkCode)
+{
+	if (viewId == 0) return false;
+
+	std::shared_ptr<PrismaUI::Core::PrismaView> view;
+	{
+		std::shared_lock lock(PrismaUI::Core::viewsMutex);
+		auto it = PrismaUI::Core::views.find(viewId);
+		if (it == PrismaUI::Core::views.end() || !it->second) return false;
+		view = it->second;
+	}
+	if (!view->ultralightView) return false;
+
+	ultralight::String keyId;
+	ultralight::GetKeyIdentifierFromVirtualKeyCode(vkCode, keyId);
+
+	ultralight::KeyEvent keyDown;
+	keyDown.type = ultralight::KeyEvent::kType_RawKeyDown;
+	keyDown.virtual_key_code = vkCode;
+	keyDown.native_key_code = vkCode;
+	keyDown.modifiers = 0;
+	keyDown.is_auto_repeat = false;
+	keyDown.key_identifier = keyId;
+
+	ultralight::KeyEvent keyUp;
+	keyUp.type = ultralight::KeyEvent::kType_KeyUp;
+	keyUp.virtual_key_code = vkCode;
+	keyUp.native_key_code = vkCode;
+	keyUp.modifiers = 0;
+	keyUp.is_auto_repeat = false;
+	keyUp.key_identifier = keyId;
+
+	PrismaVR_Bridge::FireKeyEvent(view, keyDown);
+	PrismaVR_Bridge::FireKeyEvent(view, keyUp);
+	return true;
+}
+
+// ============================================================================
+// PrismaVR_FireScrollToView — sister-plugin scroll-wheel injection.
+//
+// Mirrors PrismaUI's own laser-scroll path in SyncOverlays (uses
+// kType_ScrollByPixel and PrismaVR_Bridge::FireScrollEvent) but takes an
+// explicit viewId and skips the gates. Use this to drive scrolling from a
+// controller thumbstick on an externally-rendered view.
+// ============================================================================
+extern "C" __declspec(dllexport) bool PrismaVR_FireScrollToView(uint64_t viewId, int deltaX, int deltaY)
+{
+	if (viewId == 0) return false;
+
+	std::shared_ptr<PrismaUI::Core::PrismaView> view;
+	{
+		std::shared_lock lock(PrismaUI::Core::viewsMutex);
+		auto it = PrismaUI::Core::views.find(viewId);
+		if (it == PrismaUI::Core::views.end() || !it->second) return false;
+		view = it->second;
+	}
+	if (!view->ultralightView) return false;
+
+	ultralight::ScrollEvent ev;
+	ev.type = ultralight::ScrollEvent::kType_ScrollByPixel;
+	ev.delta_x = deltaX;
+	ev.delta_y = deltaY;
+	PrismaVR_Bridge::FireScrollEvent(view, ev);
+	return true;
+}

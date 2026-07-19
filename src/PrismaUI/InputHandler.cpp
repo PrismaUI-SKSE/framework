@@ -99,7 +99,7 @@ namespace PrismaUI::InputHandler {
 
             try {
                 ultralight::String script = BuildImeFocusTrackingScript().c_str();
-                viewData->ultralightView->EvaluateScript(script, nullptr, "");
+                viewData->ultralightView->EvaluateScript(script, nullptr);
             } catch (const std::exception& e) {
                 logger::error("Failed to install IME focus tracking for View [{}]: {}", viewId, e.what());
             } catch (...) {
@@ -605,7 +605,7 @@ namespace PrismaUI::InputHandler {
                                         if (viewData && viewData->ultralightView) {
                                             ultralight::String script = "window.getSelection().toString()";
                                             ultralight::String result =
-                                                viewData->ultralightView->EvaluateScript(script, nullptr, "");
+                                                viewData->ultralightView->EvaluateScript(script, nullptr);
                                             std::string selectedText = result.utf8().data();
 
                                             // Check size before copying

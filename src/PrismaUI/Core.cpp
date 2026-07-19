@@ -412,9 +412,32 @@ namespace PrismaUI::Core {
                     // panels become blurry/squeezed in VR. Fixed 1920x1080 gives consistent
                     // crisp rendering regardless of mirror state. Physical quad size is
                     // independent of this (controlled by SetOverlayWidthInMeters in PrismaVR).
+                    //
+                    // Detection uses a direct GetModuleHandleA("SkyrimVR.exe") check rather
+                    // than PrismaVR::IsVRActive(). IsVRActive() only returns true after
+                    // PrismaVR::Initialize() has resolved openvr_api.dll + IVROverlay +
+                    // IVRSystem interfaces — that can RACE with sister-mod view creation:
+                    // if a sister mod's view-create request lands before VR detection
+                    // completes, the override misses and the view is created at screenSize.
+                    // On a 4K monitor with default iSize H/W that's 3840×2160, which then
+                    // gets clipped to the top-left 1920×1080 by PrismaUISteamVR's fixed
+                    // shared texture — the "1/4 size" symptom. GetModuleHandleA is a
+                    // non-failing one-line check that's true the moment SkyrimVR.exe is
+                    // loaded, well before any view-create can happen, so the override
+                    // catches every VR session deterministically.
                     uint32_t viewW = screenSize.width;
                     uint32_t viewH = screenSize.height;
-                    if (PrismaVR::IsVRActive()) {
+                    if (::GetModuleHandleA("SkyrimVR.exe")) {
+                        // VR: fixed 1920×1080 base viewport (instead of the desktop
+                        // mirror size, which is unrelated to the floating panel and
+                        // caused the 4K-quadrant clipping bug). PrismaUISteamVR now
+                        // owns per-slot sizing: it can grow a view's viewport up to
+                        // its shared-texture max (2560×1440) at runtime via
+                        // PrismaVR_ResizeView when the user drags the panel's resize
+                        // handle. So 1920×1080 is just the default; the bridge resizes
+                        // up on demand. (Was briefly forced to 2560×1440 here; reverted
+                        // so the default is the low-bandwidth size and the user opts
+                        // into bigger per slot.)
                         viewW = 1920;
                         viewH = 1080;
                     }

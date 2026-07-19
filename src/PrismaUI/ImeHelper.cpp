@@ -126,7 +126,7 @@ void ImeHelper::DispatchScriptToView(Core::PrismaViewId viewId, const std::strin
         }
 
         try {
-            viewData->ultralightView->EvaluateScript(ultralight::String(script.c_str()), nullptr, "");
+            viewData->ultralightView->EvaluateScript(ultralight::String(script.c_str()), nullptr);
         } catch (const std::exception& e) {
             logger::error("IME: Failed to dispatch state to View [{}]: {}", viewId, e.what());
         } catch (...) {

@@ -134,7 +134,13 @@ namespace PrismaUI::ViewRenderer {
                 "flag",
                 viewData->id);
 
-            ReleaseViewTexture(viewData.get());
+            {
+                // bufferMutex guards every texture create/release so an
+                // external consumer (PrismaVR_GetViewTexture) can safely
+                // AddRef the texture under the same lock.
+                std::lock_guard lock(viewData->bufferMutex);
+                ReleaseViewTexture(viewData.get());
+            }
             Inspector::ReleaseInspectorTexture(viewData.get());
 
             viewData->pendingResourceRelease = false;

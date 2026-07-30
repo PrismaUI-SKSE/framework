@@ -14,7 +14,6 @@
 #include <cmath>
 #include <cstring>
 #include <map>
-#include <set>
 #include <string>
 #include <chrono>
 
@@ -243,13 +242,13 @@ static void* g_system = nullptr;   // IVRSystem_022
 static std::map<uint64_t, VROverlayState> g_vrOverlays;
 static int g_overlayCounter = 0;
 
-// Views that have opted out of PrismaUI's auto-VR-overlay promotion.
-// A sister plugin (e.g. PrismaUI SteamVR) calls PrismaVR_SetViewVREnabled
-// to add itself here when it wants to manage its own OpenVR overlay and
-// just read the texture/bitmap from PrismaUI. This prevents PrismaUI from
-// creating a duplicate overlay (often at the wrong position) and stops
-// SteamVR going into laser-mouse mode on a phantom HMD-locked overlay.
-static std::set<uint64_t> g_vrExcludedViews;
+// NOTE on view opt-out: a sister plugin (e.g. PrismaUI SteamVR) can call
+// PrismaVR_SetViewVREnabled to exclude a view from PrismaUI's auto-VR-overlay
+// promotion when it manages its own OpenVR overlay and just reads the
+// texture/bitmap from PrismaUI. The opt-out lives on the view itself
+// (PrismaView::externalConsumer, an atomic) — read by SyncOverlays on the
+// render thread — so the export never has to touch g_vrOverlays or any other
+// render-thread state from a foreign thread.
 
 // Controller tracking
 struct ControllerInfo {
@@ -722,10 +721,15 @@ static void SyncOverlays()
 		// Sister plugins (e.g. PrismaUI SteamVR) can opt views out of
 		// PrismaUI's auto-VR-overlay promotion. They handle their own
 		// overlay externally and only consume the view's texture/bitmap.
-		if (g_vrExcludedViews.count(id) > 0) {
-			// Mark as "current" so the cleanup pass below doesn't try to
-			// destroy a non-existent overlay, but skip everything else.
-			currentViews[id] = true;
+		// The flag is a per-view atomic set by PrismaVR_SetViewVREnabled
+		// (possibly from another thread); we are the only reader that acts
+		// on it, and we run on the render thread. Deliberately NOT marked
+		// in currentViews: if PrismaUI already created an overlay for this
+		// view before it was claimed, the cleanup pass below destroys it
+		// here on the render thread (full DestroyVROverlay, including
+		// hit-state cleanup). If the view is later un-claimed, this same
+		// loop recreates its overlay on the next frame.
+		if (viewInfo.view->externalConsumer.load()) {
 			continue;
 		}
 
@@ -2168,24 +2172,17 @@ namespace PrismaVR {
 // populated as UTF-8, virtual_key_code = GK_UNKNOWN, key_identifier empty.
 // Ultralight silently drops characters if these fields are not set correctly.
 // ============================================================================
-extern "C" __declspec(dllexport) void PrismaVR_DeliverChar(wchar_t ch)
+// Shared key-event construction, used by BOTH the OC-gated exports below and
+// the per-view *ToView exports further down (they differ only in how the
+// target view is resolved and gated). Keeping one copy prevents the two
+// delivery paths from drifting apart.
+//
+// SendCharTo: the canonical printable-char recipe — RawKeyDown → Char → KeyUp
+// with text/unmodified_text as UTF-8, virtual_key_code = GK_UNKNOWN, empty
+// key_identifier. Ultralight silently drops characters if these fields are
+// not set exactly like this.
+static void SendCharTo(std::shared_ptr<PrismaUI::Core::PrismaView> targetView, wchar_t ch)
 {
-	// Gate: only deliver when VR is active, a Prisma overlay exists, a view
-	// has been laser-targeted, and a text input field has DOM focus. If any
-	// condition is false, silently drop — OC will skip the call in those cases.
-	if (!g_vrActive) return;
-	if (g_vrOverlays.empty()) return;
-	if (g_keyboardTargetViewId == 0) return;
-	if (!g_textInputFocused.load()) return;
-
-	auto targetView = FindKeyboardTargetView();
-	if (!targetView) return;
-
-	// Only accept printable chars + tab. Backspace / Enter / control keys
-	// should come through a different mechanism — OC still posts those via
-	// WM_OC_CHAR with mode=1 for Scaleform-aware handling.
-	if (ch < 0x20 && ch != L'\t') return;
-
 	// Build UTF-8 representation (Ultralight requires UTF-8 in text fields)
 	wchar_t str[2] = { ch, 0 };
 	char utf8[8] = { 0 };
@@ -2229,33 +2226,13 @@ extern "C" __declspec(dllexport) void PrismaVR_DeliverChar(wchar_t ch)
 	PrismaVR_Bridge::FireKeyEvent(targetView, keyUp);
 }
 
-// Direct delivery for control/navigation keys (Backspace, Arrow keys, Delete,
-// Home, End, Enter, Tab, Escape). Same architecture as PrismaVR_DeliverChar
-// but for non-printable keys that need proper Ultralight key_identifier strings
-// for Chromium/Ultralight to recognize them as navigation actions instead of
-// character input.
-//
-// Ultralight's virtual_key_code values (GK_*) match Windows VK_* codes directly
-// (GK_BACK=0x08, GK_LEFT=0x25, etc.) so we pass the VK through unchanged. The
-// key_identifier is populated via Ultralight's own GetKeyIdentifierFromVirtualKeyCode
-// helper — this is the string Chromium's input handler uses to route the event.
-//
-// No Char event is fired (control keys don't produce characters). Just
-// RawKeyDown + KeyUp with proper identification.
-//
-// OC calls this via GetProcAddress for mode==1 (control key) PostCharToGame
-// invocations when OC_PRISMA_TEXT is set. Fall back to legacy WM_OC_CHAR
-// PostMessage path if the export is missing (older OC builds).
-extern "C" __declspec(dllexport) void PrismaVR_DeliverVKey(int vkCode)
+// SendVKeyTo: the canonical control/navigation-key recipe — RawKeyDown → KeyUp
+// (no Char event; control keys don't produce characters), with virtual/native
+// key codes set to the Windows VK and key_identifier populated via Ultralight's
+// GetKeyIdentifierFromVirtualKeyCode so Chromium routes the event as a
+// navigation action.
+static void SendVKeyTo(std::shared_ptr<PrismaUI::Core::PrismaView> targetView, int vkCode)
 {
-	if (!g_vrActive) return;
-	if (g_vrOverlays.empty()) return;
-	if (g_keyboardTargetViewId == 0) return;
-	if (!g_textInputFocused.load()) return;
-
-	auto targetView = FindKeyboardTargetView();
-	if (!targetView) return;
-
 	// Populate the key_identifier string Chromium needs to route navigation keys.
 	// Ultralight ships this helper in KeyEvent.h — it maps VK codes to the
 	// WebKit-legacy identifier strings ("Left", "Right", "U+0008", etc.).
@@ -2283,6 +2260,57 @@ extern "C" __declspec(dllexport) void PrismaVR_DeliverVKey(int vkCode)
 	PrismaVR_Bridge::FireKeyEvent(targetView, keyUp);
 }
 
+extern "C" __declspec(dllexport) void PrismaVR_DeliverChar(wchar_t ch)
+{
+	// Gate: only deliver when VR is active, a Prisma overlay exists, a view
+	// has been laser-targeted, and a text input field has DOM focus. If any
+	// condition is false, silently drop — OC will skip the call in those cases.
+	if (!g_vrActive) return;
+	if (g_vrOverlays.empty()) return;
+	if (g_keyboardTargetViewId == 0) return;
+	if (!g_textInputFocused.load()) return;
+
+	auto targetView = FindKeyboardTargetView();
+	if (!targetView) return;
+
+	// Only accept printable chars + tab. Backspace / Enter / control keys
+	// should come through a different mechanism — OC still posts those via
+	// WM_OC_CHAR with mode=1 for Scaleform-aware handling.
+	if (ch < 0x20 && ch != L'\t') return;
+
+	SendCharTo(targetView, ch);
+}
+
+// Direct delivery for control/navigation keys (Backspace, Arrow keys, Delete,
+// Home, End, Enter, Tab, Escape). Same architecture as PrismaVR_DeliverChar
+// but for non-printable keys that need proper Ultralight key_identifier strings
+// for Chromium/Ultralight to recognize them as navigation actions instead of
+// character input.
+//
+// Ultralight's virtual_key_code values (GK_*) match Windows VK_* codes directly
+// (GK_BACK=0x08, GK_LEFT=0x25, etc.) so we pass the VK through unchanged. The
+// key_identifier is populated via Ultralight's own GetKeyIdentifierFromVirtualKeyCode
+// helper — this is the string Chromium's input handler uses to route the event.
+//
+// No Char event is fired (control keys don't produce characters). Just
+// RawKeyDown + KeyUp with proper identification.
+//
+// OC calls this via GetProcAddress for mode==1 (control key) PostCharToGame
+// invocations when OC_PRISMA_TEXT is set. Fall back to legacy WM_OC_CHAR
+// PostMessage path if the export is missing (older OC builds).
+extern "C" __declspec(dllexport) void PrismaVR_DeliverVKey(int vkCode)
+{
+	if (!g_vrActive) return;
+	if (g_vrOverlays.empty()) return;
+	if (g_keyboardTargetViewId == 0) return;
+	if (!g_textInputFocused.load()) return;
+
+	auto targetView = FindKeyboardTargetView();
+	if (!targetView) return;
+
+	SendVKeyTo(targetView, vkCode);
+}
+
 } // namespace PrismaVR
 
 // -----------------------------------------------------------------------------
@@ -2292,15 +2320,26 @@ extern "C" __declspec(dllexport) void PrismaVR_DeliverVKey(int vkCode)
 // PrismaView fields PrismaUI already maintains. The shared_lock on viewsMutex
 // matches every other read path through PrismaVR_Bridge::GetVisibleViews.
 // -----------------------------------------------------------------------------
-extern "C" __declspec(dllexport) void* PrismaVR_GetViewTexture(uint64_t viewId)
+extern "C" PRISMAVR_API void* PrismaVR_GetViewTexture(uint64_t viewId)
 {
-	std::shared_lock lock(PrismaUI::Core::viewsMutex);
-	auto it = PrismaUI::Core::views.find(viewId);
-	if (it == PrismaUI::Core::views.end() || !it->second) return nullptr;
-	return reinterpret_cast<void*>(PrismaVR_Bridge::GetTexture(it->second.get()));
+	// Pin the view, then AddRef the texture under the view's bufferMutex —
+	// the same lock ViewRenderer holds for every texture create/recreate/
+	// release — so the pointer handed out can never be a just-freed object.
+	// The caller owns one COM reference and MUST Release() it (PrismaVR.h).
+	std::shared_ptr<PrismaUI::Core::PrismaView> view;
+	{
+		std::shared_lock lock(PrismaUI::Core::viewsMutex);
+		auto it = PrismaUI::Core::views.find(viewId);
+		if (it == PrismaUI::Core::views.end() || !it->second) return nullptr;
+		view = it->second;
+	}
+	std::lock_guard texLock(view->bufferMutex);
+	ID3D11Texture2D* tex = PrismaVR_Bridge::GetTexture(view.get());
+	if (tex) tex->AddRef();
+	return reinterpret_cast<void*>(tex);
 }
 
-extern "C" __declspec(dllexport) uint32_t PrismaVR_GetViewTextureWidth(uint64_t viewId)
+extern "C" PRISMAVR_API uint32_t PrismaVR_GetViewTextureWidth(uint64_t viewId)
 {
 	std::shared_lock lock(PrismaUI::Core::viewsMutex);
 	auto it = PrismaUI::Core::views.find(viewId);
@@ -2308,7 +2347,7 @@ extern "C" __declspec(dllexport) uint32_t PrismaVR_GetViewTextureWidth(uint64_t 
 	return PrismaVR_Bridge::GetTextureWidth(it->second.get());
 }
 
-extern "C" __declspec(dllexport) uint32_t PrismaVR_GetViewTextureHeight(uint64_t viewId)
+extern "C" PRISMAVR_API uint32_t PrismaVR_GetViewTextureHeight(uint64_t viewId)
 {
 	std::shared_lock lock(PrismaUI::Core::viewsMutex);
 	auto it = PrismaUI::Core::views.find(viewId);
@@ -2320,7 +2359,7 @@ extern "C" __declspec(dllexport) uint32_t PrismaVR_GetViewTextureHeight(uint64_t
 // thread-safe path for VR overlay submission: no D3D11 device context is
 // touched, no GPU resource is shared across threads, the copy happens under
 // the existing per-view bufferMutex that PrismaUI's own ViewRenderer uses.
-extern "C" __declspec(dllexport) bool PrismaVR_GetViewBitmap(
+extern "C" PRISMAVR_API bool PrismaVR_GetViewBitmap(
     uint64_t  viewId,
     void*     outPixels,
     uint32_t  outBufSize,
@@ -2358,35 +2397,27 @@ extern "C" __declspec(dllexport) bool PrismaVR_GetViewBitmap(
 	return true;
 }
 
-extern "C" __declspec(dllexport) void PrismaVR_SetViewVREnabled(uint64_t viewId, bool enabled)
+extern "C" PRISMAVR_API void PrismaVR_SetViewVREnabled(uint64_t viewId, bool enabled)
 {
-	// Reflect the opt-out on BOTH the legacy file-static set (so SyncOverlays
-	// keeps working without changes) AND on the per-view flag (so ViewRenderer
-	// can see it without depending on PrismaVR.cpp's translation unit).
+	// Thread-safe by construction: this may be called from any thread (a
+	// sister plugin's own worker), so it only flips the view's atomic
+	// externalConsumer flag. All render-thread state (g_vrOverlays, the
+	// OpenVR overlay itself) is reconciled by SyncOverlays on the render
+	// thread within a frame: a newly-claimed view drops out of the sync
+	// set and its pre-existing overlay (if any) is destroyed there via
+	// DestroyVROverlay; an un-claimed view gets its overlay recreated.
 	std::shared_ptr<PrismaUI::Core::PrismaView> view;
 	{
 		std::shared_lock lock(PrismaUI::Core::viewsMutex);
 		auto it = PrismaUI::Core::views.find(viewId);
 		if (it != PrismaUI::Core::views.end() && it->second) view = it->second;
 	}
+	if (!view) return;
 
-	if (enabled) {
-		g_vrExcludedViews.erase(viewId);
-		if (view) view->externalConsumer.store(false);
-	} else {
-		g_vrExcludedViews.insert(viewId);
-		if (view) view->externalConsumer.store(true);
-		// If PrismaUI already created an overlay for this view in a previous
-		// frame, tear it down now so it stops capturing laser-mouse input.
-		auto it = g_vrOverlays.find(viewId);
-		if (it != g_vrOverlays.end() && it->second.handle && g_overlay) {
-			VCallOvl(g_overlay, OVL_SLOT::DestroyOverlay, "DestroyOverlay", it->second.handle);
-			g_vrOverlays.erase(it);
-		}
-	}
+	view->externalConsumer.store(!enabled);
 }
 
-extern "C" __declspec(dllexport) bool PrismaVR_ResizeView(uint64_t viewId, uint32_t width, uint32_t height)
+extern "C" PRISMAVR_API bool PrismaVR_ResizeView(uint64_t viewId, uint32_t width, uint32_t height)
 {
 	if (width == 0 || height == 0) return false;
 
@@ -2411,13 +2442,13 @@ extern "C" __declspec(dllexport) bool PrismaVR_ResizeView(uint64_t viewId, uint3
 
 // ---- View enumeration (Stage 2 universal-adapter foundation) ---------------
 
-extern "C" __declspec(dllexport) uint32_t PrismaVR_GetViewCount()
+extern "C" PRISMAVR_API uint32_t PrismaVR_GetViewCount()
 {
 	std::shared_lock lock(PrismaUI::Core::viewsMutex);
 	return static_cast<uint32_t>(PrismaUI::Core::views.size());
 }
 
-extern "C" __declspec(dllexport) bool PrismaVR_GetViewInfo(
+extern "C" PRISMAVR_API bool PrismaVR_GetViewInfo(
 	uint32_t  index,
 	uint64_t* outId,
 	char*     pathBuffer,
@@ -2448,7 +2479,7 @@ extern "C" __declspec(dllexport) bool PrismaVR_GetViewInfo(
 // rendered a fresh frame since the last successful call. Lets sister plugins
 // avoid resubmitting identical pixels to OpenVR — the OpenVR overlay subsystem
 // enters a sticky error state after ~20 s of sustained 10 Hz 8 MB uploads.
-extern "C" __declspec(dllexport) bool PrismaVR_GetViewBitmapIfNew(
+extern "C" PRISMAVR_API bool PrismaVR_GetViewBitmapIfNew(
     uint64_t  viewId,
     void*     outPixels,
     uint32_t  outBufSize,
@@ -2496,7 +2527,7 @@ extern "C" __declspec(dllexport) bool PrismaVR_GetViewBitmapIfNew(
 // thread the same way InputHandler::ProcessEvents does (see InputHandler.cpp
 // L961: g_ultralightThreadExecutor->submit(...)) so Ultralight sees the event
 // from its own thread and the JS-side handlers fire normally.
-extern "C" __declspec(dllexport) bool PrismaVR_FireMouseEvent(
+extern "C" PRISMAVR_API bool PrismaVR_FireMouseEvent(
 	uint64_t viewId,
 	int      eventType,
 	int      x,
@@ -2572,7 +2603,7 @@ extern "C" __declspec(dllexport) bool PrismaVR_FireMouseEvent(
 // the SteamVR overlay keyboard themselves — they know which view should
 // receive each char.
 // ============================================================================
-extern "C" __declspec(dllexport) bool PrismaVR_DeliverCharToView(uint64_t viewId, wchar_t ch)
+extern "C" PRISMAVR_API bool PrismaVR_DeliverCharToView(uint64_t viewId, wchar_t ch)
 {
 	if (viewId == 0) return false;
 
@@ -2588,45 +2619,8 @@ extern "C" __declspec(dllexport) bool PrismaVR_DeliverCharToView(uint64_t viewId
 	// Only printable chars (and tab) — control chars must go through DeliverVKeyToView.
 	if (ch < 0x20 && ch != L'\t') return false;
 
-	// UTF-8 representation for Ultralight's text/unmodified_text fields.
-	wchar_t str[2] = { ch, 0 };
-	char utf8[8] = { 0 };
-	WideCharToMultiByte(CP_UTF8, 0, str, -1, utf8, sizeof(utf8), nullptr, nullptr);
-	ultralight::String ul_text(utf8);
-
-	ultralight::KeyEvent keyDown;
-	keyDown.type = ultralight::KeyEvent::kType_RawKeyDown;
-	keyDown.virtual_key_code = ultralight::KeyCodes::GK_UNKNOWN;
-	keyDown.native_key_code = 0;
-	keyDown.modifiers = 0;
-	keyDown.is_auto_repeat = false;
-	keyDown.text = ul_text;
-	keyDown.unmodified_text = ul_text;
-	keyDown.key_identifier = "";
-
-	ultralight::KeyEvent charEv;
-	charEv.type = ultralight::KeyEvent::kType_Char;
-	charEv.virtual_key_code = ultralight::KeyCodes::GK_UNKNOWN;
-	charEv.native_key_code = 0;
-	charEv.modifiers = 0;
-	charEv.is_auto_repeat = false;
-	charEv.text = ul_text;
-	charEv.unmodified_text = ul_text;
-	charEv.key_identifier = "";
-
-	ultralight::KeyEvent keyUp;
-	keyUp.type = ultralight::KeyEvent::kType_KeyUp;
-	keyUp.virtual_key_code = ultralight::KeyCodes::GK_UNKNOWN;
-	keyUp.native_key_code = 0;
-	keyUp.modifiers = 0;
-	keyUp.is_auto_repeat = false;
-	keyUp.text = ul_text;
-	keyUp.unmodified_text = ul_text;
-	keyUp.key_identifier = "";
-
-	PrismaVR_Bridge::FireKeyEvent(view, keyDown);
-	PrismaVR_Bridge::FireKeyEvent(view, charEv);
-	PrismaVR_Bridge::FireKeyEvent(view, keyUp);
+	// Same RawKeyDown → Char → KeyUp recipe as PrismaVR_DeliverChar (shared helper).
+	PrismaVR::SendCharTo(view, ch);
 	return true;
 }
 
@@ -2635,7 +2629,7 @@ extern "C" __declspec(dllexport) bool PrismaVR_DeliverCharToView(uint64_t viewId
 // keys (Backspace, Enter, Tab, Escape, arrows, …). Mirrors PrismaVR_DeliverVKey
 // but takes an explicit viewId and skips the gates.
 // ============================================================================
-extern "C" __declspec(dllexport) bool PrismaVR_DeliverVKeyToView(uint64_t viewId, int vkCode)
+extern "C" PRISMAVR_API bool PrismaVR_DeliverVKeyToView(uint64_t viewId, int vkCode)
 {
 	if (viewId == 0) return false;
 
@@ -2648,27 +2642,8 @@ extern "C" __declspec(dllexport) bool PrismaVR_DeliverVKeyToView(uint64_t viewId
 	}
 	if (!view->ultralightView) return false;
 
-	ultralight::String keyId;
-	ultralight::GetKeyIdentifierFromVirtualKeyCode(vkCode, keyId);
-
-	ultralight::KeyEvent keyDown;
-	keyDown.type = ultralight::KeyEvent::kType_RawKeyDown;
-	keyDown.virtual_key_code = vkCode;
-	keyDown.native_key_code = vkCode;
-	keyDown.modifiers = 0;
-	keyDown.is_auto_repeat = false;
-	keyDown.key_identifier = keyId;
-
-	ultralight::KeyEvent keyUp;
-	keyUp.type = ultralight::KeyEvent::kType_KeyUp;
-	keyUp.virtual_key_code = vkCode;
-	keyUp.native_key_code = vkCode;
-	keyUp.modifiers = 0;
-	keyUp.is_auto_repeat = false;
-	keyUp.key_identifier = keyId;
-
-	PrismaVR_Bridge::FireKeyEvent(view, keyDown);
-	PrismaVR_Bridge::FireKeyEvent(view, keyUp);
+	// Same RawKeyDown → KeyUp recipe as PrismaVR_DeliverVKey (shared helper).
+	PrismaVR::SendVKeyTo(view, vkCode);
 	return true;
 }
 
@@ -2680,7 +2655,7 @@ extern "C" __declspec(dllexport) bool PrismaVR_DeliverVKeyToView(uint64_t viewId
 // explicit viewId and skips the gates. Use this to drive scrolling from a
 // controller thumbstick on an externally-rendered view.
 // ============================================================================
-extern "C" __declspec(dllexport) bool PrismaVR_FireScrollToView(uint64_t viewId, int deltaX, int deltaY)
+extern "C" PRISMAVR_API bool PrismaVR_FireScrollToView(uint64_t viewId, int deltaX, int deltaY)
 {
 	if (viewId == 0) return false;
 

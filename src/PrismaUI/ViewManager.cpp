@@ -523,29 +523,39 @@ namespace PrismaUI::ViewManager {
             logger::error("Destroy: Exception waiting for Ultralight cleanup for View [{}]: {}", viewId, e.what());
         }
 
-        bool hasD3DResources = (viewDataToDestroy->texture != nullptr || viewDataToDestroy->textureView != nullptr);
+        {
+            // bufferMutex guards every texture create/release so an external
+            // consumer (PrismaVR_GetViewTexture) can safely AddRef the texture
+            // under the same lock — without it, a consumer thread could read
+            // the texture pointer here between our Release() and the nullptr
+            // store and AddRef a freed object.
+            std::lock_guard textureLock(viewDataToDestroy->bufferMutex);
 
-        if (hasD3DResources) {
-            logger::debug("Destroy: D3D resources present for View [{}], forcing manual cleanup", viewId);
+            bool hasD3DResources =
+                (viewDataToDestroy->texture != nullptr || viewDataToDestroy->textureView != nullptr);
 
-            if (viewDataToDestroy->textureView) {
-                logger::debug("Destroy: Releasing textureView for View [{}]", viewId);
-                viewDataToDestroy->textureView->Release();
-                viewDataToDestroy->textureView = nullptr;
+            if (hasD3DResources) {
+                logger::debug("Destroy: D3D resources present for View [{}], forcing manual cleanup", viewId);
+
+                if (viewDataToDestroy->textureView) {
+                    logger::debug("Destroy: Releasing textureView for View [{}]", viewId);
+                    viewDataToDestroy->textureView->Release();
+                    viewDataToDestroy->textureView = nullptr;
+                }
+
+                if (viewDataToDestroy->texture) {
+                    logger::debug("Destroy: Releasing texture for View [{}]", viewId);
+                    viewDataToDestroy->texture->Release();
+                    viewDataToDestroy->texture = nullptr;
+                }
+
+                viewDataToDestroy->textureWidth = 0;
+                viewDataToDestroy->textureHeight = 0;
+
+                logger::debug("Destroy: D3D resources released for View [{}]", viewId);
+            } else {
+                logger::debug("Destroy: No D3D resources to release for View [{}]", viewId);
             }
-
-            if (viewDataToDestroy->texture) {
-                logger::debug("Destroy: Releasing texture for View [{}]", viewId);
-                viewDataToDestroy->texture->Release();
-                viewDataToDestroy->texture = nullptr;
-            }
-
-            viewDataToDestroy->textureWidth = 0;
-            viewDataToDestroy->textureHeight = 0;
-
-            logger::debug("Destroy: D3D resources released for View [{}]", viewId);
-        } else {
-            logger::debug("Destroy: No D3D resources to release for View [{}]", viewId);
         }
 
         viewDataToDestroy->pendingResourceRelease = false;

@@ -295,7 +295,13 @@ namespace PrismaUI::Core {
                     "D3DPresent: Releasing D3D resources for View [{}] from render "
                     "thread",
                     viewId);
-                ViewRenderer::ReleaseViewTexture(viewData.get());
+                {
+                    // bufferMutex guards every texture create/release so an
+                    // external consumer (PrismaVR_GetViewTexture) can safely
+                    // AddRef the texture under the same lock.
+                    std::lock_guard texLock(viewData->bufferMutex);
+                    ViewRenderer::ReleaseViewTexture(viewData.get());
+                }
                 Inspector::ReleaseInspectorTexture(viewData.get());
                 viewData->pendingResourceRelease = false;
             }
@@ -409,15 +415,17 @@ namespace PrismaUI::Core {
                     // layouts built for the normal Prisma viewport. Physical quad size is
                     // independent of this and is controlled in PrismaVR.
                     //
-                    // Detection is a direct GetModuleHandleA("SkyrimVR.exe") check rather
-                    // than PrismaVR::IsVRActive(): IsVRActive() only turns true after
-                    // PrismaVR::Initialize() has resolved the OpenVR interfaces, which can
-                    // race with an early sister-mod view-create and miss the override.
-                    // The module-handle check is true from process start, so every VR
-                    // session gets the fixed viewport deterministically.
+                    // Detection: IsVRActive() is the established VR state, but it only
+                    // turns true after PrismaVR::Initialize() has resolved the OpenVR
+                    // interfaces — which can race with an early sister-mod view-create
+                    // and miss the override. The cached SkyrimVR.exe module check
+                    // supplements it: true from process start, so every VR session gets
+                    // the fixed viewport deterministically even for the earliest views.
+                    static const bool s_isSkyrimVRProcess =
+                        ::GetModuleHandleA("SkyrimVR.exe") != nullptr;
                     uint32_t viewW = screenSize.width;
                     uint32_t viewH = screenSize.height;
-                    if (::GetModuleHandleA("SkyrimVR.exe")) {
+                    if (PrismaVR::IsVRActive() || s_isSkyrimVRProcess) {
                         // VR: fixed 1920×1080 base viewport. An external consumer
                         // (e.g. the SteamVR wrist-overlay bridge) can grow a view's
                         // viewport at runtime via PrismaVR_ResizeView, so this is

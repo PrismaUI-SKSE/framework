@@ -410,12 +410,14 @@ namespace PrismaUI {
         }
 
         auto cursor = RE::MenuCursor::GetSingleton();
-        if (!cursor) {
+        auto renderManager = RE::BSGraphics::Renderer::GetSingleton();
+        if (!cursor || !renderManager) {
             return RE::BSEventNotifyControl::kContinue;
         }
 
-        const int cursorX = static_cast<int>(cursor->cursorPosX);
-        const int cursorY = static_cast<int>(cursor->cursorPosY);
+        auto currentScreenSize = renderManager->GetScreenSize();
+        const int cursorX = std::min(static_cast<int>(cursor->cursorPosX), static_cast<int>(currentScreenSize.width - 1));
+        const int cursorY = std::min(static_cast<int>(cursor->cursorPosY), static_cast<int>(currentScreenSize.height - 1));
 
         for (auto event = *a_event; event; event = event->next) {
             switch (event->GetEventType()) {

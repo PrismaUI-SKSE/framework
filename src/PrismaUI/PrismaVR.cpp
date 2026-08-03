@@ -284,15 +284,22 @@ struct HitInfo {
 static HitInfo g_hitInfo[2]; // 0=left, 1=right
 
 // Laser beam overlays (beams from controllers, dots rendered via CSS on the panel)
+// Visuals match OCU's menu laser (VRMenuLaser/BeamTexture): tapered tip, soft
+// parabolic edges, hot core, warm white idle and electric blue while clicking.
 static openvr::VROverlayHandle_t g_laserBeamHandle[2] = {0, 0};
-static ID3D11Texture2D* g_laserBeamTex = nullptr;
+static ID3D11Texture2D* g_laserBeamTex[2] = { nullptr, nullptr }; // [0]=idle, [1]=click
+static bool g_laserClickApplied[2] = { false, false }; // which texture each hand shows
 static bool g_lasersCreated = false;
 static constexpr float LASER_LENGTH = 0.3048f; // 1 foot
 static constexpr float LASER_WIDTH = 0.003f;   // 3mm beam width
 static constexpr float LASER_SURFACE_GAP = 0.02f;  // stop beam this far before panel (meters)
 static constexpr float MIN_BEAM_LENGTH   = 0.01f;  // minimum visible beam length (meters)
 static constexpr uint32_t LASER_SORT_ORDER   = 100;  // overlay render priority (on top of panels)
-static constexpr uint32_t BEAM_TEXTURE_HEIGHT = 100;  // beam texture height in pixels
+// Overlay quad height = widthMeters * (texH / texW), so the texture aspect must
+// equal LASER_LENGTH / LASER_WIDTH for the existing beamWidth scaling to keep
+// the quad exactly beamLen long.
+static constexpr int BEAM_TEX_W = 32;
+static constexpr int BEAM_TEX_H = (int)(BEAM_TEX_W * (LASER_LENGTH / LASER_WIDTH) + 0.5f);
 
 // Overlay positioning defaults
 static constexpr float DEFAULT_OVERLAY_DISTANCE = 0.85f;  // meters in front of head
@@ -329,6 +336,7 @@ static uint64_t g_lastHitViewId[2] = {0, 0};        // per-controller last-hit v
 static int g_lastCursorX[2] = {-1, -1};              // last injected cursor X (skip if unchanged)
 static int g_lastCursorY[2] = {-1, -1};              // last injected cursor Y (skip if unchanged)
 static bool g_cursorDotCreated[2] = {false, false};   // track if dot element exists in DOM
+static bool g_lastDotClicked[2] = {false, false};     // dot showing click (blue) styling
 
 // Control masking via Skyrim's ControlMap (global toggles)
 static bool g_movementMasked = false;
@@ -413,6 +421,40 @@ static bool DetectVR()
 // Section 5b: Laser beam overlay creation
 // ============================================================================
 
+// Tapered beam pixels, ported from OCU's BeamTexture.h so both lasers render
+// identically. V axis runs along the beam: row 0 = tip (at the panel), last
+// row = controller end. Constant-width shaft with soft parabolic edges and a
+// subtle hot core; the last 30% toward the tip narrows and fades to a point.
+// Colours are PREMULTIPLIED: OCU composites overlay quads premultiplied (no
+// UNPREMULTIPLIED flag on its layers), matching its own beam pipeline.
+static void FillTaperedBeam(std::vector<uint32_t>& px, uint8_t r, uint8_t g, uint8_t b, uint8_t baseAlpha)
+{
+	px.assign((size_t)BEAM_TEX_W * BEAM_TEX_H, 0);
+	constexpr float kTipZone = 0.30f; // fraction of the beam that tapers to the point
+	for (int y = 0; y < BEAM_TEX_H; y++) {
+		float t = (float)y / (BEAM_TEX_H - 1); // 0 at tip -> 1 at controller
+		float tip = (t < kTipZone) ? (t / kTipZone) : 1.0f;
+		float half = (0.04f + 0.96f * tip) * (BEAM_TEX_W * 0.5f - 1.0f);
+		float lenA = tip * tip; // eased fade, 0 exactly at the tip
+		for (int x = 0; x < BEAM_TEX_W; x++) {
+			float d = fabsf(x - (BEAM_TEX_W - 1) * 0.5f) / half; // 0 = core, 1 = edge
+			if (d >= 1.0f)
+				continue;
+			float edge = 1.0f - d * d; // parabolic soft edge
+			float a = (baseAlpha / 255.0f) * lenA * edge;
+			float core = (d < 0.35f) ? (1.0f - d / 0.35f) : 0.0f;
+			float cr = (r + (255 - r) * core * 0.8f) / 255.0f;
+			float cg = (g + (255 - g) * core * 0.8f) / 255.0f;
+			float cb = (b + (255 - b) * core * 0.8f) / 255.0f;
+			uint8_t pr = (uint8_t)(cr * a * 255.0f + 0.5f);
+			uint8_t pg = (uint8_t)(cg * a * 255.0f + 0.5f);
+			uint8_t pb = (uint8_t)(cb * a * 255.0f + 0.5f);
+			uint8_t pa = (uint8_t)(a * 255.0f + 0.5f);
+			px[(size_t)y * BEAM_TEX_W + x] = pr | (pg << 8) | (pb << 16) | ((uint32_t)pa << 24);
+		}
+	}
+}
+
 static void CreateLaserOverlays()
 {
 	if (g_lasersCreated) return;
@@ -420,29 +462,35 @@ static void CreateLaserOverlays()
 	ID3D11Device* dev = PrismaVR_Bridge::GetD3DDevice();
 	if (!dev || !g_overlay) return;
 
-	// Beam texture: 1 pixel wide x BEAM_TEXTURE_HEIGHT pixels tall
-	uint32_t beamPixels[BEAM_TEXTURE_HEIGHT];
-	uint32_t warmWhite = 255 | (240 << 8) | (220 << 16) | (180 << 24);
-	for (uint32_t i = 0; i < BEAM_TEXTURE_HEIGHT; i++) beamPixels[i] = warmWhite;
+	// Both colour variants up front so a click never stalls on texture upload.
+	// Matches OCU: warm white idle, electric blue while the trigger is held.
+	std::vector<uint32_t> beamPixels;
+	for (int variant = 0; variant < 2; variant++) {
+		if (variant)
+			FillTaperedBeam(beamPixels, 55, 145, 255, 220); // electric blue click
+		else
+			FillTaperedBeam(beamPixels, 255, 240, 220, 200); // warm white idle
 
-	D3D11_TEXTURE2D_DESC td = {};
-	td.Width = 1;
-	td.Height = BEAM_TEXTURE_HEIGHT;
-	td.MipLevels = 1;
-	td.ArraySize = 1;
-	td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	td.SampleDesc = { 1, 0 };
-	td.Usage = D3D11_USAGE_DEFAULT;
-	td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		D3D11_TEXTURE2D_DESC td = {};
+		td.Width = BEAM_TEX_W;
+		td.Height = BEAM_TEX_H;
+		td.MipLevels = 1;
+		td.ArraySize = 1;
+		td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		td.SampleDesc = { 1, 0 };
+		td.Usage = D3D11_USAGE_DEFAULT;
+		td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
 
-	D3D11_SUBRESOURCE_DATA initData = {};
-	initData.pSysMem = beamPixels;
-	initData.SysMemPitch = sizeof(uint32_t) * 1;
+		D3D11_SUBRESOURCE_DATA initData = {};
+		initData.pSysMem = beamPixels.data();
+		initData.SysMemPitch = sizeof(uint32_t) * BEAM_TEX_W;
 
-	HRESULT hr = dev->CreateTexture2D(&td, &initData, &g_laserBeamTex);
-	if (FAILED(hr)) {
-		logger::warn("PrismaVR: Failed to create laser beam texture");
-		return;
+		HRESULT hr = dev->CreateTexture2D(&td, &initData, &g_laserBeamTex[variant]);
+		if (FAILED(hr)) {
+			logger::warn("PrismaVR: Failed to create laser beam texture {}", variant);
+			if (g_laserBeamTex[0]) { g_laserBeamTex[0]->Release(); g_laserBeamTex[0] = nullptr; }
+			return;
+		}
 	}
 
 	const char* beamKeys[] = { "prisma_laser_beam_L", "prisma_laser_beam_R" };
@@ -458,10 +506,11 @@ static void CreateLaserOverlays()
 		}
 		VCallOvl(g_overlay, OVL_SLOT::SetOverlayWidthInMeters, "SetOverlayWidthInMeters(laser)",
 			g_laserBeamHandle[i], LASER_WIDTH);
-		openvr::Texture_t bt; bt.handle = g_laserBeamTex;
+		openvr::Texture_t bt; bt.handle = g_laserBeamTex[0];
 		bt.eType = openvr::TextureType_DirectX; bt.eColorSpace = openvr::ColorSpace_Auto;
 		VCallOvl(g_overlay, OVL_SLOT::SetOverlayTexture, "SetOverlayTexture(laser)",
 			g_laserBeamHandle[i], &bt);
+		g_laserClickApplied[i] = false;
 		// Render laser ON TOP of panel overlays (default sort order = 0)
 		VCallOvl(g_overlay, OVL_SLOT::SetOverlaySortOrder, "SetOverlaySortOrder(laser)",
 			g_laserBeamHandle[i], LASER_SORT_ORDER);
@@ -1059,6 +1108,7 @@ static void ProcessInput()
 					"document.body.appendChild(d);"
 					"})()");
 				g_cursorDotCreated[hand] = true;
+				g_lastDotClicked[hand] = false; // fresh dot styles warm white
 			}
 
 			// Move this hand's dot to hit coordinates — only if position actually changed
@@ -1070,6 +1120,20 @@ static void ProcessInput()
 					"c.style.display='block'}");
 				g_lastCursorX[hand] = pixelX;
 				g_lastCursorY[hand] = pixelY;
+			}
+
+			// OCU-style click feedback on the dot: electric blue while the
+			// trigger is held, warm white otherwise. Matches the beam swap.
+			if (ctrl.triggerPressed != g_lastDotClicked[hand]) {
+				const char* dotStyle = ctrl.triggerPressed
+					? "c.style.background='rgba(55,145,255,0.95)';"
+					  "c.style.boxShadow='0 0 8px 3px rgba(55,145,255,0.6),0 0 16px 6px rgba(90,170,255,0.35)';"
+					: "c.style.background='rgba(255,250,240,0.95)';"
+					  "c.style.boxShadow='0 0 8px 3px rgba(255,250,240,0.6),0 0 16px 6px rgba(255,200,150,0.3)';";
+				PrismaVR_Bridge::RunJavaScript(bestViewPtr,
+					"var c=document.getElementById('" + dotId + "');"
+					"if(c){" + std::string(dotStyle) + "}");
+				g_lastDotClicked[hand] = ctrl.triggerPressed;
 			}
 
 			// If we switched views, hide this hand's dot on the old one
@@ -1495,6 +1559,18 @@ static void UpdateLasers()
 			g_laserBeamHandle[hand], beamWidth);
 		VCallOvl(g_overlay, OVL_SLOT::SetOverlayTransformAbsolute, "SetOverlayTransformAbsolute(beam)",
 			g_laserBeamHandle[hand], (int)openvr::TrackingUniverseStanding, &bt);
+
+		// OCU-style click feedback: electric blue while the trigger is held.
+		// Both textures exist up front, so this is a cheap handle swap.
+		bool clicked = ctrl.triggerPressed;
+		if (clicked != g_laserClickApplied[hand] && g_laserBeamTex[clicked ? 1 : 0]) {
+			openvr::Texture_t ct; ct.handle = g_laserBeamTex[clicked ? 1 : 0];
+			ct.eType = openvr::TextureType_DirectX; ct.eColorSpace = openvr::ColorSpace_Auto;
+			VCallOvl(g_overlay, OVL_SLOT::SetOverlayTexture, "SetOverlayTexture(beam-click)",
+				g_laserBeamHandle[hand], &ct);
+			g_laserClickApplied[hand] = clicked;
+		}
+
 		VCallOvl(g_overlay, OVL_SLOT::ShowOverlay, "ShowOverlay(beam)",
 			g_laserBeamHandle[hand]);
 
@@ -2091,7 +2167,9 @@ namespace PrismaVR {
 				g_laserBeamHandle[i] = 0;
 			}
 		}
-		if (g_laserBeamTex) { g_laserBeamTex->Release(); g_laserBeamTex = nullptr; }
+		for (int i = 0; i < 2; i++) {
+			if (g_laserBeamTex[i]) { g_laserBeamTex[i]->Release(); g_laserBeamTex[i] = nullptr; }
+		}
 		g_lasersCreated = false;
 		g_lastHitViewId[0] = g_lastHitViewId[1] = 0;
 

@@ -87,6 +87,19 @@ ViewManager::Create("ui/index.html");  // → file:///views/ui/index.html
 ViewManager::Create("https://...");    // passed through as-is
 ```
 
+## VR laser visuals (2026-08-03)
+
+The beam matches OCU's menu laser (`OpenOVR/Misc/Keyboard/BeamTexture.h` in the
+OCU repo): tapered tip (last 30% narrows/fades to a point), parabolic soft
+edges, hot core, PREMULTIPLIED alpha (OCU composites overlay quads
+premultiplied — no UNPREMULTIPLIED flag on its layers). Two textures are
+created up front (warm white idle `255,240,220,200`, electric blue click
+`55,145,255,220`) and swapped on trigger state in `UpdateLasers()`; the CSS
+cursor dot swaps to matching blue in `ProcessInput()`. Gotcha: overlay quad
+height = widthMeters × (texH/texW), so `BEAM_TEX_H` is derived from
+`LASER_LENGTH / LASER_WIDTH` — changing beam length/width constants without
+keeping that ratio stretches the taper.
+
 ## Other gotchas
 
 - **Pixel format:** Ultralight renders **BGRA** → D3D texture is `DXGI_FORMAT_B8G8R8A8_UNORM`. Do not swap to RGBA.

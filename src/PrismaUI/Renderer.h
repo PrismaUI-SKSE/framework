@@ -32,7 +32,6 @@ namespace PrismaUI {
         RE::BSGraphics::ScreenSize _screenSize{};
         std::unique_ptr<DirectX::SpriteBatch> _spriteBatch;
         std::unique_ptr<DirectX::CommonStates> _commonStates;
-        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> _cursorTexture;
         bool _isInitialized = false;
     };
 }

@@ -62,9 +62,41 @@
         code {
             color: #90ee90;
         }
+
+        .corner-marker {
+            position: fixed;
+            width: 100px;
+            height: 100px;
+            background: #00c000;
+            pointer-events: none;
+        }
+
+        .corner-marker.top-left {
+            left: 0;
+            top: 0;
+        }
+
+        .corner-marker.top-right {
+            right: 0;
+            top: 0;
+        }
+
+        .corner-marker.bottom-left {
+            left: 0;
+            bottom: 0;
+        }
+
+        .corner-marker.bottom-right {
+            right: 0;
+            bottom: 0;
+        }
     </style>
 </head>
 <body>
+    <div class="corner-marker top-left"></div>
+    <div class="corner-marker top-right"></div>
+    <div class="corner-marker bottom-left"></div>
+    <div class="corner-marker bottom-right"></div>
     <main id="panel">
         <h1>PrismaUI API Test</h1>
         <p>Status: <code id="status">loading</code></p>

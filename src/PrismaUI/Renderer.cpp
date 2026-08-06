@@ -9,6 +9,7 @@
 #include "Utils/D3DStateGuard.h"
 #include "Utils/DllLoader.h"
 #include "ViewOperationQueue.h"
+#include "Menus/PrismaUIMenu/PrismaUIMenu.h"
 
 namespace PrismaUI {
     Renderer& Renderer::GetSingleton() {
@@ -33,18 +34,6 @@ namespace PrismaUI {
             return false;
         }
 
-        auto cursorPath = Utils::GetBasePath() / "misc" / "cursor.png";
-        HRESULT hr =
-            DirectX::CreateWICTextureFromFile(_d3dDevice, cursorPath.wstring().c_str(), nullptr, &_cursorTexture);
-        if (SUCCEEDED(hr)) {
-            logger::info("Cursor texture loaded successfully.");
-        } else {
-            logger::error("Failed to load cursor texture from '{}'. HRESULT: 0x{:08X}", cursorPath.string(),
-                          static_cast<unsigned int>(hr));
-            _cursorTexture.Reset();
-            return false;
-        }
-
         return true;
     }
 
@@ -61,22 +50,6 @@ namespace PrismaUI {
         const RECT sourceRect = {0, 0, static_cast<long>(overlayInfo.Width), static_cast<long>(overlayInfo.Height)};
         spriteBatch->Draw(overlayInfo.Srv, position, &sourceRect, DirectX::Colors::White, 0.f, Vector2::Zero, 1.0f,
                           DirectX::SpriteEffects_None, 0.f);
-    }
-
-    void RenderCursor(const std::unique_ptr<DirectX::SpriteBatch>& spriteBatch,
-                      const Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& cursorTexture,
-                      const InputHandler& inputHandler) {
-        if (!inputHandler.IsAnyInputCaptureActive()) {
-            return;
-        }
-
-        auto cursor = RE::MenuCursor::GetSingleton();
-        if (!cursor) {
-            return;
-        }
-
-        const Vector2 position(cursor->cursorPosX, cursor->cursorPosY);
-        spriteBatch->Draw(cursorTexture.Get(), position);
     }
 
     void Renderer::BeginRender() {
@@ -110,9 +83,22 @@ namespace PrismaUI {
         _spriteBatch->Begin(DirectX::SpriteSortMode_Deferred, _commonStates->AlphaBlend());
 
         RenderCefOverlay(_spriteBatch, *_cefRuntime);
-        RenderCursor(_spriteBatch, _cursorTexture, *_inputHandler);
 
         _spriteBatch->End();
+    }
+
+    static void ShowPrismaUIMenu() {
+        SKSE::GetTaskInterface()->AddUITask([] {
+            auto ui = RE::UI::GetSingleton();
+            auto msgQ = RE::UIMessageQueue::GetSingleton();
+
+            if (ui && msgQ) {
+                msgQ->AddMessage(PrismaUIMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kShow, nullptr);
+            }
+            else {
+                ShowPrismaUIMenu();
+            }
+        });
     }
 
     bool Renderer::Initialize(Cef::CefRuntime* cefRuntime, InputHandler* inputHandler, HWND hwnd,
@@ -123,7 +109,9 @@ namespace PrismaUI {
         }
 
         auto ui = RE::UI::GetSingleton();
+        ui->Register(PrismaUIMenu::MENU_NAME, PrismaUIMenu::Creator);
         ui->Register(FocusMenu::MENU_NAME, FocusMenu::Creator);
+        ShowPrismaUIMenu();
 
         _cefRuntime = cefRuntime;
         _inputHandler = inputHandler;
@@ -140,7 +128,6 @@ namespace PrismaUI {
 
         logger::info("Shutdown...");
 
-        _cursorTexture.Reset();
         _spriteBatch.reset();
         _commonStates.reset();
 

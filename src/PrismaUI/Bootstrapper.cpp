@@ -6,7 +6,6 @@
 #include "Hooks/HookInstaller.h"
 #include "Hooks/HooksLib.h"
 #include "InputHandler.h"
-#include "Menus/CursorMenu/CursorMenu.h"
 #include "Renderer.h"
 #include "ViewManager.h"
 
@@ -74,18 +73,12 @@ namespace PrismaUI::Bootstrapper {
             return std::unexpected("Renderer initialization failed");
         }
 
-        CursorMenuEx::InstallHook();
         Hooks::HookInstaller<Hooks::RendererBegin>::Install(
             [](const auto& originalFunc, RE::BSGraphics::Renderer* renderer, uint32_t a) {
                 InputHandler::GetSingleton().ProcessEvents();
                 Renderer::GetSingleton().BeginRender();
                 originalFunc(renderer, a);
             });
-
-        Hooks::HookInstaller<Hooks::D3DPresentHook>::Install([](const auto& originalFunc, uint32_t a) {
-            Renderer::GetSingleton().EndRender();
-            originalFunc(a);
-        });
 
         logger::info("PrismaUI successfully initialized");
 

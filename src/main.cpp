@@ -4,7 +4,6 @@
 #include "Globals.h"
 #include "Hooks/HookInstaller.h"
 #include "Hooks/HooksLib.h"
-#include "Menus/CursorMenu/CursorMenu.h"
 #include "PrismaUI/Bootstrapper.h"
 #include "PrismaUI/Renderer.h"
 #include "PrismaUI_API.h"

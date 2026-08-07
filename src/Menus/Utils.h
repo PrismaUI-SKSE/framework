@@ -5,9 +5,10 @@
 #include "SKSE/API.h"
 
 namespace PrismaUI::Menus {
-    inline RE::GPtr<RE::IMenu> GetMenu(std::string_view menuName) {
+    template <typename T>
+    RE::GPtr<T> GetMenu() {
         if (auto ui = RE::UI::GetSingleton()) {
-            return ui->GetMenu(menuName);
+            return ui->GetMenu<T>();
         }
 
         return nullptr;

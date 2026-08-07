@@ -7,7 +7,7 @@
 #include "SKSE/Impl/PCH.h"
 
 namespace PrismaUI::Menus {
-    class PrismaUIMenu : RE::IMenu {
+    class PrismaUIMenu : public RE::IMenu {
     public:
         static constexpr const char* MENU_NAME = "PrismaUI_Menu";
 
@@ -23,7 +23,6 @@ namespace PrismaUI::Menus {
         static SKSE::stl::owner<RE::IMenu*> Creator();
 
     private:
-        // True while a Prisma view holds focus, i.e. while PrismaUI wants the vanilla cursor on screen.
-        static inline std::atomic_bool _cursorRequested{false};
+        std::atomic_bool _isFocused{false};
     };
 }

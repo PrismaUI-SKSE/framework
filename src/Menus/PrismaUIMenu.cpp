@@ -61,7 +61,7 @@ namespace PrismaUI::Menus {
         // Vanilla hides "Cursor Menu" when a cursor-using menu closes (the console, for example), which
         // would drop the cursor while a Prisma view still holds focus. Re-request it; never force it
         // hidden here - releasing is done once, on unfocus.
-        if (_cursorRequested.load(std::memory_order_relaxed) && !IsMenuOpen(CURSOR_MENU_NAME)) {
+        if (_isFocused.load(std::memory_order_relaxed) && !IsMenuOpen(CURSOR_MENU_NAME)) {
             SendMenuMessage(CURSOR_MENU_NAME, RE::UI_MESSAGE_TYPE::kShow);
         }
     }
@@ -69,26 +69,22 @@ namespace PrismaUI::Menus {
     void PrismaUIMenu::PostDisplay() { Renderer::GetSingleton().EndRender(); }
 
     void PrismaUIMenu::Focus() {
-        _cursorRequested.store(true, std::memory_order_relaxed);
-
-        // Focus is applied from the present thread; menu state and UI messages belong to the UI thread.
         SKSE::GetTaskInterface()->AddUITask([] {
-            auto menu = GetMenu(MENU_NAME);
+            auto menu = GetMenu<PrismaUIMenu>();
             if (!menu) {
                 return;
             }
 
             menu->menuFlags.set(RE::UI_MENU_FLAGS::kModal, RE::UI_MENU_FLAGS::kUsesCursor);
             menu->inputContext = RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode;
+            menu->_isFocused.store(true, std::memory_order_relaxed);
             RequestVanillaCursor();
         });
     }
 
     void PrismaUIMenu::Unfocus() {
-        _cursorRequested.store(false, std::memory_order_relaxed);
-
         SKSE::GetTaskInterface()->AddUITask([] {
-            auto menu = GetMenu(MENU_NAME);
+            auto menu = GetMenu<PrismaUIMenu>();
             if (!menu) {
                 return;
             }
@@ -96,6 +92,7 @@ namespace PrismaUI::Menus {
             // Clear kUsesCursor first so this menu is not counted as a cursor user by the release check.
             menu->menuFlags.reset(RE::UI_MENU_FLAGS::kModal, RE::UI_MENU_FLAGS::kUsesCursor);
             menu->inputContext = RE::UserEvents::INPUT_CONTEXT_ID::kNone;
+            menu->_isFocused.store(false, std::memory_order_relaxed);
             ReleaseVanillaCursor();
         });
     }

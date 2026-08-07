@@ -26,13 +26,8 @@ RE::UI_MESSAGE_RESULTS PrismaUIMenu::ProcessMessage(RE::UIMessage& a_message) {
     return RE::UI_MESSAGE_RESULTS::kPassOn;
 }
 
-void PrismaUIMenu::AdvanceMovie(float, std::uint32_t) {
-}
+void PrismaUIMenu::AdvanceMovie(float, std::uint32_t) {}
 
-void PrismaUIMenu::PostDisplay() {
-    PrismaUI::Renderer::GetSingleton().EndRender();
-}
+void PrismaUIMenu::PostDisplay() { PrismaUI::Renderer::GetSingleton().EndRender(); }
 
-SKSE::stl::owner<RE::IMenu*> PrismaUIMenu::Creator() {
-    return new PrismaUIMenu();
-}
+SKSE::stl::owner<RE::IMenu*> PrismaUIMenu::Creator() { return new PrismaUIMenu(); }

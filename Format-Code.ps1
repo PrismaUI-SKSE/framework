@@ -63,18 +63,20 @@ foreach ($sourceFile in $sourceFiles) {
     $relativePath = Get-RelativePath -BasePath $repoRoot -Path $sourceFile.FullName
 
     Write-Host $relativePath
-    & $clangFormatCommand.Source --style=file -i $sourceFile.FullName
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "clang-format failed for $relativePath"
-        exit 1
-    }
-
     if ($Check) {
         & $clangFormatCommand.Source --style=file --dry-run --Werror $sourceFile.FullName
         if ($LASTEXITCODE -ne 0) {
             Write-Host "Needs formatting: $relativePath"
             $failed = $true
         }
+
+        continue
+    }
+
+    & $clangFormatCommand.Source --style=file -i $sourceFile.FullName
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "clang-format failed for $relativePath"
+        exit 1
     }
 }
 

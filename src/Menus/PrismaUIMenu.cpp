@@ -13,6 +13,8 @@ namespace PrismaUI::Menus {
         // its cursor usage changes on focus instead of on open/close and it has to post those messages
         // itself.
         constexpr std::string_view CURSOR_MENU_NAME = RE::CursorMenu::MENU_NAME;
+        constexpr RE::UI_MESSAGE_TYPE MENU_FOCUS_EVENT = static_cast<RE::UI_MESSAGE_TYPE>(14);
+        constexpr RE::UI_MESSAGE_TYPE MENU_UNFOCUS_EVENT = static_cast<RE::UI_MESSAGE_TYPE>(15);
 
         bool AnyMenuUsesCursor() {
             auto ui = RE::UI::GetSingleton();
@@ -46,6 +48,10 @@ namespace PrismaUI::Menus {
     }
 
     RE::UI_MESSAGE_RESULTS PrismaUIMenu::ProcessMessage(RE::UIMessage& a_message) {
+        if (a_message.type == RE::UI_MESSAGE_TYPE::kScaleformEvent && _isFocused) {
+            return RE::UI_MESSAGE_RESULTS::kHandled;
+        }
+
         if (a_message.menu != MENU_NAME) {
             return RE::UI_MESSAGE_RESULTS::kPassOn;
         }
@@ -54,14 +60,28 @@ namespace PrismaUI::Menus {
             return RE::UI_MESSAGE_RESULTS::kIgnore;
         }
 
-        return RE::UI_MESSAGE_RESULTS::kPassOn;
+        if (a_message.type == MENU_FOCUS_EVENT) {
+            menuFlags.set(RE::UI_MENU_FLAGS::kModal, RE::UI_MENU_FLAGS::kUsesCursor);
+            inputContext = RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode;
+            _isFocused = true;
+            RequestVanillaCursor();
+        }
+        else if (a_message.type == MENU_UNFOCUS_EVENT) {
+            // Clear kUsesCursor first so this menu is not counted as a cursor user by the release check.
+            menuFlags.reset(RE::UI_MENU_FLAGS::kModal, RE::UI_MENU_FLAGS::kUsesCursor);
+            inputContext = RE::UserEvents::INPUT_CONTEXT_ID::kNone;
+            _isFocused = false;
+            ReleaseVanillaCursor();
+        }
+
+        return RE::UI_MESSAGE_RESULTS::kHandled;
     }
 
     void PrismaUIMenu::AdvanceMovie(float, std::uint32_t) {
         // Vanilla hides "Cursor Menu" when a cursor-using menu closes (the console, for example), which
         // would drop the cursor while a Prisma view still holds focus. Re-request it; never force it
         // hidden here - releasing is done once, on unfocus.
-        if (_isFocused.load(std::memory_order_relaxed) && !IsMenuOpen(CURSOR_MENU_NAME)) {
+        if (_isFocused && !IsMenuOpen(CURSOR_MENU_NAME)) {
             SendMenuMessage(CURSOR_MENU_NAME, RE::UI_MESSAGE_TYPE::kShow);
         }
     }
@@ -69,32 +89,11 @@ namespace PrismaUI::Menus {
     void PrismaUIMenu::PostDisplay() { Renderer::GetSingleton().EndRender(); }
 
     void PrismaUIMenu::Focus() {
-        SKSE::GetTaskInterface()->AddUITask([] {
-            auto menu = GetMenu<PrismaUIMenu>();
-            if (!menu) {
-                return;
-            }
-
-            menu->menuFlags.set(RE::UI_MENU_FLAGS::kModal, RE::UI_MENU_FLAGS::kUsesCursor);
-            menu->inputContext = RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode;
-            menu->_isFocused.store(true, std::memory_order_relaxed);
-            RequestVanillaCursor();
-        });
+        PostMenuMessage(MENU_NAME, MENU_FOCUS_EVENT);
     }
 
     void PrismaUIMenu::Unfocus() {
-        SKSE::GetTaskInterface()->AddUITask([] {
-            auto menu = GetMenu<PrismaUIMenu>();
-            if (!menu) {
-                return;
-            }
-
-            // Clear kUsesCursor first so this menu is not counted as a cursor user by the release check.
-            menu->menuFlags.reset(RE::UI_MENU_FLAGS::kModal, RE::UI_MENU_FLAGS::kUsesCursor);
-            menu->inputContext = RE::UserEvents::INPUT_CONTEXT_ID::kNone;
-            menu->_isFocused.store(false, std::memory_order_relaxed);
-            ReleaseVanillaCursor();
-        });
+        PostMenuMessage(MENU_NAME, MENU_UNFOCUS_EVENT);
     }
 
     SKSE::stl::owner<RE::IMenu*> PrismaUIMenu::Creator() { return new PrismaUIMenu(); }

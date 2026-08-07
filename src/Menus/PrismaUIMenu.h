@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <cstdint>
 
 #include "RE/I/IMenu.h"
@@ -23,6 +22,6 @@ namespace PrismaUI::Menus {
         static SKSE::stl::owner<RE::IMenu*> Creator();
 
     private:
-        std::atomic_bool _isFocused{false};
+        bool _isFocused{false};
     };
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 
 #include "RE/I/IMenu.h"
@@ -20,5 +21,9 @@ namespace PrismaUI::Menus {
         static void Unfocus();
 
         static SKSE::stl::owner<RE::IMenu*> Creator();
+
+    private:
+        // True while a Prisma view holds focus, i.e. while PrismaUI wants the vanilla cursor on screen.
+        static inline std::atomic_bool _cursorRequested{false};
     };
 }

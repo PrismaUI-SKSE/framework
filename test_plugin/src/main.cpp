@@ -37,6 +37,8 @@ namespace {
     std::atomic_bool g_domInvokeSeen = false;
     std::atomic_bool g_listenerSeen = false;
     std::atomic_bool g_consoleSeen = false;
+    std::atomic_bool g_cursorMenuSeen = false;
+    std::atomic_bool g_cursorCheckFinished = false;
     std::atomic_bool g_smokePassLogged = false;
     std::atomic_bool g_autoExitScheduled = false;
 
@@ -147,7 +149,8 @@ namespace {
 
     void CheckSmokeCompletion() {
         if (!g_domReadySeen.load(std::memory_order_acquire) || !g_domInvokeSeen.load(std::memory_order_acquire) ||
-            !g_listenerSeen.load(std::memory_order_acquire) || !g_consoleSeen.load(std::memory_order_acquire)) {
+            !g_listenerSeen.load(std::memory_order_acquire) || !g_consoleSeen.load(std::memory_order_acquire) ||
+            !g_cursorCheckFinished.load(std::memory_order_acquire)) {
             return;
         }
 
@@ -156,11 +159,108 @@ namespace {
             return;
         }
 
-        logger::info("{}: domReady=true, domInvoke=true, listener=true, console=true", kSmokePassMarker);
+        if (g_cursorMenuSeen.load(std::memory_order_acquire)) {
+            logger::info("{}: domReady=true, domInvoke=true, listener=true, console=true, cursorMenu=true",
+                         kSmokePassMarker);
+        } else {
+            logger::error("Smoke test failed: a focused view did not hold the vanilla cursor menu open");
+        }
 
         if (SmokeAutoExitEnabled()) {
             RequestGameQuitAfterSmokePass();
         }
+    }
+
+    [[nodiscard]] bool IsCursorMenuOpen() {
+        auto* ui = RE::UI::GetSingleton();
+        return ui && ui->IsMenuOpen(RE::CursorMenu::MENU_NAME);
+    }
+
+    [[nodiscard]] std::size_t CountMenusUsingCursor() {
+        auto* ui = RE::UI::GetSingleton();
+        if (!ui) {
+            return 0;
+        }
+
+        std::size_t count = 0;
+        for (const auto& menu : ui->menuStack) {
+            if (menu && menu->UsesCursor()) {
+                ++count;
+            }
+        }
+
+        return count;
+    }
+
+    void FinishCursorMenuCheck(const bool passed) {
+        g_cursorMenuSeen.store(passed, std::memory_order_release);
+        g_cursorCheckFinished.store(true, std::memory_order_release);
+        CheckSmokeCompletion();
+    }
+
+    struct CursorSample {
+        bool cursorMenuOpen;
+        std::size_t menusUsingCursor;
+    };
+
+    [[nodiscard]] CursorSample SampleCursorState(const char* label) {
+        // The UI task may outlive a timeout, so the shared state must not live on this thread's stack.
+        auto sample = std::make_shared<CursorSample>();
+        auto taken = std::make_shared<std::atomic_bool>(false);
+        SKSE::GetTaskInterface()->AddUITask([sample, taken]() {
+            sample->cursorMenuOpen = IsCursorMenuOpen();
+            sample->menusUsingCursor = CountMenusUsingCursor();
+            taken->store(true, std::memory_order_release);
+        });
+
+        for (int spin = 0; spin < 500 && !taken->load(std::memory_order_acquire); ++spin) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        if (!taken->load(std::memory_order_acquire)) {
+            logger::warn("Cursor state [{}] could not be sampled: no UI task ran within 5s", label);
+            return {};
+        }
+
+        logger::info("Cursor state [{}]: cursorMenuOpen={}, menusUsingCursor={}", label,
+                     BoolText(sample->cursorMenuOpen), sample->menusUsingCursor);
+        return *sample;
+    }
+
+    // Focus() with the focus menu enabled must claim the vanilla cursor (PrismaUI's menu joins the
+    // cursor-using menus and "Cursor Menu" is on screen) and Unfocus() must release it again. Only the
+    // claim/release delta is asserted: in menu-driven states such as the Main Menu, vanilla owns the cursor
+    // menu itself, so its open state alone proves nothing.
+    void StartCursorMenuCheck(const PrismaView view) {
+        std::thread([view]() {
+            if (!SKSE::GetTaskInterface() || !g_apiV3 || !view) {
+                logger::warn("Cursor menu check skipped: taskInterface={}, api={}, view={}",
+                             BoolText(SKSE::GetTaskInterface() != nullptr), BoolText(g_apiV3 != nullptr), view);
+                FinishCursorMenuCheck(false);
+                return;
+            }
+
+            const auto settle = []() { std::this_thread::sleep_for(std::chrono::milliseconds(750)); };
+
+            settle();
+            const CursorSample focused = SampleCursorState("focused");
+
+            g_apiV3->Unfocus(view);
+            settle();
+            const CursorSample unfocused = SampleCursorState("unfocused");
+
+            g_apiV3->Focus(view);
+            settle();
+
+            const bool passed = focused.cursorMenuOpen && focused.menusUsingCursor == unfocused.menusUsingCursor + 1;
+            if (!passed) {
+                logger::warn("Cursor menu check failed: focused(open={}, users={}) vs unfocused(open={}, users={})",
+                             BoolText(focused.cursorMenuOpen), focused.menusUsingCursor,
+                             BoolText(unfocused.cursorMenuOpen), unfocused.menusUsingCursor);
+            }
+
+            FinishCursorMenuCheck(passed);
+        }).detach();
     }
 
     [[nodiscard]] CallbackState* AsState(void* state) noexcept { return static_cast<CallbackState*>(state); }
@@ -312,6 +412,7 @@ namespace {
         CheckSmokeCompletion();
         RunDomReadyScript(view);
         g_apiV3->Focus(view);
+        StartCursorMenuCheck(view);
     }
 
     void InitializeLog() {

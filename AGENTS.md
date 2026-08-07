@@ -64,8 +64,8 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
 - `src/PrismaUI/Communication.*`: JS eval, native-to-JS calls, JS-to-C++ callback binding; backed by CEF process messages.
 - `src/PrismaUI/ViewOperationQueue.*`: per-view operation queues processed from the present loop. Each `ProcessNextOperation` runs inline on the present thread (no separate executor).
 - `src/Hooks/`: trampoline install wrappers for D3D hooks.
-- `src/Menus/FocusMenu/`: hidden Scaleform menu used to capture UI focus and cursor behavior.
-- `src/Menus/CursorMenu/`: hook that hides vanilla cursor menu while PrismaUI has active focus.
+- `src/Menus/PrismaUIMenu.*`: the single always-open, movie-less `RE::IMenu` PrismaUI registers. Its `PostDisplay` drives the overlay draw, and its static `Focus`/`Unfocus` own modal/menu-mode state plus the vanilla cursor (`kUsesCursor` + `Cursor Menu` show/hide). There is no `FocusMenu` and no vanilla `CursorMenu` hook.
+- `src/Menus/Utils.h`: menu lookup/open-state helpers and UI-message posting (`SendMenuMessage` on the UI thread, `PostMenuMessage` from any thread).
 - `src/Utils/`: `DllLoader` (CEF only), encoding helpers, NanoID, `WinKeyHandler` (Win32→`CefKeyEvent`).
 - `assets/`: static files copied into the `Data/PrismaUI` distribution (cursor texture and other CEF-facing assets). The shell page is NOT here; it is built from `shell/app` (see below).
 - `cmake/`: `commonlibsse.cmake`, `cef.cmake`, `ExternalDependencies.cmake`, `CompilerFlags.cmake`. There is no `ultralight.cmake`.
@@ -81,7 +81,7 @@ This repository is an SKSE plugin for Skyrim that exposes a C API for mods to re
 - registers `SKSEMessageHandler`
 - allocates trampoline storage
 
-No CEF DLLs are loaded here; CEF is brought up lazily on first view creation. On `kDataLoaded`, `CursorMenuEx::InstallHook()` hooks Skyrim's cursor menu.
+No CEF DLLs are loaded here; CEF is brought up lazily on first view creation. There is no vanilla cursor-menu hook.
 
 `RequestPluginAPI` returns one of `IVPrismaUI1`, `IVPrismaUI2`, or `IVPrismaUI3` implemented by `PluginAPI::PrismaUIInterface`. `InterfaceVersion` `V1` (0), `V2` (1), and `V3` (2) return the matching interface; any other numeric value is rejected with `nullptr`.
 
@@ -152,11 +152,12 @@ There is no C++ per-view rectangle, transform, or clipping system. Positioning i
 ## Input And Focus
 
 - Only the focused Prisma view receives input events.
-- `Focus(view, pauseGame, disableFocusMenu)` sets native focus and posts focus to the iframe through the shell command bus, enables input capture, opens `FocusMenu` unless disabled, disables several Skyrim controls, and optionally increments `RE::UI::numPausesGame`.
+- `Focus(view, pauseGame, disableFocusMenu)` sets native focus and posts focus to the iframe through the shell command bus, enables input capture, applies `PrismaUIMenu::Focus()` unless disabled, disables several Skyrim controls, and optionally increments `RE::UI::numPausesGame`.
 - Focusing one view queues unfocus operations for any other focused views.
 - `Unfocus`, `Hide`, and `Destroy` clean up capture and pause state and blur the iframe in CEF.
-- `FocusMenu` is a hidden Scaleform menu using cursor/modal flags to keep the game in menu-mode input while PrismaUI is active.
-- `CursorMenuEx` hides the vanilla cursor menu while any PrismaUI view has focus.
+- `PrismaUIMenu::Focus()` sets `kModal` + `kUsesCursor` and `kMenuMode` input context, then asks the vanilla `Cursor Menu` to open, which is what makes the cursor visible; `kUsesCursor` alone draws nothing. Vanilla menus do this from `IMenu::RefreshPlatform`, but PrismaUIMenu is always open, so it posts the messages itself.
+- `PrismaUIMenu::AdvanceMovie` re-requests `Cursor Menu` while a view holds focus, because closing a vanilla cursor-using menu (the console, for example) hides it.
+- `PrismaUIMenu::Unfocus()` clears those flags and hides `Cursor Menu` only when no other open menu uses the cursor.
 
 ## IME And Clipboard
 

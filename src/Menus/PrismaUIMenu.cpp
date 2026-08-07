@@ -79,6 +79,7 @@ namespace PrismaUI::Menus {
             }
 
             menu->menuFlags.set(RE::UI_MENU_FLAGS::kModal, RE::UI_MENU_FLAGS::kUsesCursor);
+            menu->inputContext = RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode;
             RequestVanillaCursor();
         });
     }
@@ -94,6 +95,7 @@ namespace PrismaUI::Menus {
 
             // Clear kUsesCursor first so this menu is not counted as a cursor user by the release check.
             menu->menuFlags.reset(RE::UI_MENU_FLAGS::kModal, RE::UI_MENU_FLAGS::kUsesCursor);
+            menu->inputContext = RE::UserEvents::INPUT_CONTEXT_ID::kNone;
             ReleaseVanillaCursor();
         });
     }

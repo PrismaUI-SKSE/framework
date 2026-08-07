@@ -151,7 +151,11 @@ There is no C++ per-view rectangle, transform, or clipping system. Positioning i
 
 ## Input And Focus
 
-- Only the focused Prisma view receives input events.
+- Only the focused Prisma view receives input events. `InputHandler` is **prepended** to the `BSInputDeviceManager` event source (`PrependEventSink`, not `AddEventSink`) and returns `BSEventNotifyControl::kStop` while any view holds focus, so `MenuControls` — and every vanilla menu handler under it, e.g. MapMenu marker hover — never sees those events.
+- Because `MenuControls` is skipped, `CursorMenu`'s own `MenuEventHandler` no longer runs, so `InputHandler::DriveVanillaCursor` calls it directly for mouse-move/thumbstick events. Without that call the vanilla arrow freezes while a view is focused (verified in-game by A/B).
+- Blocking input events is not enough: some vanilla menus hit-test `RE::MenuCursor` every frame instead of reacting to input (MapMenu marker hover). So while a view is focused the game-visible `MenuCursor` is frozen at `InputHandler::_fixedCursor*` — the position it had when focus started — and the real position is kept in `_cursorX/_cursorY`. `ProcessEvent` writes the real position back into `MenuCursor` only for the duration of the `CursorMenu` handler call — that call moves the drawn arrow, which tracks the notified position, not `MenuCursor` — then restores the frozen one. `Unfocus` hands the real position back to the game.
+- Freeze it, do not park it off screen: MapMenu reads an out-of-bounds cursor as edge scrolling and pans the map into the corner.
+- Sample `_cursorX/_cursorY` (not `MenuCursor`) for the coordinates sent to CEF.
 - `Focus(view, pauseGame, disableFocusMenu)` sets native focus and posts focus to the iframe through the shell command bus, enables input capture, applies `PrismaUIMenu::Focus()` unless disabled, disables several Skyrim controls, and optionally increments `RE::UI::numPausesGame`.
 - Focusing one view queues unfocus operations for any other focused views.
 - `Unfocus`, `Hide`, and `Destroy` clean up capture and pause state and blur the iframe in CEF.

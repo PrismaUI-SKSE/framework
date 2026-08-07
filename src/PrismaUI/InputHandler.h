@@ -58,6 +58,14 @@ namespace PrismaUI {
         std::vector<Cef::CefInputEvent> _eventQueue;
         std::atomic<bool> _isAnyInputCaptureActive = false;
         std::atomic<bool> _isFocusedTextInputActive = false;
+        // What the game keeps seeing in RE::MenuCursor while a view is focused: the position the cursor had
+        // when focus started. Vanilla menus underneath hit-test MenuCursor every frame, so freezing it is
+        // what keeps them inert; an off-screen position would make MapMenu edge-scroll to the corner.
+        float _freezedCursorX = 0.0f;
+        float _freezedCursorY = 0.0f;
+        // The real cursor position PrismaUI tracks for CEF and for the drawn arrow. See ProcessEvent.
+        float _cursorX = 0.0f;
+        float _cursorY = 0.0f;
         std::move_only_function<void()> _onExitCallback{};
         bool _mouseButtonStates[3] = {false, false, false};
         wchar_t _pendingHighSurrogate = 0;

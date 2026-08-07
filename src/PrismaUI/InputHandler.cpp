@@ -403,6 +403,40 @@ namespace PrismaUI {
         return singleton;
     }
 
+    // The vanilla arrow is moved by CursorMenu's MenuEventHandler, which normally runs inside
+    // MenuControls. While a Prisma view holds focus PrismaUI swallows input before MenuControls reaches it
+    // (see the kStop in ProcessEvent), so the cursor handler has to be driven directly - otherwise the
+    // arrow freezes and Prisma views lose their mouse position.
+    static void DriveVanillaCursor(RE::InputEvent* event) {
+        auto ui = RE::UI::GetSingleton();
+        if (!ui) {
+            return;
+        }
+
+        auto cursorMenu = ui->GetMenu<RE::CursorMenu>();
+        auto* handler = cursorMenu ? cursorMenu->AsMenuEventHandler() : nullptr;
+        if (!handler || !handler->CanProcess(event)) {
+            return;
+        }
+
+        switch (event->GetEventType()) {
+            case RE::INPUT_EVENT_TYPE::kMouseMove:
+                handler->ProcessMouseMove(event->AsMouseMoveEvent());
+                break;
+
+            case RE::INPUT_EVENT_TYPE::kThumbstick:
+                handler->ProcessThumbstick(event->AsThumbstickEvent());
+                break;
+
+            case RE::INPUT_EVENT_TYPE::kButton:
+                handler->ProcessButton(event->AsButtonEvent());
+                break;
+
+            default:
+                break;
+        }
+    }
+
     RE::BSEventNotifyControl InputHandler::ProcessEvent(RE::InputEvent* const* a_event,
                                                         RE::BSTEventSource<RE::InputEvent*>*) {
         if (!a_event || !*a_event || !_isAnyInputCaptureActive.load()) {
@@ -416,12 +450,31 @@ namespace PrismaUI {
         }
 
         auto currentScreenSize = renderManager->GetScreenSize();
-        const int cursorX =
-            std::min(static_cast<int>(cursor->cursorPosX), static_cast<int>(currentScreenSize.width - 1));
-        const int cursorY =
-            std::min(static_cast<int>(cursor->cursorPosY), static_cast<int>(currentScreenSize.height - 1));
+        auto hasKeyboardEvent = false;
 
         for (auto event = *a_event; event; event = event->next) {
+            // Vanilla menus underneath must not react to the mouse while a Prisma view is focused, and some
+            // of them (MapMenu marker hover) hit-test MenuCursor every frame instead of reacting to input
+            // events. So the game keeps seeing _fixedCursor*, the position the cursor had when focus
+            // started, while the real position lives here and is only handed to CursorMenu - that handler
+            // is what moves the drawn arrow. Freezing beats parking it off screen: MapMenu treats an
+            // out-of-bounds cursor as edge scrolling and pans to the corner.
+            cursor->cursorPosX = _cursorX;
+            cursor->cursorPosY = _cursorY;
+
+            DriveVanillaCursor(event);
+
+            const float liveX = cursor->cursorPosX;
+            const float liveY = cursor->cursorPosY;
+            _cursorX = liveX;
+            _cursorY = liveY;
+
+            cursor->cursorPosX = _freezedCursorX;
+            cursor->cursorPosY = _freezedCursorY;
+
+            const int cursorX = std::min(static_cast<int>(liveX), static_cast<int>(currentScreenSize.width - 1));
+            const int cursorY = std::min(static_cast<int>(liveY), static_cast<int>(currentScreenSize.height - 1));
+
             switch (event->GetEventType()) {
                 case RE::INPUT_EVENT_TYPE::kMouseMove: {
                     if (event->AsMouseMoveEvent()) {
@@ -437,7 +490,14 @@ namespace PrismaUI {
 
                 case RE::INPUT_EVENT_TYPE::kButton: {
                     auto buttonEvent = event->AsButtonEvent();
-                    if (!buttonEvent || buttonEvent->GetDevice() != RE::INPUT_DEVICE::kMouse) break;
+                    if (!buttonEvent) {
+                        break;
+                    }
+
+                    if (buttonEvent->GetDevice() != RE::INPUT_DEVICE::kMouse) {
+                        hasKeyboardEvent = true;
+                        break;
+                    }
 
                     const auto idCode = buttonEvent->GetIDCode();
                     const bool isPressed = buttonEvent->IsPressed();
@@ -515,7 +575,7 @@ namespace PrismaUI {
             }
         }
 
-        return RE::BSEventNotifyControl::kContinue;
+        return hasKeyboardEvent ? RE::BSEventNotifyControl::kContinue : RE::BSEventNotifyControl::kStop;
     }
 
     bool InputHandler::Initialize(HWND gameHwnd,
@@ -524,7 +584,8 @@ namespace PrismaUI {
         logger::info("Initialization...");
 
         if (auto inputEventSource = RE::BSInputDeviceManager::GetSingleton()) {
-            inputEventSource->AddEventSink(this);
+            // Prepended, not appended: PrismaUI must be able to swallow input before MenuControls.
+            inputEventSource->PrependEventSink(this);
             logger::info("MouseEventListener registered with BSInputDeviceManager");
         } else {
             logger::error("Failed to register MouseEventListener: BSInputDeviceManager is null");
@@ -621,6 +682,14 @@ namespace PrismaUI {
         }
 
         if (!_isAnyInputCaptureActive.exchange(true)) {
+            // Take over the cursor: PrismaUI drives the real position from here on, and the game is left
+            // with this position frozen, so no vanilla menu underneath can hover anything (see
+            // ProcessEvent).
+            if (auto* cursor = RE::MenuCursor::GetSingleton()) {
+                _cursorX = _freezedCursorX = cursor->cursorPosX;
+                _cursorY = _freezedCursorY = cursor->cursorPosY;
+            }
+
             logger::debug("PrismaUI Input Capture System Enabled for View [{}].", viewId);
         }
 
@@ -669,6 +738,11 @@ namespace PrismaUI {
                 logger::debug("PrismaUI Input Capture System Disabled (was active for View [{}]).",
                               currentFocusedBeforeDisable);
 
+                // Hand the cursor back where the arrow actually is, not where the game was left frozen.
+                if (auto* cursor = RE::MenuCursor::GetSingleton()) {
+                    cursor->cursorPosX = _cursorX;
+                    cursor->cursorPosY = _cursorY;
+                }
                 _mouseButtonStates[0] = _mouseButtonStates[1] = _mouseButtonStates[2] = false;
 
                 if (currentFocusedBeforeDisable != 0) {

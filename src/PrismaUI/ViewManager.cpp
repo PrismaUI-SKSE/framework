@@ -4,6 +4,7 @@
 #include "Core.h"
 #include "InputHandler.h"
 #include "ViewOperationQueue.h"
+#include "Menus/PrismaUIMenu.h"
 
 namespace PrismaUI::ViewManager {
     using namespace Core;
@@ -17,7 +18,7 @@ namespace PrismaUI::ViewManager {
             PrismaUI::InputHandler::GetSingleton().EnableInputCapture(viewId);
 
             if (!disableFocusMenu) {
-                FocusMenu::Open();
+                Menus::PrismaUIMenu::Focus();
             }
 
             if (auto* controlMap = RE::ControlMap::GetSingleton()) {
@@ -63,7 +64,7 @@ namespace PrismaUI::ViewManager {
             viewData->isFocused.store(false);
 
             if (closeFocusMenu) {
-                FocusMenu::Close();
+                Menus::PrismaUIMenu::Unfocus();
             }
 
             if (auto* controlMap = RE::ControlMap::GetSingleton()) {
@@ -282,7 +283,7 @@ namespace PrismaUI::ViewManager {
             if (!viewData) {
                 logger::warn("Unfocus: View [{}] disappeared before unfocus could be applied.", viewId);
                 PrismaUI::InputHandler::GetSingleton().DisableInputCapture(0);
-                FocusMenu::Close();
+                Menus::PrismaUIMenu::Unfocus();
                 return;
             }
 

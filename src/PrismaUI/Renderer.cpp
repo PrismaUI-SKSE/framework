@@ -5,11 +5,11 @@
 #include <WICTextureLoader.h>
 
 #include "InputHandler.h"
-#include "Menus/FocusMenu/FocusMenu.h"
-#include "Menus/PrismaUIMenu/PrismaUIMenu.h"
 #include "Utils/D3DStateGuard.h"
 #include "Utils/DllLoader.h"
 #include "ViewOperationQueue.h"
+#include "Menus/PrismaUIMenu.h"
+#include "Menus/Utils.h"
 
 namespace PrismaUI {
     Renderer& Renderer::GetSingleton() {
@@ -87,19 +87,6 @@ namespace PrismaUI {
         _spriteBatch->End();
     }
 
-    static void ShowPrismaUIMenu() {
-        SKSE::GetTaskInterface()->AddUITask([] {
-            auto ui = RE::UI::GetSingleton();
-            auto msgQ = RE::UIMessageQueue::GetSingleton();
-
-            if (ui && msgQ) {
-                msgQ->AddMessage(PrismaUIMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kShow, nullptr);
-            } else {
-                ShowPrismaUIMenu();
-            }
-        });
-    }
-
     bool Renderer::Initialize(Cef::CefRuntime* cefRuntime, InputHandler* inputHandler, HWND hwnd,
                               ID3D11Device* d3dDevice, ID3D11DeviceContext* d3dContext) {
         logger::info("Initialization...");
@@ -108,9 +95,8 @@ namespace PrismaUI {
         }
 
         auto ui = RE::UI::GetSingleton();
-        ui->Register(PrismaUIMenu::MENU_NAME, PrismaUIMenu::Creator);
-        ui->Register(FocusMenu::MENU_NAME, FocusMenu::Creator);
-        ShowPrismaUIMenu();
+        ui->Register(Menus::PrismaUIMenu::MENU_NAME, Menus::PrismaUIMenu::Creator);
+        Menus::ShowMenu(Menus::PrismaUIMenu::MENU_NAME);
 
         _cefRuntime = cefRuntime;
         _inputHandler = inputHandler;

@@ -10,8 +10,6 @@
 #include <shared_mutex>
 #include <string>
 
-#include "Menus/FocusMenu/FocusMenu.h"
-
 namespace PRISMA_UI_API {
     enum class ConsoleMessageLevel : uint8_t;
 }

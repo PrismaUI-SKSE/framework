@@ -2,6 +2,7 @@
 
 #include "PrismaUI/Renderer.h"
 #include "RE/C/CursorMenu.h"
+#include "RE/C/ControlMap.h"
 #include "RE/U/UIMessage.h"
 #include "Utils.h"
 
@@ -35,6 +36,24 @@ namespace PrismaUI::Menus {
                 SendMenuMessage(CURSOR_MENU_NAME, RE::UI_MESSAGE_TYPE::kHide);
             }
         }
+
+        // The engine pushes a menu's inputContext onto ControlMap when the menu opens and pops it when it
+        // closes. PrismaUIMenu is always open and only becomes input-hungry on focus, so it has to move the
+        // context itself. Without this the gameplay context stays on top, ESC keeps mapping to the "Pause"
+        // user event and MenuControls' MenuOpenHandler turns it into the vanilla pause menu on top of the
+        // focused view; in menu mode the same key maps to "Cancel", which opens nothing.
+        void SetMenuModeContext(bool active) {
+            auto controlMap = RE::ControlMap::GetSingleton();
+            if (!controlMap) {
+                return;
+            }
+
+            if (active) {
+                controlMap->PushInputContext(RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode);
+            } else {
+                controlMap->PopInputContext(RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode);
+            }
+        }
     }
 
     PrismaUIMenu::PrismaUIMenu() {
@@ -60,17 +79,21 @@ namespace PrismaUI::Menus {
             return RE::UI_MESSAGE_RESULTS::kIgnore;
         }
 
-        if (a_message.type == MENU_FOCUS_EVENT) {
+        // Both transitions are edge-triggered: focus is handed between Prisma views without an unfocus in
+        // between, and the pushed input context must stay balanced against the pop.
+        if (a_message.type == MENU_FOCUS_EVENT && !_isFocused) {
             menuFlags.set(RE::UI_MENU_FLAGS::kModal, RE::UI_MENU_FLAGS::kUsesCursor);
             inputContext = RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode;
             _isFocused = true;
+            SetMenuModeContext(true);
             RequestVanillaCursor();
         }
-        else if (a_message.type == MENU_UNFOCUS_EVENT) {
+        else if (a_message.type == MENU_UNFOCUS_EVENT && _isFocused) {
             // Clear kUsesCursor first so this menu is not counted as a cursor user by the release check.
             menuFlags.reset(RE::UI_MENU_FLAGS::kModal, RE::UI_MENU_FLAGS::kUsesCursor);
             inputContext = RE::UserEvents::INPUT_CONTEXT_ID::kNone;
             _isFocused = false;
+            SetMenuModeContext(false);
             ReleaseVanillaCursor();
         }
 

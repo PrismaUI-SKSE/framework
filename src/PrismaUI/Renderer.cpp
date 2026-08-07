@@ -5,11 +5,11 @@
 #include <WICTextureLoader.h>
 
 #include "InputHandler.h"
+#include "Menus/PrismaUIMenu.h"
+#include "Menus/Utils.h"
 #include "Utils/D3DStateGuard.h"
 #include "Utils/DllLoader.h"
 #include "ViewOperationQueue.h"
-#include "Menus/PrismaUIMenu.h"
-#include "Menus/Utils.h"
 
 namespace PrismaUI {
     Renderer& Renderer::GetSingleton() {

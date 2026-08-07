@@ -1,8 +1,8 @@
 #include "PrismaUIMenu.h"
 
 #include "PrismaUI/Renderer.h"
-#include "RE/C/CursorMenu.h"
 #include "RE/C/ControlMap.h"
+#include "RE/C/CursorMenu.h"
 #include "RE/U/UIMessage.h"
 #include "Utils.h"
 
@@ -27,7 +27,8 @@ namespace PrismaUI::Menus {
         }
 
         void RequestVanillaCursor() {
-            SendMenuMessage(CURSOR_MENU_NAME, IsMenuOpen(CURSOR_MENU_NAME) ? RE::UI_MESSAGE_TYPE::kUpdate : RE::UI_MESSAGE_TYPE::kShow);
+            SendMenuMessage(CURSOR_MENU_NAME,
+                            IsMenuOpen(CURSOR_MENU_NAME) ? RE::UI_MESSAGE_TYPE::kUpdate : RE::UI_MESSAGE_TYPE::kShow);
         }
 
         void ReleaseVanillaCursor() {
@@ -87,8 +88,7 @@ namespace PrismaUI::Menus {
             _isFocused = true;
             SetMenuModeContext(true);
             RequestVanillaCursor();
-        }
-        else if (a_message.type == MENU_UNFOCUS_EVENT && _isFocused) {
+        } else if (a_message.type == MENU_UNFOCUS_EVENT && _isFocused) {
             // Clear kUsesCursor first so this menu is not counted as a cursor user by the release check.
             menuFlags.reset(RE::UI_MENU_FLAGS::kModal, RE::UI_MENU_FLAGS::kUsesCursor);
             inputContext = RE::UserEvents::INPUT_CONTEXT_ID::kNone;
@@ -111,13 +111,9 @@ namespace PrismaUI::Menus {
 
     void PrismaUIMenu::PostDisplay() { Renderer::GetSingleton().EndRender(); }
 
-    void PrismaUIMenu::Focus() {
-        PostMenuMessage(MENU_NAME, MENU_FOCUS_EVENT);
-    }
+    void PrismaUIMenu::Focus() { PostMenuMessage(MENU_NAME, MENU_FOCUS_EVENT); }
 
-    void PrismaUIMenu::Unfocus() {
-        PostMenuMessage(MENU_NAME, MENU_UNFOCUS_EVENT);
-    }
+    void PrismaUIMenu::Unfocus() { PostMenuMessage(MENU_NAME, MENU_UNFOCUS_EVENT); }
 
     SKSE::stl::owner<RE::IMenu*> PrismaUIMenu::Creator() { return new PrismaUIMenu(); }
 }

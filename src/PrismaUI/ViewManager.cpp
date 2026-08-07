@@ -3,8 +3,8 @@
 #include "Cef/Browser/CefRuntime.h"
 #include "Core.h"
 #include "InputHandler.h"
-#include "ViewOperationQueue.h"
 #include "Menus/PrismaUIMenu.h"
+#include "ViewOperationQueue.h"
 
 namespace PrismaUI::ViewManager {
     using namespace Core;

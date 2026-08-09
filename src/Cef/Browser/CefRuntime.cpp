@@ -1263,7 +1263,7 @@ namespace PrismaUI::Cef {
                 if (have && drained.callback) drained.callback(std::string());
                 return;
             }
-            logger::debug("InvokeScript: dispatching request {} to view [{}].", requestId, viewId);
+
             Messaging::SendProcessMessageToFrame(
                 frame, PID_RENDERER, BTRMessages::InvokeRequestMessage{.RequestId = requestId, .Script = scriptCopy});
         });

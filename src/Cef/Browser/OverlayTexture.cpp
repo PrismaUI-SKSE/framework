@@ -21,8 +21,6 @@ namespace PrismaUI::Cef {
     }
 
     bool OverlayTexture::Initialize(ID3D11Device* device, ID3D11DeviceContext* context) {
-        std::lock_guard lock(_mutex);
-
         if (!device || !context) {
             return false;
         }
@@ -46,14 +44,13 @@ namespace PrismaUI::Cef {
             static_cast<void>(context->QueryInterface(IID_PPV_ARGS(_renderContext4.ReleaseAndGetAddressOf())));
         }
 
-        EnsureCopyFenceLocked();
+        InitializeCopyFence();
 
         return true;
     }
 
-    bool OverlayTexture::CreateAcceleratedResourcesLocked(const Desc& desc,
-                                                          Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture,
-                                                          Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv) const {
+    bool OverlayTexture::CreateAcceleratedResources(const Desc& desc, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture,
+                                                    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv) const {
         if (!_renderDevice) {
             return false;
         }
@@ -91,7 +88,7 @@ namespace PrismaUI::Cef {
         return true;
     }
 
-    void OverlayTexture::EnsureCopyFenceLocked() {
+    void OverlayTexture::InitializeCopyFence() {
         if (_copyFence || !_renderDevice) {
             return;
         }
@@ -121,9 +118,7 @@ namespace PrismaUI::Cef {
         }
 
         if (!_copyCompleteEvent) {
-            // Manual reset: the render thread clears it before arming, so a wait can
-            // never consume a signal left over from an earlier paint.
-            _copyCompleteEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+            _copyCompleteEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
             if (!_copyCompleteEvent) {
                 logger::warn("CreateEvent failed (GLE={}); CEF overlay copies will block the render thread.",
                              GetLastError());
@@ -132,7 +127,6 @@ namespace PrismaUI::Cef {
         }
 
         _copyFence = std::move(fence);
-        _lastCopyFenceValue = 0;
         logger::info("CEF overlay copies hand completion off to the CEF UI thread through a D3D11 fence.");
     }
 
@@ -141,47 +135,39 @@ namespace PrismaUI::Cef {
             return;
         }
 
+        uint64_t copyFenceValue;
+
         {
             auto pending = _pendingFrame.Acquire();
             pending->sharedTextureHandle = sharedTextureHandle;
-            pending->copyFenceValue = 0;
-        }
-        _waitForRenderThreadCopyEvent.acquire();
-
-        std::uint64_t copyFenceValue;
-        {
-            auto pending = _pendingFrame.Acquire();
+            ++pending->copyFenceValue;
             copyFenceValue = pending->copyFenceValue;
-            pending->copyFenceValue = 0;
         }
 
-        if (copyFenceValue != 0) {
-            WaitForCopyCompletion(copyFenceValue);
+        if (!WaitForCopyCompletion(copyFenceValue)) {
+            auto pending = _pendingFrame.Acquire();
+            pending->sharedTextureHandle = nullptr;
         }
     }
 
-    void OverlayTexture::WaitForCopyCompletion(std::uint64_t copyFenceValue) {
-        if (!_copyCompleteEvent) {
-            return;
+    bool OverlayTexture::WaitForCopyCompletion(std::uint64_t copyFenceValue) const {
+        if (WaitForSingleObject(_copyCompleteEvent, CopyFenceWaitTimeoutMs) != WAIT_OBJECT_0) {
+            logger::warn("CEF overlay copy fence wait timed out after {}ms (value {}, timeout).",
+                         CopyFenceWaitTimeoutMs, copyFenceValue);
+            return false;
         }
 
-        if (WaitForSingleObject(_copyCompleteEvent, CopyFenceWaitTimeoutMs) == WAIT_OBJECT_0) {
-            return;
-        }
-
-        // Returning now lets CEF recycle a texture the GPU may still be reading.
-        const std::uint64_t count = ++_copyFenceTimeouts;
-        if (count == 1 || count % 300 == 0) {
-            logger::warn("CEF overlay copy fence wait timed out after {}ms (value {}, timeout #{}).",
-                         CopyFenceWaitTimeoutMs, copyFenceValue, count);
-        }
+        return true;
     }
 
     bool OverlayTexture::CopyPendingAcceleratedFrame() {
         HANDLE textureHandle;
+        std::uint64_t copyFenceValue;
+
         {
             auto pending = _pendingFrame.Acquire();
             textureHandle = pending->sharedTextureHandle;
+            copyFenceValue = pending->copyFenceValue;
             pending->sharedTextureHandle = nullptr;
         }
 
@@ -189,62 +175,10 @@ namespace PrismaUI::Cef {
             return false;
         }
 
-        // Once the handle is taken, the CEF UI thread is committed to waiting on this
-        // semaphore; every exit path below must hand it back or CEF wedges for good.
-        struct HandoffGuard {
-            std::binary_semaphore& semaphore;
-            ~HandoffGuard() { semaphore.release(); }
-        } handoffGuard{_waitForRenderThreadCopyEvent};
-
-        std::uint64_t copyFenceValue = 0;
-        bool copied;
-        {
-            std::lock_guard lock(_mutex);
-            copied = CopySharedHandleOnRenderThreadLocked(textureHandle, copyFenceValue);
-        }
-
-        {
-            auto pending = _pendingFrame.Acquire();
-            pending->copyFenceValue = copied ? copyFenceValue : 0;
-        }
-
-        return copied;
+        return CopySharedHandleOnRenderThread(textureHandle, copyFenceValue);
     }
 
-    bool OverlayTexture::EnqueueFencedCopyLocked(ID3D11Resource* destination, ID3D11Resource* source,
-                                                 std::uint64_t& copyFenceValue) {
-        _renderContext->CopyResource(destination, source);
-
-        const std::uint64_t fenceValue = _lastCopyFenceValue + 1;
-        ResetEvent(_copyCompleteEvent);
-
-        // Signal submits the context's pending commands, so on a deep queue this is
-        // the priciest step here - but it is a submit, not a wait for the GPU.
-        HRESULT hr = _renderContext4->Signal(_copyFence.Get(), fenceValue);
-        if (SUCCEEDED(hr)) {
-            // Non-blocking: this only registers the event with the fence.
-            hr = _copyFence->SetEventOnCompletion(fenceValue, _copyCompleteEvent);
-        }
-
-        if (FAILED(hr)) {
-            logger::error("Failed to arm the CEF overlay copy fence. HR={:#X}", static_cast<unsigned int>(hr));
-            return false;
-        }
-
-        // Belt and braces: Signal already submits on the drivers measured here, but the
-        // fence must be reachable without waiting for the game's own Present, or the CEF
-        // UI thread stays blocked for a whole frame. Flush only submits; it does not wait.
-        _renderContext->Flush();
-
-        _lastCopyFenceValue = fenceValue;
-        copyFenceValue = fenceValue;
-        return true;
-    }
-
-    bool OverlayTexture::CopySharedHandleOnRenderThreadLocked(HANDLE sharedTextureHandle,
-                                                              std::uint64_t& copyFenceValue) {
-        copyFenceValue = 0;
-
+    bool OverlayTexture::CopySharedHandleOnRenderThread(HANDLE sharedTextureHandle, uint64_t copyFenceValue) {
         Microsoft::WRL::ComPtr<ID3D11Texture2D> sharedTexture;
         auto hr = _renderDevice1->OpenSharedResource1(sharedTextureHandle,
                                                       IID_PPV_ARGS(sharedTexture.ReleaseAndGetAddressOf()));
@@ -263,27 +197,27 @@ namespace PrismaUI::Cef {
         }
 
         const Desc incoming{sharedDesc.Width, sharedDesc.Height, sharedDesc.Format};
-        const bool overlayMatches = texture_ && _srv && _desc.Matches(sharedDesc);
+        const bool overlayMatches = _texture && _srv && _desc.Matches(sharedDesc);
 
-        Microsoft::WRL::ComPtr<ID3D11Texture2D> targetTexture = texture_;
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> targetTexture = _texture;
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> targetSrv = _srv;
-        if (!overlayMatches && !CreateAcceleratedResourcesLocked(incoming, targetTexture, targetSrv)) {
+        if (!overlayMatches && !CreateAcceleratedResources(incoming, targetTexture, targetSrv)) {
             return false;
         }
 
         bool fenced = false;
         if (_copyFence) {
-            fenced = EnqueueFencedCopyLocked(targetTexture.Get(), sharedTexture.Get(), copyFenceValue);
+            fenced = EnqueueFencedCopy(targetTexture.Get(), sharedTexture.Get(), copyFenceValue);
             if (!fenced) {
                 logger::error("Disabling the CEF overlay copy fence; falling back to blocking render-thread copies.");
                 _copyFence.Reset();
-                copyFenceValue = 0;
             }
         }
 
         if (!fenced) {
             hr = Utils::CopyResourceAndWait(_renderDevice.Get(), _renderContext.Get(), targetTexture.Get(),
                                             sharedTexture.Get());
+            SetEvent(_copyCompleteEvent);
             if (FAILED(hr)) {
                 logger::error("Failed to synchronously copy CEF accelerated shared texture. HR={:#X}",
                               static_cast<unsigned int>(hr));
@@ -291,10 +225,8 @@ namespace PrismaUI::Cef {
             }
         }
 
-        sharedTexture.Reset();
-
         if (!overlayMatches) {
-            texture_ = std::move(targetTexture);
+            _texture = std::move(targetTexture);
             _srv = std::move(targetSrv);
             _desc = incoming;
             logger::info("Created accelerated CEF overlay texture {}x{} DXGI format {}.", _desc.width, _desc.height,
@@ -305,6 +237,25 @@ namespace PrismaUI::Cef {
         return true;
     }
 
+    bool OverlayTexture::EnqueueFencedCopy(ID3D11Resource* destination, ID3D11Resource* source,
+                                           uint64_t copyFenceValue) const {
+        _renderContext->CopyResource(destination, source);
+
+        HRESULT hr = _renderContext4->Signal(_copyFence.Get(), copyFenceValue);
+        if (SUCCEEDED(hr)) {
+            hr = _copyFence->SetEventOnCompletion(copyFenceValue, _copyCompleteEvent);
+        }
+
+        if (FAILED(hr)) {
+            logger::error("Failed to arm the CEF overlay copy fence. HR={:#X}", static_cast<unsigned int>(hr));
+            return false;
+        }
+
+        _renderContext->Flush();
+
+        return true;
+    }
+
     void OverlayTexture::ReleaseResources() {
         {
             auto pending = _pendingFrame.Acquire();
@@ -312,19 +263,16 @@ namespace PrismaUI::Cef {
             pending->copyFenceValue = 0;
         }
 
-        // Free a CEF UI thread parked in either stage of the handoff before the
-        // resources it is waiting on go away.
-        _waitForRenderThreadCopyEvent.release();
         if (_copyCompleteEvent) {
             SetEvent(_copyCompleteEvent);
         }
 
-        std::lock_guard lock(_mutex);
-        if (texture_ || _srv || _renderDevice || _renderContext) {
+        if (_texture || _srv || _renderDevice || _renderContext) {
             logger::info("Releasing CEF overlay D3D resources.");
         }
+
         _srv.Reset();
-        texture_.Reset();
+        _texture.Reset();
         _copyFence.Reset();
         _renderContext4.Reset();
         _renderContext.Reset();
@@ -335,14 +283,8 @@ namespace PrismaUI::Cef {
     }
 
     std::optional<OverlayTextureInfo> OverlayTexture::GetInfo() const {
-        std::lock_guard lock(_mutex);
         return _hasFrame ? std::make_optional(
                                OverlayTextureInfo{.Srv = _srv.Get(), .Width = _desc.width, .Height = _desc.height})
                          : std::nullopt;
-    }
-
-    bool OverlayTexture::HasFrame() const {
-        std::lock_guard lock(_mutex);
-        return _hasFrame;
     }
 }

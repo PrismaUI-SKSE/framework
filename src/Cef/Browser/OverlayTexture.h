@@ -61,7 +61,6 @@ namespace PrismaUI::Cef {
         void ReleaseResources();
 
         std::optional<OverlayTextureInfo> GetInfo() const;
-        bool HasFrame() const;
 
     private:
         struct Desc {
@@ -74,45 +73,32 @@ namespace PrismaUI::Cef {
             }
         };
 
-        // Identifies one accelerated paint in flight between the CEF UI thread and
-        // the render thread. |copyFenceValue| is non-zero only when the render
-        // thread enqueued a copy whose completion the CEF UI thread must await.
         struct PendingFrame {
             HANDLE sharedTextureHandle = nullptr;
             std::uint64_t copyFenceValue = 0;
         };
 
-        bool CopySharedHandleOnRenderThreadLocked(HANDLE sharedTextureHandle, std::uint64_t& copyFenceValue);
-        bool CreateAcceleratedResourcesLocked(const Desc& desc, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture,
-                                              Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv) const;
-        void EnsureCopyFenceLocked();
-        bool EnqueueFencedCopyLocked(ID3D11Resource* destination, ID3D11Resource* source,
-                                     std::uint64_t& copyFenceValue);
-        void WaitForCopyCompletion(std::uint64_t copyFenceValue);
+        void InitializeCopyFence();
 
-        mutable std::mutex _mutex;
+        bool WaitForCopyCompletion(std::uint64_t copyFenceValue) const;
+
+        bool CopySharedHandleOnRenderThread(HANDLE sharedTextureHandle, uint64_t copyFenceValue);
+        bool CreateAcceleratedResources(const Desc& desc, Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture,
+                                        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv) const;
+        bool EnqueueFencedCopy(ID3D11Resource* destination, ID3D11Resource* source, uint64_t copyFenceValue) const;
 
         Microsoft::WRL::ComPtr<ID3D11Device> _renderDevice;
         Microsoft::WRL::ComPtr<ID3D11Device1> _renderDevice1;
         Microsoft::WRL::ComPtr<ID3D11DeviceContext> _renderContext;
         Microsoft::WRL::ComPtr<ID3D11DeviceContext4> _renderContext4;
-        Microsoft::WRL::ComPtr<ID3D11Texture2D> texture_;
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> _texture;
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> _srv;
 
         Desc _desc;
         bool _hasFrame = false;
 
-        // Render-thread only. Null when the runtime lacks D3D11.4 fences, in which
-        // case the copy degrades to a blocking event query on the render thread.
-        Microsoft::WRL::ComPtr<ID3D11Fence> _copyFence;
-        std::uint64_t _lastCopyFenceValue = 0;
-
-        // Created alongside the fence, before the shell browser exists, and closed
-        // only at destruction, so the CEF UI thread may wait on it without a lock.
         HANDLE _copyCompleteEvent = nullptr;
-        std::uint64_t _copyFenceTimeouts = 0;  // CEF UI thread only.
-
+        Microsoft::WRL::ComPtr<ID3D11Fence> _copyFence;
         ResourceLock<PendingFrame> _pendingFrame{{}};
-        std::binary_semaphore _waitForRenderThreadCopyEvent{0};
     };
 }

@@ -72,9 +72,6 @@ namespace PrismaUI {
             return;
         }
 
-        // Second pickup point: a CEF paint that landed since BeginRender is drawn this
-        // frame instead of the next one. Kept outside the batch because the copy
-        // issues a context Flush, which has no business running inside a SpriteBatch.
         _cefRuntime->UpdateOverlayTexture();
 
         const auto overlayInfo = _cefRuntime->GetOverlayInfo();

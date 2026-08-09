@@ -66,6 +66,19 @@ if(MSVC)
     #set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /DEBUG /OPT:REF /OPT:ICF /LTCG")
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /DEBUG /OPT:REF /OPT:ICF") # /GL and /LTCG disabled to see if helps with debugging
     set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /DEBUG /OPT:REF /OPT:ICF")
+
+    # Incremental linking makes link.exe append to the existing PDB on every link
+    # instead of rewriting it; the orphaned records are never reclaimed, so the
+    # Debug PDB grows ~1 MB per build without bound (measured 60 MB -> 148 MB).
+    # A full link of PrismaUI.dll costs ~3 s, same as the incremental one, so the
+    # incremental path buys nothing here.
+    foreach(flag_var
+        CMAKE_EXE_LINKER_FLAGS_DEBUG
+        CMAKE_SHARED_LINKER_FLAGS_DEBUG
+        CMAKE_MODULE_LINKER_FLAGS_DEBUG)
+        string(REGEX REPLACE "/INCREMENTAL(:[A-Za-z]+)?" "" ${flag_var} "${${flag_var}}")
+        string(APPEND ${flag_var} " /INCREMENTAL:NO")
+    endforeach()
     
 
 endif()

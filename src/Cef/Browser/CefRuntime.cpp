@@ -469,7 +469,7 @@ namespace PrismaUI::Cef {
 
     void CefRuntime::SubmitAcceleratedFrameDuringCallback(HANDLE sharedTextureHandle) const {
         if (!_impl->initialized.load(std::memory_order_acquire) ||
-            _impl->shuttingDown.load(std::memory_order_acquire) || !sharedTextureHandle) {
+            _impl->shuttingDown.load(std::memory_order_acquire)) {
             return;
         }
 

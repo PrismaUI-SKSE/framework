@@ -38,14 +38,7 @@ namespace PrismaUI {
     }
 
     static void RenderCefOverlay(const std::unique_ptr<DirectX::SpriteBatch>& spriteBatch,
-                                 const Cef::CefRuntime& cefRuntime) {
-        cefRuntime.UpdateOverlayTexture();
-        auto overlayInfoOpt = cefRuntime.GetOverlayInfo();
-        if (!overlayInfoOpt.has_value()) {
-            return;
-        }
-
-        auto overlayInfo = overlayInfoOpt.value();
+                                 const Cef::OverlayTextureInfo& overlayInfo) {
         constexpr Vector2 position(0.0f, 0.0f);
         const RECT sourceRect = {0, 0, static_cast<long>(overlayInfo.Width), static_cast<long>(overlayInfo.Height)};
         spriteBatch->Draw(overlayInfo.Srv, position, &sourceRect, DirectX::Colors::White, 0.f, Vector2::Zero, 1.0f,
@@ -79,10 +72,20 @@ namespace PrismaUI {
             return;
         }
 
+        // Second pickup point: a CEF paint that landed since BeginRender is drawn this
+        // frame instead of the next one. Kept outside the batch because the copy
+        // issues a context Flush, which has no business running inside a SpriteBatch.
+        _cefRuntime->UpdateOverlayTexture();
+
+        const auto overlayInfo = _cefRuntime->GetOverlayInfo();
+        if (!overlayInfo.has_value()) {
+            return;
+        }
+
         Utils::D3DStateGuard stateGuard(_d3dContext);
         _spriteBatch->Begin(DirectX::SpriteSortMode_Deferred, _commonStates->AlphaBlend());
 
-        RenderCefOverlay(_spriteBatch, *_cefRuntime);
+        RenderCefOverlay(_spriteBatch, *overlayInfo);
 
         _spriteBatch->End();
     }

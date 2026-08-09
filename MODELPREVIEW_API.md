@@ -42,11 +42,41 @@ window.__prismaUI_showModelPreview(JSON.stringify({
 
 ## Hide it
 
+Clear every preview owned by the current view:
+
 ```js
 window.__prismaUI_hideModelPreview('');
 ```
 
-It also hides itself when your view is destroyed, so you do not have to clean up when the menu closes.
+Or clear one named preview while leaving the others alone:
+
+```js
+window.__prismaUI_hideModelPreview(JSON.stringify({ id: "inventory-main" }));
+```
+
+Every preview owned by a view is also cleared when that view is destroyed, so you do not have to clean up when the menu closes.
+
+## Show more than one preview
+
+Give each preview a stable `id`. IDs are local to the current PrismaUI view, so two different views can use the same ID without colliding:
+
+```js
+window.__prismaUI_showModelPreview(JSON.stringify({
+    id: "left-item",
+    formId: leftItem.formId,
+    x: 40, y: 80, w: 300, h: 300,
+    spin: 0
+}));
+
+window.__prismaUI_showModelPreview(JSON.stringify({
+    id: "right-item",
+    formId: rightItem.formId,
+    x: 380, y: 80, w: 300, h: 300,
+    spin: 30
+}));
+```
+
+Calling show again with the same `id` updates that preview slot. Calling it with a different `id` creates another preview. If you leave `id` out, the call uses the view's unnamed default slot, which preserves the original one-preview-per-view behavior.
 
 ## The three ways to show it
 
@@ -81,6 +111,7 @@ There is no separate flat or sprite mode. A still picture is just the 3D render 
 
 | option | default | what it does |
 |---|---|---|
+| `id` | `""` | stable preview-slot name inside the current view. Reuse an ID to update that preview; use different IDs for concurrent previews. |
 | `plugin` + `localId` | required | the item to show, by plugin name and its form id inside that plugin |
 | `formId` | required | alternative to the pair above: one full runtime form id |
 | `x`, `y`, `w`, `h` | required | the draw box, in view pixels |
@@ -125,13 +156,19 @@ show({ plugin, localId, x, y, w, h, spin: 45 });
 
 That is the pause and resume trick: toggling `spin` between 0 and a number freezes and unfreezes in place. If you would rather drive the angle yourself (drag to rotate), pass `yaw` every time and forget about this.
 
-Clear it off the screen entirely. Call hide. The box goes empty and the model is dropped:
+Clear every preview owned by the current view. The boxes go empty and the models are dropped:
 
 ```js
 window.__prismaUI_hideModelPreview('');
 ```
 
-You do not have to hide on menu close. When your view is destroyed the preview clears itself. Hide is for when you want it gone while the view stays open, like the user clicking away from an item.
+To clear only one named preview, pass its ID:
+
+```js
+window.__prismaUI_hideModelPreview(JSON.stringify({ id: "inventory-main" }));
+```
+
+You do not have to hide on menu close. When your view is destroyed all of its previews clear themselves. Hide is for when you want one or all of them gone while the view stays open, like the user clicking away from an item.
 
 ## VR: let the user grab the model itself
 
@@ -191,5 +228,6 @@ If you want the user to be able to freeze and spin it, add two buttons that call
 
 - Items with no world model show nothing. Some forms, like trap markers and a few script-only items, simply do not have a mesh to draw.
 - The lighting is a clean studio look, not the full game shader stack. You get the right shape and textures, but no environment reflections or parallax, and glow effects are drawn in a simplified way.
-- Only one preview is on screen at a time across the whole game. The last view to call show owns it. If two views both try to show a preview at once, the most recent call wins.
+- Multiple previews can exist at once, both inside one view and across different views. Each one is keyed by the owning view plus its optional `id`. Flatscreen composites every ready preview. VR displays at most 32 preview overlays at once as a safety guard.
+- A static preview (`spin: 0`) is rendered once and reused until its item or view settings change. A spinning preview redraws every frame, so large numbers of animated previews cost more GPU time than static ones.
 - When something does not render, the reason is written to PrismaUI.log. Search it for `ModelPreview` and you will see why a given item came up blank.

@@ -20,7 +20,8 @@ src/
 │   ├── Listeners.{h,cpp}     — LoadListener / ViewListener (OnDOMReady, OnFinishLoading, console)
 │   ├── Inspector.{h,cpp}     — DevTools as a separate Ultralight view rendered as overlay
 │   ├── ImeHelper.{h,cpp}     — IME (CJK input) support
-│   └── PrismaVR.{h,cpp}      — VR integration (OpenVR, 3D panels)
+│   ├── PrismaVR.{h,cpp}      — VR integration (OpenVR, 3D panels and lasers)
+│   └── ModelPreview.{h,cpp}  — item NIF/DDS loader and offscreen 3D preview renderer
 ├── API/API.{h,cpp}           — IVPrismaUI1/IVPrismaUI2 implementation, exported via RequestPluginAPI
 ├── Hooks/Hooks.{h,cpp}       — D3DPresentHook
 ├── Menus/
@@ -86,6 +87,35 @@ In VR (`PrismaVR::IsVRActive()`): none of that — player keeps full control. Al
 ViewManager::Create("ui/index.html");  // → file:///views/ui/index.html
 ViewManager::Create("https://...");    // passed through as-is
 ```
+
+## 3D model previews
+
+`MODELPREVIEW_API.md` is the view-author contract. The feature is controlled by
+`PrismaUI_ModelPreview.ini`; when disabled, the JS functions are not bound.
+
+`Communication` binds `__prismaUI_showModelPreview` and
+`__prismaUI_hideModelPreview` with the calling `viewId`. A preview is keyed by
+`(viewId, id)`: omitted `id` means the unnamed default slot, while stable,
+distinct IDs let one view own several previews. Showing an existing key updates
+that slot. Hiding with an ID removes only that slot; hiding without one and
+`OnPanelDestroyed(viewId)` clear every preview owned by the view.
+
+Threading and rendering rules:
+
+- JS callbacks only enqueue show/hide requests under `g_reqMutex`; they must not
+  mutate render state directly.
+- `TickCore()` owns `g_previews` on the render thread. It drains requests,
+  adopts worker results, creates per-preview color targets, and renders dirty
+  previews. NIF/DDS loading runs on the single model worker.
+- Every preview owns its color render target; the depth target is shared because
+  previews render sequentially. Static previews render once until dirtied;
+  spinning previews redraw every frame.
+- Flatscreen uses `GetFlatOverlays()` to composite all ready previews into their
+  owning view. VR uses one OpenVR overlay per ready preview, positioned from the
+  owning panel transform, with a 32-visible-preview safety cap.
+- `Shutdown()` must join the worker and release preview overlays and D3D
+  resources. Keep its teardown idempotent and never submit a tearing-down view
+  texture to OpenVR.
 
 ## VR laser visuals (2026-08-03)
 

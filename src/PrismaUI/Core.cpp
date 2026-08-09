@@ -508,8 +508,15 @@ namespace PrismaUI::Core {
             UpdateSingleTextureFromBuffer(viewData);
         }
 
-        // Render the 3D model preview RTs before compositing (no-op when unused)
-        ModelPreview::TickCore(d3dDevice, d3dContext);
+        // Render the 3D model preview RTs before compositing (no-op when unused).
+        // Keep failures inside the optional preview subsystem out of Present.
+        try {
+            ModelPreview::TickCore(d3dDevice, d3dContext);
+        } catch (const std::exception& e) {
+            logger::error("ModelPreview::TickCore failed: {}", e.what());
+        } catch (...) {
+            logger::error("ModelPreview::TickCore failed with an unknown exception");
+        }
 
         DrawViews();
         DrawCursor();

@@ -664,8 +664,8 @@ static bool ParseNifModel(const std::vector<uint8_t>& data, std::vector<CpuShape
 	std::map<int32_t, std::vector<std::string>> texSets;   // blockIdx -> texture paths
 
 	for (uint32_t i = 0; i < nblocks; ++i) {
-		const std::string& t = types[tidx[i] < types.size() ? tidx[i] : 0];
-		bool isNode = (tidx[i] < types.size()) &&
+		const std::string& t = typeOf((int32_t)i);
+		bool isNode = !t.empty() &&
 		              (t.find("Node") != std::string::npos || t == "BSDamageStage" || t == "BSFadeNode");
 		if (isNode) {
 			ByteCursor b = cursorAt((int32_t)i);
@@ -874,37 +874,45 @@ static bool ParseNifModel(const std::vector<uint8_t>& data, std::vector<CpuShape
 		}
 	}
 
-	// --- Pass 2: scene DFS accumulating transforms, honoring hidden/Scb/marker skips ---
+	// --- Pass 2: scene traversal accumulating transforms, honoring hidden/Scb/marker skips ---
 	auto skipName = [](const std::string& nm) {
 		if (nm.size() == 3 && _strnicmp(nm.c_str(), "Scb", 3) == 0) return true;
 		if (nm.size() >= 12 && _strnicmp(nm.c_str(), "EditorMarker", 12) == 0) return true;
 		return false;
 	};
 	std::vector<bool> visited(nblocks, false);
-	std::function<void(int32_t, const RE::NiTransform&)> dfs = [&](int32_t idx, const RE::NiTransform& parent) {
-		if (idx < 0 || (uint32_t)idx >= nblocks || visited[idx]) return;
-		visited[idx] = true;
-		if (auto ni = nodes.find(idx); ni != nodes.end()) {
-			auto& nr = ni->second;
-			if (nr.av.flags & 1) return;  // hidden
-			if (skipName(nameOf(nr.av.nameIdx))) return;
-			RE::NiTransform xfw = parent * nr.av.xf;
-			for (int32_t ch : nr.children) dfs(ch, xfw);
-			return;
-		}
-		if (auto si = shapes.find(idx); si != shapes.end()) {
-			auto& ps = si->second;
-			if (ps.av.flags & 1) return;
-			if (skipName(ps.cs.name)) return;
-			ps.cs.world = parent * ps.av.xf;
-			out.push_back(std::move(ps.cs));
-			st.shapes++;
-			if (out.back().effect) st.fx++;
-		}
-	};
 	RE::NiTransform identity{};
 	if (nodes.count(0) || shapes.count(0)) {
-		dfs(0, identity);
+		// Use an explicit work stack so hostile or deeply nested NIFs cannot exhaust
+		// the process call stack. Push children in reverse to preserve DFS order.
+		std::vector<std::pair<int32_t, RE::NiTransform>> work;
+		work.emplace_back(0, identity);
+		while (!work.empty()) {
+			auto [idx, parent] = std::move(work.back());
+			work.pop_back();
+			if (idx < 0 || (uint32_t)idx >= nblocks || visited[idx]) continue;
+			visited[idx] = true;
+
+			if (auto ni = nodes.find(idx); ni != nodes.end()) {
+				auto& nr = ni->second;
+				if (nr.av.flags & 1) continue;  // hidden
+				if (skipName(nameOf(nr.av.nameIdx))) continue;
+				RE::NiTransform xfw = parent * nr.av.xf;
+				for (auto ch = nr.children.rbegin(); ch != nr.children.rend(); ++ch)
+					work.emplace_back(*ch, xfw);
+				continue;
+			}
+
+			if (auto si = shapes.find(idx); si != shapes.end()) {
+				auto& ps = si->second;
+				if (ps.av.flags & 1) continue;
+				if (skipName(ps.cs.name)) continue;
+				ps.cs.world = parent * ps.av.xf;
+				out.push_back(std::move(ps.cs));
+				st.shapes++;
+				if (out.back().effect) st.fx++;
+			}
+		}
 	} else {
 		// Unusual root layout: emit every parsed shape with its local transform
 		for (auto& [idx, ps] : shapes) {

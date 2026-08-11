@@ -14,6 +14,8 @@
 
 namespace PRISMA_UI_API {
     enum class ConsoleMessageLevel : uint8_t;
+    enum class PointerButton : uint8_t;
+    struct ExternalSurface;
 }
 
 namespace PrismaUI::Core {
@@ -50,4 +52,12 @@ namespace PrismaUI::ViewManager {
     // Console message callback registration
     void RegisterConsoleCallback(const Core::PrismaViewId& viewId,
                                  std::function<void(Core::PrismaViewId, PRISMA_UI_API::ConsoleMessageLevel, const std::string&)> callback);
+
+    bool SetExternalSurfaceHost(const Core::PrismaViewId& viewId, bool enabled);
+    bool AcquireSurface(const Core::PrismaViewId& viewId, PRISMA_UI_API::ExternalSurface* surface);
+    void ReleaseSurface(PRISMA_UI_API::ExternalSurface* surface);
+    bool SendPointerMove(const Core::PrismaViewId& viewId, int32_t x, int32_t y);
+    bool SendPointerButton(const Core::PrismaViewId& viewId, int32_t x, int32_t y,
+                           PRISMA_UI_API::PointerButton button, bool pressed);
+    bool SendPointerScroll(const Core::PrismaViewId& viewId, int32_t deltaX, int32_t deltaY);
 }

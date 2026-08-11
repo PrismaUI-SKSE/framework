@@ -7,6 +7,21 @@
 
 namespace PrismaUI::ViewRenderer {
     using namespace Core;
+
+    namespace {
+        void ReleaseViewTextureLocked(Core::PrismaView* viewData) {
+            if (viewData->textureView) {
+                viewData->textureView->Release();
+                viewData->textureView = nullptr;
+            }
+            if (viewData->texture) {
+                viewData->texture->Release();
+                viewData->texture = nullptr;
+            }
+            viewData->textureWidth = 0;
+            viewData->textureHeight = 0;
+        }
+    }
     void UpdateLogic() {
         if (renderer) {
             renderer->Update();
@@ -105,17 +120,8 @@ namespace PrismaUI::ViewRenderer {
 
     void ReleaseViewTexture(Core::PrismaView* viewData) {
         if (!viewData) return;
-
-        if (viewData->textureView) {
-            viewData->textureView->Release();
-            viewData->textureView = nullptr;
-        }
-        if (viewData->texture) {
-            viewData->texture->Release();
-            viewData->texture = nullptr;
-        }
-        viewData->textureWidth = 0;
-        viewData->textureHeight = 0;
+        std::scoped_lock lock(viewData->textureMutex);
+        ReleaseViewTextureLocked(viewData);
     }
 
     void UpdateSingleTextureFromBuffer(std::shared_ptr<Core::PrismaView> viewData) {
@@ -160,9 +166,11 @@ namespace PrismaUI::ViewRenderer {
                              uint32_t stride) {
         if (!viewData || !d3dDevice || !d3dContext || !pixels || width == 0 || height == 0) return;
 
+        std::scoped_lock textureLock(viewData->textureMutex);
+
         if (!viewData->texture || viewData->textureWidth != width || viewData->textureHeight != height) {
             logger::debug("View [{}]: Creating/Recreating texture ({}x{})", viewData->id, width, height);
-            ReleaseViewTexture(viewData);
+            ReleaseViewTextureLocked(viewData);
             D3D11_TEXTURE2D_DESC desc;
             ZeroMemory(&desc, sizeof(desc));
             desc.Width = width;
@@ -179,7 +187,7 @@ namespace PrismaUI::ViewRenderer {
 
             if (FAILED(hr)) {
                 logger::critical("View [{}]: Failed to create texture! HR={:#X}", viewData->id, hr);
-                ReleaseViewTexture(viewData);
+                ReleaseViewTextureLocked(viewData);
                 return;
             }
 
@@ -194,12 +202,13 @@ namespace PrismaUI::ViewRenderer {
 
             if (FAILED(hr)) {
                 logger::critical("View [{}]: Failed to create SRV! HR={:#X}", viewData->id, hr);
-                ReleaseViewTexture(viewData);
+                ReleaseViewTextureLocked(viewData);
                 return;
             }
 
             viewData->textureWidth = width;
             viewData->textureHeight = height;
+            viewData->textureGeneration.fetch_add(1);
             logger::debug("View [{}]: Texture/SRV created/resized.", viewData->id);
         }
 
@@ -327,7 +336,8 @@ namespace PrismaUI::ViewRenderer {
             std::shared_lock lock(viewsMutex);
             viewsToDraw.reserve(views.size());
             for (const auto& pair : views) {
-                if (pair.second && !pair.second->isHidden.load() && !pair.second->pendingResourceRelease.load() &&
+                if (pair.second && !pair.second->isHidden.load() && !pair.second->externalSurfaceHost.load() &&
+                    !pair.second->pendingResourceRelease.load() &&
                     pair.second->textureView) {
                     viewsToDraw.push_back(pair.second);
                 }

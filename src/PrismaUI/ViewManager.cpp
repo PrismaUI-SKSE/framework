@@ -7,9 +7,20 @@
 #include "ModelPreview.h"
 #include "PrismaVR.h"
 #include "ViewOperationQueue.h"
+#include "ViewRenderer.h"
+
+#include "PrismaUI_API.h"
 
 namespace PrismaUI::ViewManager {
     using namespace Core;
+
+    namespace {
+        std::shared_ptr<Core::PrismaView> FindView(const Core::PrismaViewId& viewId) {
+            std::shared_lock lock(viewsMutex);
+            auto it = views.find(viewId);
+            return it != views.end() ? it->second : nullptr;
+        }
+    }
 
     Core::PrismaViewId Create(const std::string& htmlPath, std::function<void(Core::PrismaViewId)> onDomReadyCallback) {
         bool expected_init = false;
@@ -527,30 +538,8 @@ namespace PrismaUI::ViewManager {
             logger::error("Destroy: Exception waiting for Ultralight cleanup for View [{}]: {}", viewId, e.what());
         }
 
-        bool hasD3DResources = (viewDataToDestroy->texture != nullptr || viewDataToDestroy->textureView != nullptr);
-
-        if (hasD3DResources) {
-            logger::debug("Destroy: D3D resources present for View [{}], forcing manual cleanup", viewId);
-
-            if (viewDataToDestroy->textureView) {
-                logger::debug("Destroy: Releasing textureView for View [{}]", viewId);
-                viewDataToDestroy->textureView->Release();
-                viewDataToDestroy->textureView = nullptr;
-            }
-
-            if (viewDataToDestroy->texture) {
-                logger::debug("Destroy: Releasing texture for View [{}]", viewId);
-                viewDataToDestroy->texture->Release();
-                viewDataToDestroy->texture = nullptr;
-            }
-
-            viewDataToDestroy->textureWidth = 0;
-            viewDataToDestroy->textureHeight = 0;
-
-            logger::debug("Destroy: D3D resources released for View [{}]", viewId);
-        } else {
-            logger::debug("Destroy: No D3D resources to release for View [{}]", viewId);
-        }
+        ViewRenderer::ReleaseViewTexture(viewDataToDestroy.get());
+        logger::debug("Destroy: D3D resources released for View [{}]", viewId);
 
         viewDataToDestroy->pendingResourceRelease = false;
 
@@ -634,6 +623,117 @@ namespace PrismaUI::ViewManager {
             it->second->consoleMessageCallback = std::move(callback);
         } else {
             logger::warn("RegisterConsoleCallback: View ID [{}] not found.", viewId);
+        }
+    }
+
+    bool SetExternalSurfaceHost(const Core::PrismaViewId& viewId, bool enabled) {
+        auto viewData = FindView(viewId);
+        if (!viewData) return false;
+        viewData->externalSurfaceHost = enabled;
+        return true;
+    }
+
+    bool AcquireSurface(const Core::PrismaViewId& viewId, PRISMA_UI_API::ExternalSurface* surface) {
+        if (!surface || surface->texture || surface->shaderResourceView) return false;
+
+        auto viewData = FindView(viewId);
+        if (!viewData) return false;
+
+        std::scoped_lock textureLock(viewData->textureMutex);
+        if (viewData->pendingResourceRelease.load() || !viewData->texture || !viewData->textureView ||
+            viewData->textureWidth == 0 || viewData->textureHeight == 0) {
+            return false;
+        }
+
+        viewData->texture->AddRef();
+        viewData->textureView->AddRef();
+        surface->texture = viewData->texture;
+        surface->shaderResourceView = viewData->textureView;
+        surface->width = viewData->textureWidth;
+        surface->height = viewData->textureHeight;
+        surface->generation = viewData->textureGeneration.load();
+        return true;
+    }
+
+    void ReleaseSurface(PRISMA_UI_API::ExternalSurface* surface) {
+        if (!surface) return;
+        if (surface->shaderResourceView) surface->shaderResourceView->Release();
+        if (surface->texture) surface->texture->Release();
+        *surface = {};
+    }
+
+    bool SendPointerMove(const Core::PrismaViewId& viewId, int32_t x, int32_t y) {
+        auto viewData = FindView(viewId);
+        if (!viewData || !viewData->ultralightView) return false;
+
+        try {
+            ultralightThread.submit([viewData, x, y]() {
+                if (!viewData->ultralightView) return;
+                ultralight::MouseEvent event;
+                event.type = ultralight::MouseEvent::kType_MouseMoved;
+                event.x = x;
+                event.y = y;
+                event.button = ultralight::MouseEvent::kButton_None;
+                viewData->ultralightView->FireMouseEvent(event);
+            });
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    bool SendPointerButton(const Core::PrismaViewId& viewId, int32_t x, int32_t y,
+                           PRISMA_UI_API::PointerButton button, bool pressed) {
+        auto ultralightButton = ultralight::MouseEvent::kButton_None;
+        switch (button) {
+        case PRISMA_UI_API::PointerButton::Left:
+            ultralightButton = ultralight::MouseEvent::kButton_Left;
+            break;
+        case PRISMA_UI_API::PointerButton::Middle:
+            ultralightButton = ultralight::MouseEvent::kButton_Middle;
+            break;
+        case PRISMA_UI_API::PointerButton::Right:
+            ultralightButton = ultralight::MouseEvent::kButton_Right;
+            break;
+        default:
+            return false;
+        }
+
+        auto viewData = FindView(viewId);
+        if (!viewData || !viewData->ultralightView) return false;
+
+        try {
+            ultralightThread.submit([viewData, x, y, ultralightButton, pressed]() {
+                if (!viewData->ultralightView) return;
+                ultralight::MouseEvent event;
+                event.type = pressed ? ultralight::MouseEvent::kType_MouseDown : ultralight::MouseEvent::kType_MouseUp;
+                event.x = x;
+                event.y = y;
+                event.button = ultralightButton;
+                viewData->ultralightView->FireMouseEvent(event);
+            });
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    bool SendPointerScroll(const Core::PrismaViewId& viewId, int32_t deltaX, int32_t deltaY) {
+        auto viewData = FindView(viewId);
+        if (!viewData || !viewData->ultralightView) return false;
+
+        try {
+            ultralightThread.submit([viewData, deltaX, deltaY]() {
+                if (!viewData->ultralightView) return;
+                ultralight::ScrollEvent event;
+                event.type = ultralight::ScrollEvent::kType_ScrollByPixel;
+                event.delta_x = deltaX;
+                event.delta_y = deltaY;
+                viewData->ultralightView->FireScrollEvent(event);
+            });
+            return true;
+        } catch (...) {
+            return false;
         }
     }
 }

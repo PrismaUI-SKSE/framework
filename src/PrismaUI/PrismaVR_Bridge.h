@@ -46,6 +46,10 @@ namespace PrismaVR_Bridge {
 		return v ? v->isHidden.load() : true;
 	}
 
+	inline bool IsExternallyHosted(PrismaUI::Core::PrismaView* v) {
+		return v && v->externalSurfaceHost.load();
+	}
+
 	inline ID3D11Device* GetD3DDevice() {
 		return PrismaUI::Core::d3dDevice;
 	}

@@ -762,6 +762,8 @@ static void SyncOverlays()
 
 	for (auto& viewInfo : visibleViews) {
 		uint64_t id = viewInfo.id;
+		if (PrismaVR_Bridge::IsExternallyHosted(viewInfo.view.get()))
+			continue;
 		currentViews[id] = true;
 
 		auto it = g_vrOverlays.find(id);

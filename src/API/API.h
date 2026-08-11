@@ -4,7 +4,7 @@
 
 class PluginAPI
 {
-	using LatestInterface = PRISMA_UI_API::IVPrismaUI2;
+	using LatestInterface = PRISMA_UI_API::IVPrismaUI3;
 
 public:
 	class PrismaUIInterface : public LatestInterface
@@ -47,6 +47,16 @@ public:
 		// IVPrismaUI2
 
 		virtual void RegisterConsoleCallback(PrismaView view, PRISMA_UI_API::ConsoleMessageCallback callback) noexcept override;
+
+		// IVPrismaUI3
+
+		virtual bool SetExternalSurfaceHost(PrismaView view, bool enabled) noexcept override;
+		virtual bool AcquireSurface(PrismaView view, PRISMA_UI_API::ExternalSurface* surface) noexcept override;
+		virtual void ReleaseSurface(PRISMA_UI_API::ExternalSurface* surface) noexcept override;
+		virtual bool SendPointerMove(PrismaView view, int32_t x, int32_t y) noexcept override;
+		virtual bool SendPointerButton(PrismaView view, int32_t x, int32_t y,
+		                               PRISMA_UI_API::PointerButton button, bool pressed) noexcept override;
+		virtual bool SendPointerScroll(PrismaView view, int32_t deltaX, int32_t deltaY) noexcept override;
 
 	private:
 		unsigned long apiTID = 0;

@@ -57,6 +57,7 @@ namespace PrismaUI::Core {
         std::string originalUrl;    // Original URL from view creation (for recovery)
         std::string lastLoadedUrl;  // Track last successfully loaded URL
         std::atomic<bool> isHidden = false;
+        std::atomic<bool> externalSurfaceHost = false;
         std::unique_ptr<Listeners::MyLoadListener> loadListener;
         std::unique_ptr<Listeners::MyViewListener> viewListener;
         std::atomic<bool> isLoadingFinished = false;
@@ -90,8 +91,10 @@ namespace PrismaUI::Core {
         // Primary view rendering data
         ID3D11Texture2D* texture = nullptr;
         ID3D11ShaderResourceView* textureView = nullptr;
+        mutable std::mutex textureMutex;
         uint32_t textureWidth = 0;
         uint32_t textureHeight = 0;
+        std::atomic<uint64_t> textureGeneration = 0;
         std::vector<std::byte> pixelBuffer;
         uint32_t bufferWidth = 0;
         uint32_t bufferHeight = 0;

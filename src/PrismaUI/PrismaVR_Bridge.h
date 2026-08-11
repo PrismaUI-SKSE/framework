@@ -46,6 +46,7 @@ namespace PrismaVR_Bridge {
 		return v ? v->isHidden.load() : true;
 	}
 
+	/// Returns whether another renderer currently owns presentation of the view.
 	inline bool IsExternallyHosted(PrismaUI::Core::PrismaView* v) {
 		return v && v->externalSurfaceHost.load();
 	}

@@ -91,6 +91,9 @@ namespace PrismaUI::Core {
         // Primary view rendering data
         ID3D11Texture2D* texture = nullptr;
         ID3D11ShaderResourceView* textureView = nullptr;
+        ID3D11Texture2D* externalTexture = nullptr;
+        ID3D11RenderTargetView* externalRenderTarget = nullptr;
+        ID3D11ShaderResourceView* externalTextureView = nullptr;
         mutable std::mutex textureMutex;
         uint32_t textureWidth = 0;
         uint32_t textureHeight = 0;
@@ -142,10 +145,17 @@ namespace PrismaUI::Core {
 
     extern inline REL::Relocation<Hooks::D3DPresentHook::D3DPresentFunc> RealD3dPresentFunc;
 
+    /// Initializes Ultralight and rendering after the runtime is ready.
     void InitializeCoreSystem();
+    /// Requests deferred core initialization for the first created view.
+    void RequestCoreInitialization();
+    /// Marks the SKSE DataLoaded boundary and runs any pending initialization.
+    void OnDataLoaded();
     void InitHooks();
     void InitGraphics();
+    /// Updates PrismaUI rendering and all external composite surfaces.
     void D3DPresent(uint32_t a_p1);
+    /// Releases core resources and resets deferred initialization state.
     void Shutdown();
 
     // Inspector View functions

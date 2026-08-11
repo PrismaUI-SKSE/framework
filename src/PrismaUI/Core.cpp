@@ -96,6 +96,27 @@ namespace PrismaUI::Core {
     std::atomic<bool> coreInitialized = false;
     std::atomic<bool> rendererInitFailed = false;
 
+    namespace {
+        std::atomic<bool> initializationRequested = false;
+        std::atomic<bool> initializationQueued = false;
+        std::atomic<bool> initializationInProgress = false;
+        std::atomic<bool> dataLoaded = false;
+
+        /// Queues core initialization once the SKSE runtime is ready.
+        void QueueCoreInitialization() {
+            if (!dataLoaded.load() || coreInitialized.load() || rendererInitFailed.load()) return;
+
+            bool expected = false;
+            if (!initializationQueued.compare_exchange_strong(expected, true)) return;
+
+            // ponytail: the SKSE task queue is the smallest render-ready boundary; add an explicit renderer-ready signal if a runtime needs a later boundary.
+            SKSE::GetTaskInterface()->AddTask([]() {
+                initializationQueued = false;
+                InitializeCoreSystem();
+            });
+        }
+    }
+
     // Ultralight platform objects - ownership remains with caller per API docs
     static std::unique_ptr<MyUltralightLogger> ultralightLogger;
 
@@ -120,7 +141,25 @@ namespace PrismaUI::Core {
 
     PrismaView::~PrismaView() { ViewRenderer::ReleaseViewTexture(this); }
 
+    /// Requests initialization and defers it until DataLoaded when necessary.
+    void RequestCoreInitialization() {
+        initializationRequested = true;
+        QueueCoreInitialization();
+    }
+
+    /// Opens the runtime boundary required for safe renderer initialization.
+    void OnDataLoaded() {
+        dataLoaded = true;
+        if (initializationRequested.load()) QueueCoreInitialization();
+    }
+
+    /// Initializes Ultralight, D3D hooks, and VR integration exactly once.
     void InitializeCoreSystem() {
+        if (coreInitialized.load() || rendererInitFailed.load()) return;
+
+        bool expected = false;
+        if (!initializationInProgress.compare_exchange_strong(expected, true)) return;
+
         logger::info("Initializing PrismaUI Core System...");
         InitHooks();
 
@@ -163,6 +202,12 @@ namespace PrismaUI::Core {
             })
             .get();
 
+        if (!renderer) {
+            initializationInProgress = false;
+            logger::critical("PrismaUI Core System initialization stopped: Renderer not created.");
+            return;
+        }
+
         PrismaVR::Initialize();
 
         auto ui = RE::UI::GetSingleton();
@@ -172,6 +217,8 @@ namespace PrismaUI::Core {
             logger::info("VR detected — skipping FocusMenu (cursor) registration. Laser interaction active.");
         }
 
+        coreInitialized = true;
+        initializationInProgress = false;
         logger::info("PrismaUI Core System Initialized.");
     }
 
@@ -261,7 +308,8 @@ namespace PrismaUI::Core {
         }
     }
 
-    void D3DPresent(uint32_t a_p1) {
+/// Updates PrismaUI rendering and all external composite surfaces.
+void D3DPresent(uint32_t a_p1) {
         RealD3dPresentFunc(a_p1);
 
         if (!coreInitialized || rendererInitFailed) return;
@@ -518,6 +566,8 @@ namespace PrismaUI::Core {
             logger::error("ModelPreview::TickCore failed with an unknown exception");
         }
 
+        ComposeExternalSurfaces();
+
         DrawViews();
         DrawCursor();
 
@@ -525,7 +575,8 @@ namespace PrismaUI::Core {
         PrismaVR::OnFrame();
     }
 
-    void Shutdown() {
+/// Releases core resources and resets deferred initialization state.
+void Shutdown() {
         PrismaVR::Shutdown();
         ModelPreview::Shutdown();
         logger::info("Shutting down PrismaUI Core System...");
@@ -576,6 +627,10 @@ namespace PrismaUI::Core {
         ultralightLogger.reset();
 
         coreInitialized = false;
+        initializationRequested = false;
+        initializationQueued = false;
+        initializationInProgress = false;
+        dataLoaded = false;
         logger::info("PrismaUI Core System shut down complete.");
     }
 }  // namespace PrismaUI::Core

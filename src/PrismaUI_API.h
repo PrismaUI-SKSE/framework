@@ -35,14 +35,24 @@ namespace PRISMA_UI_API {
     // Console message callback.
     typedef void (*ConsoleMessageCallback)(PrismaView view, ConsoleMessageLevel level, const char* message);
 
+    /// Mouse button values accepted by an external surface host.
     enum class PointerButton : uint8_t { Left = 0, Middle, Right };
 
+    /// Strong references to the current D3D11 texture exposed to an external host.
     struct ExternalSurface {
         ID3D11Texture2D* texture = nullptr;
         ID3D11ShaderResourceView* shaderResourceView = nullptr;
         uint32_t width = 0;
         uint32_t height = 0;
         uint64_t generation = 0;
+    };
+
+    /// Snapshot of a live PrismaUI view returned by view enumeration.
+    struct ViewDescriptor {
+        PrismaView view = 0;
+        char htmlPath[512]{};
+        uint8_t hidden = 0;
+        uint8_t externalSurfaceHost = 0;
     };
 
     // PrismaUI modder interface v1
@@ -135,19 +145,37 @@ namespace PRISMA_UI_API {
         ~IVPrismaUI3() = default;
 
     public:
-        // Disable PrismaUI's own desktop/VR presentation while keeping the view rendered.
+        /// Enables or disables external presentation while keeping the view rendered.
+        /// @return True when the view exists and the hosting state was changed.
         virtual bool SetExternalSurfaceHost(PrismaView view, bool enabled) noexcept = 0;
 
-        // Acquire strong COM references to the current D3D11 surface.
-        // Release them with ReleaseSurface before acquiring another surface.
+        /// Acquires strong COM references to the current D3D11 surface.
+        /// Release them with ReleaseSurface before acquiring another surface.
+        /// @return True when a render surface is currently available.
         virtual bool AcquireSurface(PrismaView view, ExternalSurface* surface) noexcept = 0;
+
+        /// Releases COM references previously returned by AcquireSurface.
         virtual void ReleaseSurface(ExternalSurface* surface) noexcept = 0;
 
-        // Inject pointer input in view pixel coordinates. External hosts own hit testing.
+        /// Injects pointer movement in view pixel coordinates.
         virtual bool SendPointerMove(PrismaView view, int32_t x, int32_t y) noexcept = 0;
+
+        /// Injects a pointer button transition in view pixel coordinates.
         virtual bool SendPointerButton(PrismaView view, int32_t x, int32_t y, PointerButton button,
                                        bool pressed) noexcept = 0;
+
+        /// Injects a pixel-based pointer scroll delta.
         virtual bool SendPointerScroll(PrismaView view, int32_t deltaX, int32_t deltaY) noexcept = 0;
+
+        /// Returns the total view count and fills up to capacity entries when output is non-null.
+        uint32_t EnumerateViews(ViewDescriptor* output, uint32_t capacity) noexcept {
+            using EnumerateViewsFunc = uint32_t (*)(ViewDescriptor*, uint32_t);
+            const auto pluginHandle = GetModuleHandleW(L"PrismaUI.dll");
+            if (!pluginHandle) return 0;
+            const auto enumerateViews = reinterpret_cast<EnumerateViewsFunc>(
+                GetProcAddress(pluginHandle, "PrismaUI_EnumerateViews"));
+            return enumerateViews ? enumerateViews(output, capacity) : 0;
+        }
     };
 
     // Maps interface types to InterfaceVersion enum values.

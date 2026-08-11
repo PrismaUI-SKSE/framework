@@ -9,7 +9,25 @@ namespace PrismaUI::ViewRenderer {
     using namespace Core;
 
     namespace {
+        /// Releases a view's external composite resources while its mutex is held.
+        void ReleaseExternalSurfaceLocked(Core::PrismaView* viewData) {
+            if (viewData->externalTextureView) {
+                viewData->externalTextureView->Release();
+                viewData->externalTextureView = nullptr;
+            }
+            if (viewData->externalRenderTarget) {
+                viewData->externalRenderTarget->Release();
+                viewData->externalRenderTarget = nullptr;
+            }
+            if (viewData->externalTexture) {
+                viewData->externalTexture->Release();
+                viewData->externalTexture = nullptr;
+            }
+        }
+
+        /// Releases all view textures while the texture mutex is held.
         void ReleaseViewTextureLocked(Core::PrismaView* viewData) {
+            ReleaseExternalSurfaceLocked(viewData);
             if (viewData->textureView) {
                 viewData->textureView->Release();
                 viewData->textureView = nullptr;
@@ -118,10 +136,19 @@ namespace PrismaUI::ViewRenderer {
             viewData->newFrameReady = false;
     }
 
+    /// Releases all D3D11 resources associated with a view.
     void ReleaseViewTexture(Core::PrismaView* viewData) {
         if (!viewData) return;
         std::scoped_lock lock(viewData->textureMutex);
         ReleaseViewTextureLocked(viewData);
+    }
+
+    /// Releases the composite surface used by an external host.
+    void ReleaseExternalSurface(Core::PrismaView* viewData) {
+        if (!viewData) return;
+        std::scoped_lock lock(viewData->textureMutex);
+        ReleaseExternalSurfaceLocked(viewData);
+        viewData->textureGeneration.fetch_add(1);
     }
 
     void UpdateSingleTextureFromBuffer(std::shared_ptr<Core::PrismaView> viewData) {
@@ -162,6 +189,7 @@ namespace PrismaUI::ViewRenderer {
         }
     }
 
+    /// Uploads a BGRA frame and recreates synchronized textures when dimensions change.
     void CopyPixelsToTexture(Core::PrismaView* viewData, void* pixels, uint32_t width, uint32_t height,
                              uint32_t stride) {
         if (!viewData || !d3dDevice || !d3dContext || !pixels || width == 0 || height == 0) return;
@@ -328,6 +356,7 @@ namespace PrismaUI::ViewRenderer {
         if (backupRasterizerState) backupRasterizerState->Release();
     }
 
+    /// Draws only views whose presentation remains owned by PrismaUI.
     void DrawViews() {
         if (!spriteBatch || !commonStates) return;
 
@@ -390,6 +419,86 @@ namespace PrismaUI::ViewRenderer {
             logger::error("Error during SpriteBatch drawing loop: {}", e.what());
         } catch (...) {
             logger::error("Unknown error during SpriteBatch drawing loop.");
+        }
+    }
+
+    /// Composites hosted HTML views and model previews into shareable textures.
+    void ComposeExternalSurfaces() {
+        if (!d3dDevice || !d3dContext || !spriteBatch || !commonStates) return;
+
+        std::vector<std::shared_ptr<Core::PrismaView>> hostedViews;
+        {
+            std::shared_lock lock(viewsMutex);
+            for (const auto& [id, viewData] : views) {
+                if (viewData && viewData->externalSurfaceHost.load() &&
+                    !viewData->isHidden.load() && !viewData->pendingResourceRelease.load()) {
+                    hostedViews.push_back(viewData);
+                }
+            }
+        }
+
+        for (const auto& viewData : hostedViews) {
+            std::vector<ModelPreview::FlatDraw> previews;
+            ModelPreview::GetFlatOverlays(viewData->id, previews);
+
+            std::scoped_lock textureLock(viewData->textureMutex);
+            if (!viewData->texture || !viewData->textureView ||
+                viewData->textureWidth == 0 || viewData->textureHeight == 0) continue;
+
+            if (!viewData->externalTexture) {
+                D3D11_TEXTURE2D_DESC descriptor{};
+                descriptor.Width = viewData->textureWidth;
+                descriptor.Height = viewData->textureHeight;
+                descriptor.MipLevels = 1;
+                descriptor.ArraySize = 1;
+                descriptor.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+                descriptor.SampleDesc.Count = 1;
+                descriptor.Usage = D3D11_USAGE_DEFAULT;
+                descriptor.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+                if (FAILED(d3dDevice->CreateTexture2D(
+                        &descriptor, nullptr, &viewData->externalTexture)) ||
+                    FAILED(d3dDevice->CreateRenderTargetView(
+                        viewData->externalTexture, nullptr, &viewData->externalRenderTarget)) ||
+                    FAILED(d3dDevice->CreateShaderResourceView(
+                        viewData->externalTexture, nullptr, &viewData->externalTextureView))) {
+                    logger::error("View [{}]: failed to create external composite surface.", viewData->id);
+                    ReleaseExternalSurfaceLocked(viewData.get());
+                    continue;
+                }
+                viewData->textureGeneration.fetch_add(1);
+            }
+
+            d3dContext->CopyResource(viewData->externalTexture, viewData->texture);
+            if (previews.empty()) continue;
+
+            ID3D11RenderTargetView* previousRenderTarget = nullptr;
+            ID3D11DepthStencilView* previousDepthStencil = nullptr;
+            d3dContext->OMGetRenderTargets(1, &previousRenderTarget, &previousDepthStencil);
+            UINT viewportCount = 1;
+            D3D11_VIEWPORT previousViewport{};
+            d3dContext->RSGetViewports(&viewportCount, &previousViewport);
+
+            d3dContext->OMSetRenderTargets(1, &viewData->externalRenderTarget, nullptr);
+            const D3D11_VIEWPORT viewport{
+                0.0f,
+                0.0f,
+                static_cast<float>(viewData->textureWidth),
+                static_cast<float>(viewData->textureHeight),
+                0.0f,
+                1.0f
+            };
+            d3dContext->RSSetViewports(1, &viewport);
+            if (BeginSpriteBatchSafe()) {
+                for (const auto& preview : previews) {
+                    if (preview.srv) spriteBatch->Draw(preview.srv, preview.dest);
+                }
+                EndSpriteBatchSafe();
+            }
+
+            d3dContext->OMSetRenderTargets(1, &previousRenderTarget, previousDepthStencil);
+            if (viewportCount) d3dContext->RSSetViewports(1, &previousViewport);
+            if (previousRenderTarget) previousRenderTarget->Release();
+            if (previousDepthStencil) previousDepthStencil->Release();
         }
     }
 

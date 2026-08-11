@@ -752,6 +752,7 @@ static void DestroyVROverlay(uint64_t viewId)
 // This is the ONLY place overlays are created from view discovery. Other code
 // (CleanupDistantOverlays) may destroy overlays, but SyncOverlays will recreate
 // them on the next frame if the underlying Prisma view is still alive.
+/// Synchronizes native VR overlays for visible views not externally hosted.
 static void SyncOverlays()
 {
 	auto visibleViews = PrismaVR_Bridge::GetVisibleViews();

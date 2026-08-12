@@ -709,8 +709,10 @@ static void CreateVROverlay(uint64_t viewId, PrismaVR_Bridge::ViewInfo& viewInfo
 		}
 	}
 
-	// Show it
-	VCallOvl(g_overlay, OVL_SLOT::ShowOverlay, "ShowOverlay", state.handle);
+	// Do not enable an empty overlay. SyncOverlays will show it after a later
+	// texture submission succeeds.
+	if (state.textureBound)
+		VCallOvl(g_overlay, OVL_SLOT::ShowOverlay, "ShowOverlay", state.handle);
 
 	g_vrOverlays[viewId] = state;
 	logger::info("PrismaVR: Created VR overlay for view {} at ({:.2f}, {:.2f}, {:.2f})",

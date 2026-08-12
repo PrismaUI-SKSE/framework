@@ -101,17 +101,25 @@ namespace PrismaUI::Core {
         std::atomic<bool> initializationQueued = false;
         std::atomic<bool> initializationInProgress = false;
         std::atomic<bool> dataLoaded = false;
+        std::atomic<bool> shuttingDown = false;
+        std::atomic<uint64_t> lifecycleGeneration = 0;
+        std::mutex lifecycleMutex;
 
         /// Queues core initialization once the SKSE runtime is ready.
         void QueueCoreInitialization() {
-            if (!dataLoaded.load() || coreInitialized.load() || rendererInitFailed.load()) return;
+            const auto generation = lifecycleGeneration.load();
+            if (shuttingDown.load() || !dataLoaded.load() || coreInitialized.load() || rendererInitFailed.load())
+                return;
 
             bool expected = false;
             if (!initializationQueued.compare_exchange_strong(expected, true)) return;
 
             // ponytail: the SKSE task queue is the smallest render-ready boundary; add an explicit renderer-ready signal if a runtime needs a later boundary.
-            SKSE::GetTaskInterface()->AddTask([]() {
+            SKSE::GetTaskInterface()->AddTask([generation]() {
                 initializationQueued = false;
+                if (shuttingDown.load() || generation != lifecycleGeneration.load() ||
+                    !dataLoaded.load() || !initializationRequested.load())
+                    return;
                 InitializeCoreSystem();
             });
         }
@@ -139,23 +147,40 @@ namespace PrismaUI::Core {
 
     inline REL::Relocation<Hooks::D3DPresentHook::D3DPresentFunc> RealD3dPresentFunc;
 
+    TextureSnapshot PrismaView::AcquireTextureSnapshot(bool external) const {
+        std::scoped_lock lock(textureMutex);
+        TextureSnapshot snapshot;
+        if (pendingResourceRelease.load()) return snapshot;
+
+        snapshot.texture = external ? externalTexture : texture;
+        snapshot.textureView = external ? externalTextureView : textureView;
+        snapshot.width = textureWidth;
+        snapshot.height = textureHeight;
+        snapshot.generation = textureGeneration.load();
+        if (!snapshot) return {};
+        return snapshot;
+    }
+
     PrismaView::~PrismaView() { ViewRenderer::ReleaseViewTexture(this); }
 
     /// Requests initialization and defers it until DataLoaded when necessary.
     void RequestCoreInitialization() {
+        if (shuttingDown.load()) return;
         initializationRequested = true;
         QueueCoreInitialization();
     }
 
     /// Opens the runtime boundary required for safe renderer initialization.
     void OnDataLoaded() {
+        if (shuttingDown.load()) return;
         dataLoaded = true;
         if (initializationRequested.load()) QueueCoreInitialization();
     }
 
     /// Initializes Ultralight, D3D hooks, and VR integration exactly once.
     void InitializeCoreSystem() {
-        if (coreInitialized.load() || rendererInitFailed.load()) return;
+        std::scoped_lock lifecycleLock(lifecycleMutex);
+        if (shuttingDown.load() || coreInitialized.load() || rendererInitFailed.load()) return;
 
         bool expected = false;
         if (!initializationInProgress.compare_exchange_strong(expected, true)) return;
@@ -577,6 +602,12 @@ void D3DPresent(uint32_t a_p1) {
 
 /// Releases core resources and resets deferred initialization state.
 void Shutdown() {
+        // Invalidate queued initialization before waiting for any initialization
+        // already in progress. A stale SKSE task must never resurrect the core.
+        shuttingDown = true;
+        lifecycleGeneration.fetch_add(1);
+        std::scoped_lock lifecycleLock(lifecycleMutex);
+
         PrismaVR::Shutdown();
         ModelPreview::Shutdown();
         logger::info("Shutting down PrismaUI Core System...");

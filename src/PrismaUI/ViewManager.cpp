@@ -637,21 +637,15 @@ void Destroy(const Core::PrismaViewId& viewId) {
         auto viewData = FindView(viewId);
         if (!viewData) return false;
 
-        std::scoped_lock textureLock(viewData->textureMutex);
-        auto* texture = viewData->externalSurfaceHost.load() ? viewData->externalTexture : viewData->texture;
-        auto* textureView = viewData->externalSurfaceHost.load() ? viewData->externalTextureView : viewData->textureView;
-        if (viewData->pendingResourceRelease.load() || !texture || !textureView ||
-            viewData->textureWidth == 0 || viewData->textureHeight == 0) {
-            return false;
-        }
+        const bool externallyHosted = viewData->externalSurfaceHost.load();
+        auto snapshot = viewData->AcquireTextureSnapshot(externallyHosted);
+        if (!snapshot) return false;
 
-        texture->AddRef();
-        textureView->AddRef();
-        surface->texture = texture;
-        surface->shaderResourceView = textureView;
-        surface->width = viewData->textureWidth;
-        surface->height = viewData->textureHeight;
-        surface->generation = viewData->textureGeneration.load();
+        surface->texture = snapshot.texture.Detach();
+        surface->shaderResourceView = snapshot.textureView.Detach();
+        surface->width = snapshot.width;
+        surface->height = snapshot.height;
+        surface->generation = snapshot.generation;
         return true;
     }
 
@@ -666,11 +660,11 @@ void Destroy(const Core::PrismaViewId& viewId) {
     /// Queues pointer movement for an externally hosted view.
     bool SendPointerMove(const Core::PrismaViewId& viewId, int32_t x, int32_t y) {
         auto viewData = FindView(viewId);
-        if (!viewData || !viewData->ultralightView) return false;
+        if (!viewData || !viewData->externalSurfaceHost.load()) return false;
 
         try {
             ultralightThread.submit([viewData, x, y]() {
-                if (!viewData->ultralightView) return;
+                if (!viewData->externalSurfaceHost.load() || !viewData->ultralightView) return;
                 ultralight::MouseEvent event;
                 event.type = ultralight::MouseEvent::kType_MouseMoved;
                 event.x = x;
@@ -703,11 +697,11 @@ void Destroy(const Core::PrismaViewId& viewId) {
         }
 
         auto viewData = FindView(viewId);
-        if (!viewData || !viewData->ultralightView) return false;
+        if (!viewData || !viewData->externalSurfaceHost.load()) return false;
 
         try {
             ultralightThread.submit([viewData, x, y, ultralightButton, pressed]() {
-                if (!viewData->ultralightView) return;
+                if (!viewData->externalSurfaceHost.load() || !viewData->ultralightView) return;
                 ultralight::MouseEvent event;
                 event.type = pressed ? ultralight::MouseEvent::kType_MouseDown : ultralight::MouseEvent::kType_MouseUp;
                 event.x = x;
@@ -724,11 +718,11 @@ void Destroy(const Core::PrismaViewId& viewId) {
     /// Queues a pointer scroll delta for an externally hosted view.
     bool SendPointerScroll(const Core::PrismaViewId& viewId, int32_t deltaX, int32_t deltaY) {
         auto viewData = FindView(viewId);
-        if (!viewData || !viewData->ultralightView) return false;
+        if (!viewData || !viewData->externalSurfaceHost.load()) return false;
 
         try {
             ultralightThread.submit([viewData, deltaX, deltaY]() {
-                if (!viewData->ultralightView) return;
+                if (!viewData->externalSurfaceHost.load() || !viewData->ultralightView) return;
                 ultralight::ScrollEvent event;
                 event.type = ultralight::ScrollEvent::kType_ScrollByPixel;
                 event.delta_x = deltaX;
@@ -743,19 +737,35 @@ void Destroy(const Core::PrismaViewId& viewId) {
 
     /// Copies a stable snapshot of live views into a caller-owned buffer.
     uint32_t EnumerateViews(PRISMA_UI_API::ViewDescriptor* output, uint32_t capacity) {
-        std::vector<std::shared_ptr<Core::PrismaView>> snapshot;
+        struct EnumeratedView {
+            PRISMA_UI_API::ViewDescriptor descriptor;
+            int order = 0;
+        };
+
+        std::vector<EnumeratedView> snapshot;
         {
             std::shared_lock lock(viewsMutex);
             snapshot.reserve(views.size());
             for (const auto& [viewId, viewData] : views) {
-                if (viewData) snapshot.push_back(viewData);
+                if (!viewData) continue;
+
+                EnumeratedView item;
+                item.order = viewData->order;
+                item.descriptor.view = viewData->id;
+                const auto& path = viewData->originalUrl;
+                const auto pathLength = std::min(path.size(), sizeof(item.descriptor.htmlPath) - 1);
+                std::memcpy(item.descriptor.htmlPath, path.data(), pathLength);
+                item.descriptor.htmlPath[pathLength] = '\0';
+                item.descriptor.hidden = viewData->isHidden.load() ? 1 : 0;
+                item.descriptor.externalSurfaceHost = viewData->externalSurfaceHost.load() ? 1 : 0;
+                snapshot.push_back(std::move(item));
             }
         }
 
         std::sort(snapshot.begin(), snapshot.end(),
                   [](const auto& left, const auto& right) {
-                      if (left->order != right->order) return left->order < right->order;
-                      return left->id < right->id;
+                      if (left.order != right.order) return left.order < right.order;
+                      return left.descriptor.view < right.descriptor.view;
                   });
 
         const auto total = static_cast<uint32_t>(std::min<std::size_t>(
@@ -764,16 +774,7 @@ void Destroy(const Core::PrismaViewId& viewId) {
 
         const auto count = std::min(total, capacity);
         for (uint32_t index = 0; index < count; ++index) {
-            auto& descriptor = output[index];
-            descriptor = {};
-            const auto& viewData = snapshot[index];
-            descriptor.view = viewData->id;
-            const auto& path = viewData->originalUrl;
-            const auto pathLength = std::min(path.size(), sizeof(descriptor.htmlPath) - 1);
-            std::memcpy(descriptor.htmlPath, path.data(), pathLength);
-            descriptor.htmlPath[pathLength] = '\0';
-            descriptor.hidden = viewData->isHidden.load() ? 1 : 0;
-            descriptor.externalSurfaceHost = viewData->externalSurfaceHost.load() ? 1 : 0;
+            output[index] = snapshot[index].descriptor;
         }
         return total;
     }

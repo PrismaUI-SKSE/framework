@@ -158,18 +158,21 @@ namespace PRISMA_UI_API {
         virtual void ReleaseSurface(ExternalSurface* surface) noexcept = 0;
 
         /// Injects pointer movement in view pixel coordinates.
+        /// @return False unless external surface hosting is enabled for the view.
         virtual bool SendPointerMove(PrismaView view, int32_t x, int32_t y) noexcept = 0;
 
         /// Injects a pointer button transition in view pixel coordinates.
+        /// @return False unless external surface hosting is enabled for the view.
         virtual bool SendPointerButton(PrismaView view, int32_t x, int32_t y, PointerButton button,
                                        bool pressed) noexcept = 0;
 
         /// Injects a pixel-based pointer scroll delta.
+        /// @return False unless external surface hosting is enabled for the view.
         virtual bool SendPointerScroll(PrismaView view, int32_t deltaX, int32_t deltaY) noexcept = 0;
 
         /// Returns the total view count and fills up to capacity entries when output is non-null.
         uint32_t EnumerateViews(ViewDescriptor* output, uint32_t capacity) noexcept {
-            using EnumerateViewsFunc = uint32_t (*)(ViewDescriptor*, uint32_t);
+            using EnumerateViewsFunc = uint32_t (*)(ViewDescriptor*, uint32_t) noexcept;
             const auto pluginHandle = GetModuleHandleW(L"PrismaUI.dll");
             if (!pluginHandle) return 0;
             const auto enumerateViews = reinterpret_cast<EnumerateViewsFunc>(

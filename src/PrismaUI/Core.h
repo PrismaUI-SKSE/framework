@@ -49,6 +49,19 @@ namespace PrismaUI::Core {
 
     typedef uint64_t PrismaViewId;
 
+    /// Retained, dimensionally consistent view of a render surface.
+    struct TextureSnapshot {
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> textureView;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        uint64_t generation = 0;
+
+        explicit operator bool() const noexcept {
+            return texture && textureView && width > 0 && height > 0;
+        }
+    };
+
     struct PrismaView {
         PrismaViewId id;
         RefPtr<View> ultralightView = nullptr;
@@ -112,6 +125,8 @@ namespace PrismaUI::Core {
         std::atomic<bool> isProcessingOperation = false;
         std::atomic<int> queuedOperationsCount = 0;
 
+        /// Acquires strong COM references and matching dimensions under textureMutex.
+        [[nodiscard]] TextureSnapshot AcquireTextureSnapshot(bool external) const;
         ~PrismaView();
     };
 

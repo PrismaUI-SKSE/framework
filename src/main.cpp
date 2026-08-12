@@ -74,6 +74,13 @@ RequestPluginAPI(const PRISMA_UI_API::InterfaceVersion a_interfaceVersion) {
 /// Enumerates live PrismaUI views without extending the IVPrismaUI3 vtable.
 extern "C" DLLEXPORT uint32_t SKSEAPI PrismaUI_EnumerateViews(
     PRISMA_UI_API::ViewDescriptor* output,
-    uint32_t capacity) {
-  return PrismaUI::ViewManager::EnumerateViews(output, capacity);
+    uint32_t capacity) noexcept {
+  try {
+    return PrismaUI::ViewManager::EnumerateViews(output, capacity);
+  } catch (const std::exception& e) {
+    logger::error("PrismaUI_EnumerateViews failed: {}", e.what());
+  } catch (...) {
+    logger::error("PrismaUI_EnumerateViews failed with an unknown exception");
+  }
+  return 0;
 }

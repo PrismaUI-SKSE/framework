@@ -39,6 +39,100 @@ namespace PrismaUI::ViewRenderer {
             viewData->textureWidth = 0;
             viewData->textureHeight = 0;
         }
+
+        /// Restores every D3D11 pipeline binding touched by SpriteBatch.
+        class ScopedPipelineState {
+        public:
+            explicit ScopedPipelineState(ID3D11DeviceContext* context) : context_(context) {
+                context_->IAGetInputLayout(&inputLayout_);
+                context_->IAGetPrimitiveTopology(&topology_);
+                context_->IAGetVertexBuffers(0, 1, &vertexBuffer_, &vertexStride_, &vertexOffset_);
+                context_->IAGetIndexBuffer(&indexBuffer_, &indexFormat_, &indexOffset_);
+                context_->VSGetShader(&vertexShader_, nullptr, nullptr);
+                context_->PSGetShader(&pixelShader_, nullptr, nullptr);
+                context_->VSGetConstantBuffers(0, 1, &vertexConstantBuffer_);
+                context_->PSGetConstantBuffers(0, 1, &pixelConstantBuffer_);
+                context_->PSGetShaderResources(0, 1, &pixelResource_);
+                context_->PSGetSamplers(0, 1, &pixelSampler_);
+                context_->RSGetState(&rasterizerState_);
+                context_->RSGetViewports(&viewportCount_, viewports_);
+                context_->RSGetScissorRects(&scissorCount_, scissors_);
+                context_->OMGetBlendState(&blendState_, blendFactor_, &sampleMask_);
+                context_->OMGetDepthStencilState(&depthStencilState_, &stencilRef_);
+                context_->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, renderTargets_, &depthStencilView_);
+            }
+
+            ScopedPipelineState(const ScopedPipelineState&) = delete;
+            ScopedPipelineState& operator=(const ScopedPipelineState&) = delete;
+
+            ~ScopedPipelineState() {
+                context_->IASetInputLayout(inputLayout_);
+                context_->IASetPrimitiveTopology(topology_);
+                context_->IASetVertexBuffers(0, 1, &vertexBuffer_, &vertexStride_, &vertexOffset_);
+                context_->IASetIndexBuffer(indexBuffer_, indexFormat_, indexOffset_);
+                // Unbind the external composite target before restoring the
+                // previous PS resource, which may reference that same texture.
+                context_->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, renderTargets_, depthStencilView_);
+                context_->VSSetShader(vertexShader_, nullptr, 0);
+                context_->PSSetShader(pixelShader_, nullptr, 0);
+                context_->VSSetConstantBuffers(0, 1, &vertexConstantBuffer_);
+                context_->PSSetConstantBuffers(0, 1, &pixelConstantBuffer_);
+                context_->PSSetShaderResources(0, 1, &pixelResource_);
+                context_->PSSetSamplers(0, 1, &pixelSampler_);
+                context_->RSSetState(rasterizerState_);
+                context_->RSSetViewports(viewportCount_, viewportCount_ ? viewports_ : nullptr);
+                context_->RSSetScissorRects(scissorCount_, scissorCount_ ? scissors_ : nullptr);
+                context_->OMSetBlendState(blendState_, blendFactor_, sampleMask_);
+                context_->OMSetDepthStencilState(depthStencilState_, stencilRef_);
+
+                auto release = [](IUnknown* value) {
+                    if (value) value->Release();
+                };
+                release(inputLayout_);
+                release(vertexBuffer_);
+                release(indexBuffer_);
+                release(vertexShader_);
+                release(pixelShader_);
+                release(vertexConstantBuffer_);
+                release(pixelConstantBuffer_);
+                release(pixelResource_);
+                release(pixelSampler_);
+                release(rasterizerState_);
+                release(blendState_);
+                release(depthStencilState_);
+                release(depthStencilView_);
+                for (auto* renderTarget : renderTargets_) release(renderTarget);
+            }
+
+        private:
+            ID3D11DeviceContext* context_ = nullptr;
+            ID3D11InputLayout* inputLayout_ = nullptr;
+            D3D11_PRIMITIVE_TOPOLOGY topology_ = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
+            ID3D11Buffer* vertexBuffer_ = nullptr;
+            UINT vertexStride_ = 0;
+            UINT vertexOffset_ = 0;
+            ID3D11Buffer* indexBuffer_ = nullptr;
+            DXGI_FORMAT indexFormat_ = DXGI_FORMAT_UNKNOWN;
+            UINT indexOffset_ = 0;
+            ID3D11VertexShader* vertexShader_ = nullptr;
+            ID3D11PixelShader* pixelShader_ = nullptr;
+            ID3D11Buffer* vertexConstantBuffer_ = nullptr;
+            ID3D11Buffer* pixelConstantBuffer_ = nullptr;
+            ID3D11ShaderResourceView* pixelResource_ = nullptr;
+            ID3D11SamplerState* pixelSampler_ = nullptr;
+            ID3D11RasterizerState* rasterizerState_ = nullptr;
+            UINT viewportCount_ = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+            D3D11_VIEWPORT viewports_[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE]{};
+            UINT scissorCount_ = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+            D3D11_RECT scissors_[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE]{};
+            ID3D11BlendState* blendState_ = nullptr;
+            FLOAT blendFactor_[4]{};
+            UINT sampleMask_ = 0;
+            ID3D11DepthStencilState* depthStencilState_ = nullptr;
+            UINT stencilRef_ = 0;
+            ID3D11RenderTargetView* renderTargets_[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT]{};
+            ID3D11DepthStencilView* depthStencilView_ = nullptr;
+        };
     }
     void UpdateLogic() {
         if (renderer) {
@@ -360,15 +454,19 @@ namespace PrismaUI::ViewRenderer {
     void DrawViews() {
         if (!spriteBatch || !commonStates) return;
 
-        std::vector<std::shared_ptr<Core::PrismaView>> viewsToDraw;
+        struct OrderedView {
+            std::shared_ptr<Core::PrismaView> view;
+            int order = 0;
+        };
+
+        std::vector<OrderedView> viewsToDraw;
         {
             std::shared_lock lock(viewsMutex);
             viewsToDraw.reserve(views.size());
             for (const auto& pair : views) {
                 if (pair.second && !pair.second->isHidden.load() && !pair.second->externalSurfaceHost.load() &&
-                    !pair.second->pendingResourceRelease.load() &&
-                    pair.second->textureView) {
-                    viewsToDraw.push_back(pair.second);
+                    !pair.second->pendingResourceRelease.load()) {
+                    viewsToDraw.push_back({pair.second, pair.second->order});
                 }
             }
         }
@@ -376,8 +474,9 @@ namespace PrismaUI::ViewRenderer {
         if (viewsToDraw.empty()) return;
 
         std::sort(viewsToDraw.begin(), viewsToDraw.end(),
-                  [](const std::shared_ptr<Core::PrismaView>& a, const std::shared_ptr<Core::PrismaView>& b) {
-                      return a->order < b->order;
+                  [](const OrderedView& left, const OrderedView& right) {
+                      if (left.order != right.order) return left.order < right.order;
+                      return left.view->id < right.view->id;
                   });
 
         try {
@@ -395,9 +494,9 @@ namespace PrismaUI::ViewRenderer {
                 // Guard each view's draw individually so one bad draw can never skip End().
                 // A skipped End() leaves the batch open, so the next Begin() throws
                 // "Cannot nest Begin calls" -> uncaught -> CTD (the AddItem-search crash).
-                for (const auto& viewData : viewsToDraw) {
+                for (const auto& orderedView : viewsToDraw) {
                     try {
-                        DrawSingleTexture(viewData);
+                        DrawSingleTexture(orderedView.view);
                     } catch (const std::exception& e) {
                         logger::error("DrawSingleTexture failed (view skipped): {}", e.what());
                     } catch (...) {
@@ -471,12 +570,7 @@ namespace PrismaUI::ViewRenderer {
             d3dContext->CopyResource(viewData->externalTexture, viewData->texture);
             if (previews.empty()) continue;
 
-            ID3D11RenderTargetView* previousRenderTarget = nullptr;
-            ID3D11DepthStencilView* previousDepthStencil = nullptr;
-            d3dContext->OMGetRenderTargets(1, &previousRenderTarget, &previousDepthStencil);
-            UINT viewportCount = 1;
-            D3D11_VIEWPORT previousViewport{};
-            d3dContext->RSGetViewports(&viewportCount, &previousViewport);
+            ScopedPipelineState stateBackup(d3dContext);
 
             d3dContext->OMSetRenderTargets(1, &viewData->externalRenderTarget, nullptr);
             const D3D11_VIEWPORT viewport{
@@ -494,22 +588,19 @@ namespace PrismaUI::ViewRenderer {
                 }
                 EndSpriteBatchSafe();
             }
-
-            d3dContext->OMSetRenderTargets(1, &previousRenderTarget, previousDepthStencil);
-            if (viewportCount) d3dContext->RSSetViewports(1, &previousViewport);
-            if (previousRenderTarget) previousRenderTarget->Release();
-            if (previousDepthStencil) previousDepthStencil->Release();
         }
     }
 
     void DrawSingleTexture(std::shared_ptr<Core::PrismaView> viewData) {
-        if (!viewData || !viewData->textureView || viewData->textureWidth == 0 || viewData->textureHeight == 0) return;
+        if (!viewData) return;
+        auto snapshot = viewData->AcquireTextureSnapshot(false);
+        if (!snapshot) return;
 
         // Draw main view
         DirectX::SimpleMath::Vector2 position(0.0f, 0.0f);
-        RECT sourceRect = {0, 0, (long)viewData->textureWidth, (long)viewData->textureHeight};
+        RECT sourceRect = {0, 0, (long)snapshot.width, (long)snapshot.height};
 
-        spriteBatch->Draw(viewData->textureView, position, &sourceRect, DirectX::Colors::White, 0.f,
+        spriteBatch->Draw(snapshot.textureView.Get(), position, &sourceRect, DirectX::Colors::White, 0.f,
                           DirectX::SimpleMath::Vector2::Zero, 1.0f, DirectX::SpriteEffects_None, 0.f);
 
         // 3D model preview sprites ride the same batch, over this view's placeholder rects

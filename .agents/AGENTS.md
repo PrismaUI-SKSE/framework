@@ -20,7 +20,8 @@ src/
 │   ├── Listeners.{h,cpp}     — LoadListener / ViewListener (OnDOMReady, OnFinishLoading, console)
 │   ├── Inspector.{h,cpp}     — DevTools as a separate Ultralight view rendered as overlay
 │   ├── ImeHelper.{h,cpp}     — IME (CJK input) support
-│   └── PrismaVR.{h,cpp}      — VR integration (OpenVR, 3D panels)
+│   ├── PrismaVR.{h,cpp}      — VR integration (OpenVR, 3D panels and lasers)
+│   └── ModelPreview.{h,cpp}  — item NIF/DDS loader and offscreen 3D preview renderer
 ├── API/API.{h,cpp}           — IVPrismaUI1/IVPrismaUI2 implementation, exported via RequestPluginAPI
 ├── Hooks/Hooks.{h,cpp}       — D3DPresentHook
 ├── Menus/
@@ -86,6 +87,73 @@ In VR (`PrismaVR::IsVRActive()`): none of that — player keeps full control. Al
 ViewManager::Create("ui/index.html");  // → file:///views/ui/index.html
 ViewManager::Create("https://...");    // passed through as-is
 ```
+
+## 3D model previews
+
+`MODELPREVIEW_API.md` is the view-author contract. The feature is controlled by
+`PrismaUI_ModelPreview.ini`; when disabled, the JS functions are not bound.
+
+`Communication` binds `__prismaUI_showModelPreview` and
+`__prismaUI_hideModelPreview` with the calling `viewId`. A preview is keyed by
+`(viewId, id)`: omitted `id` means the unnamed default slot, while stable,
+distinct IDs let one view own several previews. Showing an existing key updates
+that slot. Hiding with an ID removes only that slot; hiding without one and
+`OnPanelDestroyed(viewId)` clear every preview owned by the view.
+
+Threading and rendering rules:
+
+- JS callbacks only enqueue show/hide requests under `g_reqMutex`; they must not
+  mutate render state directly.
+- `TickCore()` owns `g_previews` on the render thread. It drains requests,
+  adopts worker results, creates per-preview color targets, and renders dirty
+  previews. NIF/DDS loading runs on the single model worker.
+- Every preview owns its color render target; the depth target is shared because
+  previews render sequentially. Static previews render once until dirtied;
+  spinning previews redraw every frame.
+- Flatscreen uses `GetFlatOverlays()` to composite all ready previews into their
+  owning view. VR uses one OpenVR overlay per ready preview, positioned from the
+  owning panel transform, with a 32-visible-preview safety cap.
+- `Shutdown()` must join the worker and release preview overlays and D3D
+  resources. Keep its teardown idempotent and never submit a tearing-down view
+  texture to OpenVR.
+
+## External surface hosting (API v3)
+
+`IVPrismaUI3` lets another renderer, such as DragonBoard, present a PrismaUI
+view on its own in-world surface. `SetExternalSurfaceHost(view, true)` keeps the
+Ultralight view rendering but excludes it from PrismaUI's flatscreen draw and
+PrismaVR overlay/laser path. `ComposeExternalSurfaces()` copies the HTML view
+and any ModelPreview sprites into the externally acquired texture.
+
+- `AcquireSurface()` returns strong COM references plus dimensions and a
+  generation counter. Consumers must call `ReleaseSurface()` and reacquire when
+  the generation changes.
+- Texture, SRV, dimensions, and generation are one synchronized unit. Internal
+  drawing and VR submission must use `PrismaView::AcquireTextureSnapshot()`;
+  never retain or combine raw texture fields outside `textureMutex`.
+- External pointer APIs are valid only while external hosting is enabled. They
+  may check atomic host state on the caller thread, but must touch
+  `ultralightView` only inside the submitted Ultralight-thread task.
+- View enumeration must copy order, ID, path, and flags while `viewsMutex` is
+  held, then sort the copied values. Do not sort live `PrismaView` fields after
+  releasing the lock.
+- Deferred initialization is gated by DataLoaded and a shutdown generation.
+  Queued SKSE tasks must not initialize the core after shutdown begins.
+- SpriteBatch composition into an external render target requires a full D3D11
+  pipeline-state backup and restore, including zero/multiple viewport states.
+
+## VR laser visuals (2026-08-03)
+
+The beam matches OCU's menu laser (`OpenOVR/Misc/Keyboard/BeamTexture.h` in the
+OCU repo): tapered tip (last 30% narrows/fades to a point), parabolic soft
+edges, hot core, PREMULTIPLIED alpha (OCU composites overlay quads
+premultiplied — no UNPREMULTIPLIED flag on its layers). Two textures are
+created up front (warm white idle `255,240,220,200`, electric blue click
+`55,145,255,220`) and swapped on trigger state in `UpdateLasers()`; the CSS
+cursor dot swaps to matching blue in `ProcessInput()`. Gotcha: overlay quad
+height = widthMeters × (texH/texW), so `BEAM_TEX_H` is derived from
+`LASER_LENGTH / LASER_WIDTH` — changing beam length/width constants without
+keeping that ratio stretches the taper.
 
 ## Other gotchas
 

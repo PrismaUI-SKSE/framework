@@ -1,12 +1,16 @@
 ﻿#include "API/API.h"
 #include "Menus/CursorMenu/CursorMenu.h"
+#include "PrismaUI/Core.h"
+#include "PrismaUI/ViewManager.h"
 #include "PrismaUI_API.h"
 #include "Utils/DllLoader.h"
 #include <spdlog/sinks/basic_file_sink.h>
 
+/// Handles the DataLoaded boundary required for deferred core initialization.
 static void SKSEMessageHandler(SKSE::MessagingInterface::Message *message) {
   switch (message->type) {
   case SKSE::MessagingInterface::kDataLoaded:
+    PrismaUI::Core::OnDataLoaded();
     CursorMenuEx::InstallHook();
     break;
   }
@@ -46,6 +50,7 @@ SKSEPlugin_Load(const SKSE::LoadInterface *a_skse) {
   return true;
 }
 
+/// Returns the requested compatible PrismaUI interface version.
 extern "C" DLLEXPORT void *SKSEAPI
 RequestPluginAPI(const PRISMA_UI_API::InterfaceVersion a_interfaceVersion) {
   auto api = PluginAPI::PrismaUIInterface::GetSingleton();
@@ -57,8 +62,25 @@ RequestPluginAPI(const PRISMA_UI_API::InterfaceVersion a_interfaceVersion) {
   case PRISMA_UI_API::InterfaceVersion::V2:
     logger::info("RequestPluginAPI returned V2 interface");
     return static_cast<PRISMA_UI_API::IVPrismaUI2*>(api);
+  case PRISMA_UI_API::InterfaceVersion::V3:
+    logger::info("RequestPluginAPI returned V3 interface");
+    return static_cast<PRISMA_UI_API::IVPrismaUI3*>(api);
   default:
     logger::info("RequestPluginAPI requested unsupported interface version");
     return nullptr;
   }
+}
+
+/// Enumerates live PrismaUI views without extending the IVPrismaUI3 vtable.
+extern "C" DLLEXPORT uint32_t SKSEAPI PrismaUI_EnumerateViews(
+    PRISMA_UI_API::ViewDescriptor* output,
+    uint32_t capacity) noexcept {
+  try {
+    return PrismaUI::ViewManager::EnumerateViews(output, capacity);
+  } catch (const std::exception& e) {
+    logger::error("PrismaUI_EnumerateViews failed: {}", e.what());
+  } catch (...) {
+    logger::error("PrismaUI_EnumerateViews failed with an unknown exception");
+  }
+  return 0;
 }

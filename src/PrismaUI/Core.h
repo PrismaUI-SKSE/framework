@@ -49,6 +49,19 @@ namespace PrismaUI::Core {
 
     typedef uint64_t PrismaViewId;
 
+    /// Retained, dimensionally consistent view of a render surface.
+    struct TextureSnapshot {
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> textureView;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        uint64_t generation = 0;
+
+        explicit operator bool() const noexcept {
+            return texture && textureView && width > 0 && height > 0;
+        }
+    };
+
     struct PrismaView {
         PrismaViewId id;
         RefPtr<View> ultralightView = nullptr;
@@ -57,6 +70,7 @@ namespace PrismaUI::Core {
         std::string originalUrl;    // Original URL from view creation (for recovery)
         std::string lastLoadedUrl;  // Track last successfully loaded URL
         std::atomic<bool> isHidden = false;
+        std::atomic<bool> externalSurfaceHost = false;
         std::unique_ptr<Listeners::MyLoadListener> loadListener;
         std::unique_ptr<Listeners::MyViewListener> viewListener;
         std::atomic<bool> isLoadingFinished = false;
@@ -90,8 +104,13 @@ namespace PrismaUI::Core {
         // Primary view rendering data
         ID3D11Texture2D* texture = nullptr;
         ID3D11ShaderResourceView* textureView = nullptr;
+        ID3D11Texture2D* externalTexture = nullptr;
+        ID3D11RenderTargetView* externalRenderTarget = nullptr;
+        ID3D11ShaderResourceView* externalTextureView = nullptr;
+        mutable std::mutex textureMutex;
         uint32_t textureWidth = 0;
         uint32_t textureHeight = 0;
+        std::atomic<uint64_t> textureGeneration = 0;
         std::vector<std::byte> pixelBuffer;
         uint32_t bufferWidth = 0;
         uint32_t bufferHeight = 0;
@@ -106,6 +125,8 @@ namespace PrismaUI::Core {
         std::atomic<bool> isProcessingOperation = false;
         std::atomic<int> queuedOperationsCount = 0;
 
+        /// Acquires strong COM references and matching dimensions under textureMutex.
+        [[nodiscard]] TextureSnapshot AcquireTextureSnapshot(bool external) const;
         ~PrismaView();
     };
 
@@ -139,10 +160,17 @@ namespace PrismaUI::Core {
 
     extern inline REL::Relocation<Hooks::D3DPresentHook::D3DPresentFunc> RealD3dPresentFunc;
 
+    /// Initializes Ultralight and rendering after the runtime is ready.
     void InitializeCoreSystem();
+    /// Requests deferred core initialization for the first created view.
+    void RequestCoreInitialization();
+    /// Marks the SKSE DataLoaded boundary and runs any pending initialization.
+    void OnDataLoaded();
     void InitHooks();
     void InitGraphics();
+    /// Updates PrismaUI rendering and all external composite surfaces.
     void D3DPresent(uint32_t a_p1);
+    /// Releases core resources and resets deferred initialization state.
     void Shutdown();
 
     // Inspector View functions

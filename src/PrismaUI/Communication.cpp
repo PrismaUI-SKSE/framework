@@ -1,6 +1,7 @@
 ﻿#include "Communication.h"
 
 #include "Core.h"
+#include "ModelPreview.h"
 #include "ViewManager.h"
 
 namespace PrismaUI::Communication {
@@ -106,6 +107,17 @@ namespace PrismaUI::Communication {
         if (!viewData || !viewData->ultralightView || !viewData->isLoadingFinished) {
             logger::warn("BindJSCallbacks: View [{}] not ready or not loaded.", viewId);
             return;
+        }
+
+        // Framework built-in: 3D model preview API, available to every view
+        if (ModelPreview::Enabled()) {
+            std::lock_guard<std::mutex> lock(jsCallbacksMutex);
+            auto ensure = [&](const char* name, Core::SimpleJSCallback cb) {
+                auto key = std::make_pair(viewId, std::string(name));
+                if (!jsCallbacks.count(key)) jsCallbacks[key] = { viewId, name, std::move(cb) };
+            };
+            ensure("__prismaUI_showModelPreview", [viewId](std::string args) { ModelPreview::Show(viewId, args); });
+            ensure("__prismaUI_hideModelPreview", [viewId](std::string args) { ModelPreview::Hide(viewId, args); });
         }
 
         std::vector<JSCallbackData> viewCallbacks;

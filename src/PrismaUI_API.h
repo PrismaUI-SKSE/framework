@@ -14,13 +14,16 @@
 #include <Windows.h>
 #include <stdint.h>
 
+struct ID3D11Texture2D;
+struct ID3D11ShaderResourceView;
+
 typedef uint64_t PrismaView;
 
 namespace PRISMA_UI_API {
     constexpr const auto PrismaUIPluginName = "PrismaUI";
 
     // Available PrismaUI interface versions
-    enum class InterfaceVersion : uint8_t { V1, V2 };
+    enum class InterfaceVersion : uint8_t { V1, V2, V3 };
 
     typedef void (*OnDomReadyCallback)(PrismaView view);
     typedef void (*JSCallback)(const char* result);
@@ -31,6 +34,26 @@ namespace PRISMA_UI_API {
 
     // Console message callback.
     typedef void (*ConsoleMessageCallback)(PrismaView view, ConsoleMessageLevel level, const char* message);
+
+    /// Mouse button values accepted by an external surface host.
+    enum class PointerButton : uint8_t { Left = 0, Middle, Right };
+
+    /// Strong references to the current D3D11 texture exposed to an external host.
+    struct ExternalSurface {
+        ID3D11Texture2D* texture = nullptr;
+        ID3D11ShaderResourceView* shaderResourceView = nullptr;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        uint64_t generation = 0;
+    };
+
+    /// Snapshot of a live PrismaUI view returned by view enumeration.
+    struct ViewDescriptor {
+        PrismaView view = 0;
+        char htmlPath[512]{};
+        uint8_t hidden = 0;
+        uint8_t externalSurfaceHost = 0;
+    };
 
     // PrismaUI modder interface v1
     class IVPrismaUI1 {
@@ -116,6 +139,48 @@ namespace PRISMA_UI_API {
         virtual void RegisterConsoleCallback(PrismaView view, ConsoleMessageCallback callback) noexcept = 0;
     };
 
+    // PrismaUI modder interface v3 (extends v2)
+    class IVPrismaUI3 : public IVPrismaUI2 {
+    protected:
+        ~IVPrismaUI3() = default;
+
+    public:
+        /// Enables or disables external presentation while keeping the view rendered.
+        /// @return True when the view exists and the hosting state was changed.
+        virtual bool SetExternalSurfaceHost(PrismaView view, bool enabled) noexcept = 0;
+
+        /// Acquires strong COM references to the current D3D11 surface.
+        /// Release them with ReleaseSurface before acquiring another surface.
+        /// @return True when a render surface is currently available.
+        virtual bool AcquireSurface(PrismaView view, ExternalSurface* surface) noexcept = 0;
+
+        /// Releases COM references previously returned by AcquireSurface.
+        virtual void ReleaseSurface(ExternalSurface* surface) noexcept = 0;
+
+        /// Injects pointer movement in view pixel coordinates.
+        /// @return False unless external surface hosting is enabled for the view.
+        virtual bool SendPointerMove(PrismaView view, int32_t x, int32_t y) noexcept = 0;
+
+        /// Injects a pointer button transition in view pixel coordinates.
+        /// @return False unless external surface hosting is enabled for the view.
+        virtual bool SendPointerButton(PrismaView view, int32_t x, int32_t y, PointerButton button,
+                                       bool pressed) noexcept = 0;
+
+        /// Injects a pixel-based pointer scroll delta.
+        /// @return False unless external surface hosting is enabled for the view.
+        virtual bool SendPointerScroll(PrismaView view, int32_t deltaX, int32_t deltaY) noexcept = 0;
+
+        /// Returns the total view count and fills up to capacity entries when output is non-null.
+        uint32_t EnumerateViews(ViewDescriptor* output, uint32_t capacity) noexcept {
+            using EnumerateViewsFunc = uint32_t (*)(ViewDescriptor*, uint32_t) noexcept;
+            const auto pluginHandle = GetModuleHandleW(L"PrismaUI.dll");
+            if (!pluginHandle) return 0;
+            const auto enumerateViews = reinterpret_cast<EnumerateViewsFunc>(
+                GetProcAddress(pluginHandle, "PrismaUI_EnumerateViews"));
+            return enumerateViews ? enumerateViews(output, capacity) : 0;
+        }
+    };
+
     // Maps interface types to InterfaceVersion enum values.
     // compile-time constraint -- only request interface versions that actually exist.
     template <typename T>
@@ -131,13 +196,18 @@ namespace PRISMA_UI_API {
         static constexpr InterfaceVersion version = InterfaceVersion::V2;
     };
 
+    template <>
+    struct InterfaceVersionMap<IVPrismaUI3> {
+        static constexpr InterfaceVersion version = InterfaceVersion::V3;
+    };
+
     typedef void* (*RequestPluginAPIFunc)(InterfaceVersion interfaceVersion);
 
     /// Request the PrismaUI API interface.
     /// Recommended: Send your request during or after SKSEMessagingInterface::kMessage_PostLoad to make sure the dll
     /// has already been loaded
     [[nodiscard]] inline void* RequestPluginAPI(InterfaceVersion a_interfaceVersion = InterfaceVersion::V1) {
-        auto pluginHandle = GetModuleHandle(L"PrismaUI.dll");
+        auto pluginHandle = GetModuleHandleW(L"PrismaUI.dll");
         if (!pluginHandle) {
             return nullptr;
         }
@@ -158,6 +228,7 @@ namespace PRISMA_UI_API {
     /// Usage:
     ///   auto* m_prismaUI   = PRISMA_UI_API::RequestPluginAPI<PRISMA_UI_API::IVPrismaUI1>();
     ///   auto* m_prismaUIv2 = PRISMA_UI_API::RequestPluginAPI<PRISMA_UI_API::IVPrismaUI2>();
+    ///   auto* m_prismaUIv3 = PRISMA_UI_API::RequestPluginAPI<PRISMA_UI_API::IVPrismaUI3>();
     template <typename T>
     [[nodiscard]] inline T* RequestPluginAPI() {
         return static_cast<T*>(RequestPluginAPI(InterfaceVersionMap<T>::version));

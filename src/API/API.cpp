@@ -240,3 +240,40 @@ void PluginAPI::PrismaUIInterface::RegisterConsoleCallback(PrismaView view, PRIS
 		PrismaUI::ViewManager::RegisterConsoleCallback(view, nullptr);
 	}
 }
+
+/// Forwards external presentation ownership to the view manager.
+bool PluginAPI::PrismaUIInterface::SetExternalSurfaceHost(PrismaView view, bool enabled) noexcept
+{
+    return view && PrismaUI::ViewManager::SetExternalSurfaceHost(view, enabled);
+}
+
+/// Forwards surface acquisition to the view manager.
+bool PluginAPI::PrismaUIInterface::AcquireSurface(PrismaView view, PRISMA_UI_API::ExternalSurface* surface) noexcept
+{
+    return view && PrismaUI::ViewManager::AcquireSurface(view, surface);
+}
+
+/// Forwards surface reference release to the view manager.
+void PluginAPI::PrismaUIInterface::ReleaseSurface(PRISMA_UI_API::ExternalSurface* surface) noexcept
+{
+    PrismaUI::ViewManager::ReleaseSurface(surface);
+}
+
+/// Forwards external pointer movement to the view manager.
+bool PluginAPI::PrismaUIInterface::SendPointerMove(PrismaView view, int32_t x, int32_t y) noexcept
+{
+    return view && PrismaUI::ViewManager::SendPointerMove(view, x, y);
+}
+
+/// Forwards an external pointer button transition to the view manager.
+bool PluginAPI::PrismaUIInterface::SendPointerButton(PrismaView view, int32_t x, int32_t y,
+                                                      PRISMA_UI_API::PointerButton button, bool pressed) noexcept
+{
+    return view && PrismaUI::ViewManager::SendPointerButton(view, x, y, button, pressed);
+}
+
+/// Forwards external pointer scrolling to the view manager.
+bool PluginAPI::PrismaUIInterface::SendPointerScroll(PrismaView view, int32_t deltaX, int32_t deltaY) noexcept
+{
+    return view && PrismaUI::ViewManager::SendPointerScroll(view, deltaX, deltaY);
+}

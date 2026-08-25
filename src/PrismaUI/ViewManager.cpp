@@ -7,23 +7,24 @@
 #include "ModelPreview.h"
 #include "PrismaVR.h"
 #include "ViewOperationQueue.h"
+#include "ViewRenderer.h"
+
+#include "PrismaUI_API.h"
 
 namespace PrismaUI::ViewManager {
     using namespace Core;
 
-    Core::PrismaViewId Create(const std::string& htmlPath, std::function<void(Core::PrismaViewId)> onDomReadyCallback) {
-        bool expected_init = false;
-        if (coreInitialized.compare_exchange_strong(expected_init, true)) {
-            Core::InitializeCoreSystem();
-            if (!renderer) {
-                coreInitialized = false;
-                logger::critical("Core initialization failed: Renderer not created.");
-                throw std::runtime_error("PrismaUI Core Renderer initialization failed.");
-            }
-        } else if (!renderer) {
-            logger::critical("Cannot create HTML view: Core Renderer is null despite initialization flag.");
-            throw std::runtime_error("PrismaUI Core Renderer is unexpectedly null.");
+    namespace {
+        std::shared_ptr<Core::PrismaView> FindView(const Core::PrismaViewId& viewId) {
+            std::shared_lock lock(viewsMutex);
+            auto it = views.find(viewId);
+            return it != views.end() ? it->second : nullptr;
         }
+    }
+
+    /// Creates a view and requests deferred renderer initialization.
+    Core::PrismaViewId Create(const std::string& htmlPath, std::function<void(Core::PrismaViewId)> onDomReadyCallback) {
+        Core::RequestCoreInitialization();
 
         Core::PrismaViewId newViewId = generator.generate();
 
@@ -134,11 +135,20 @@ namespace PrismaUI::ViewManager {
         });
     }
 
+    /// Hides a view immediately while preserving queued focus cleanup order.
     void Hide(const Core::PrismaViewId& viewId) {
-        if (!ViewManager::IsValid(viewId)) {
+        std::shared_ptr<PrismaView> requestedView = nullptr;
+        {
+            std::shared_lock lock(viewsMutex);
+            auto it = views.find(viewId);
+            if (it != views.end()) requestedView = it->second;
+        }
+        if (!requestedView) {
             logger::warn("Hide: View ID [{}] not found.", viewId);
             return;
         }
+
+        requestedView->isHidden = true;
 
         ViewOperationQueue::EnqueueOperation(viewId, [viewId]() {
             std::shared_ptr<PrismaView> viewData = nullptr;
@@ -151,11 +161,6 @@ namespace PrismaUI::ViewManager {
             }
 
             if (viewData) {
-                if (viewData->isHidden.load()) {
-                    logger::debug("Hide: View [{}] is already hidden.", viewId);
-                    return;
-                }
-
                 // If view has focus, unfocus it first
                 if (viewData->ultralightView && viewData->ultralightView->HasFocus()) {
                     PerformUnfocusOperations(viewId, viewData);
@@ -408,7 +413,8 @@ namespace PrismaUI::ViewManager {
         return 28;
     }
 
-    void Destroy(const Core::PrismaViewId& viewId) {
+/// Destroys a view and releases all regular and external D3D11 resources.
+void Destroy(const Core::PrismaViewId& viewId) {
         logger::info("Destroy: Beginning destruction of View [{}]", viewId);
 
         if (!ViewManager::IsValid(viewId)) {
@@ -527,30 +533,8 @@ namespace PrismaUI::ViewManager {
             logger::error("Destroy: Exception waiting for Ultralight cleanup for View [{}]: {}", viewId, e.what());
         }
 
-        bool hasD3DResources = (viewDataToDestroy->texture != nullptr || viewDataToDestroy->textureView != nullptr);
-
-        if (hasD3DResources) {
-            logger::debug("Destroy: D3D resources present for View [{}], forcing manual cleanup", viewId);
-
-            if (viewDataToDestroy->textureView) {
-                logger::debug("Destroy: Releasing textureView for View [{}]", viewId);
-                viewDataToDestroy->textureView->Release();
-                viewDataToDestroy->textureView = nullptr;
-            }
-
-            if (viewDataToDestroy->texture) {
-                logger::debug("Destroy: Releasing texture for View [{}]", viewId);
-                viewDataToDestroy->texture->Release();
-                viewDataToDestroy->texture = nullptr;
-            }
-
-            viewDataToDestroy->textureWidth = 0;
-            viewDataToDestroy->textureHeight = 0;
-
-            logger::debug("Destroy: D3D resources released for View [{}]", viewId);
-        } else {
-            logger::debug("Destroy: No D3D resources to release for View [{}]", viewId);
-        }
+        ViewRenderer::ReleaseViewTexture(viewDataToDestroy.get());
+        logger::debug("Destroy: D3D resources released for View [{}]", viewId);
 
         viewDataToDestroy->pendingResourceRelease = false;
 
@@ -635,5 +619,163 @@ namespace PrismaUI::ViewManager {
         } else {
             logger::warn("RegisterConsoleCallback: View ID [{}] not found.", viewId);
         }
+    }
+
+    /// Transfers presentation ownership between PrismaUI and an external host.
+    bool SetExternalSurfaceHost(const Core::PrismaViewId& viewId, bool enabled) {
+        auto viewData = FindView(viewId);
+        if (!viewData) return false;
+        viewData->externalSurfaceHost = enabled;
+        if (!enabled) ViewRenderer::ReleaseExternalSurface(viewData.get());
+        return true;
+    }
+
+    /// Acquires strong references to the current surface exposed by a view.
+    bool AcquireSurface(const Core::PrismaViewId& viewId, PRISMA_UI_API::ExternalSurface* surface) {
+        if (!surface || surface->texture || surface->shaderResourceView) return false;
+
+        auto viewData = FindView(viewId);
+        if (!viewData) return false;
+
+        const bool externallyHosted = viewData->externalSurfaceHost.load();
+        auto snapshot = viewData->AcquireTextureSnapshot(externallyHosted);
+        if (!snapshot) return false;
+
+        surface->texture = snapshot.texture.Detach();
+        surface->shaderResourceView = snapshot.textureView.Detach();
+        surface->width = snapshot.width;
+        surface->height = snapshot.height;
+        surface->generation = snapshot.generation;
+        return true;
+    }
+
+    /// Releases strong references returned by AcquireSurface.
+    void ReleaseSurface(PRISMA_UI_API::ExternalSurface* surface) {
+        if (!surface) return;
+        if (surface->shaderResourceView) surface->shaderResourceView->Release();
+        if (surface->texture) surface->texture->Release();
+        *surface = {};
+    }
+
+    /// Queues pointer movement for an externally hosted view.
+    bool SendPointerMove(const Core::PrismaViewId& viewId, int32_t x, int32_t y) {
+        auto viewData = FindView(viewId);
+        if (!viewData || !viewData->externalSurfaceHost.load()) return false;
+
+        try {
+            ultralightThread.submit([viewData, x, y]() {
+                if (!viewData->externalSurfaceHost.load() || !viewData->ultralightView) return;
+                ultralight::MouseEvent event;
+                event.type = ultralight::MouseEvent::kType_MouseMoved;
+                event.x = x;
+                event.y = y;
+                event.button = ultralight::MouseEvent::kButton_None;
+                viewData->ultralightView->FireMouseEvent(event);
+            });
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    /// Queues a pointer button transition for an externally hosted view.
+    bool SendPointerButton(const Core::PrismaViewId& viewId, int32_t x, int32_t y,
+                           PRISMA_UI_API::PointerButton button, bool pressed) {
+        auto ultralightButton = ultralight::MouseEvent::kButton_None;
+        switch (button) {
+        case PRISMA_UI_API::PointerButton::Left:
+            ultralightButton = ultralight::MouseEvent::kButton_Left;
+            break;
+        case PRISMA_UI_API::PointerButton::Middle:
+            ultralightButton = ultralight::MouseEvent::kButton_Middle;
+            break;
+        case PRISMA_UI_API::PointerButton::Right:
+            ultralightButton = ultralight::MouseEvent::kButton_Right;
+            break;
+        default:
+            return false;
+        }
+
+        auto viewData = FindView(viewId);
+        if (!viewData || !viewData->externalSurfaceHost.load()) return false;
+
+        try {
+            ultralightThread.submit([viewData, x, y, ultralightButton, pressed]() {
+                if (!viewData->externalSurfaceHost.load() || !viewData->ultralightView) return;
+                ultralight::MouseEvent event;
+                event.type = pressed ? ultralight::MouseEvent::kType_MouseDown : ultralight::MouseEvent::kType_MouseUp;
+                event.x = x;
+                event.y = y;
+                event.button = ultralightButton;
+                viewData->ultralightView->FireMouseEvent(event);
+            });
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    /// Queues a pointer scroll delta for an externally hosted view.
+    bool SendPointerScroll(const Core::PrismaViewId& viewId, int32_t deltaX, int32_t deltaY) {
+        auto viewData = FindView(viewId);
+        if (!viewData || !viewData->externalSurfaceHost.load()) return false;
+
+        try {
+            ultralightThread.submit([viewData, deltaX, deltaY]() {
+                if (!viewData->externalSurfaceHost.load() || !viewData->ultralightView) return;
+                ultralight::ScrollEvent event;
+                event.type = ultralight::ScrollEvent::kType_ScrollByPixel;
+                event.delta_x = deltaX;
+                event.delta_y = deltaY;
+                viewData->ultralightView->FireScrollEvent(event);
+            });
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    /// Copies a stable snapshot of live views into a caller-owned buffer.
+    uint32_t EnumerateViews(PRISMA_UI_API::ViewDescriptor* output, uint32_t capacity) {
+        struct EnumeratedView {
+            PRISMA_UI_API::ViewDescriptor descriptor;
+            int order = 0;
+        };
+
+        std::vector<EnumeratedView> snapshot;
+        {
+            std::shared_lock lock(viewsMutex);
+            snapshot.reserve(views.size());
+            for (const auto& [viewId, viewData] : views) {
+                if (!viewData) continue;
+
+                EnumeratedView item;
+                item.order = viewData->order;
+                item.descriptor.view = viewData->id;
+                const auto& path = viewData->originalUrl;
+                const auto pathLength = std::min(path.size(), sizeof(item.descriptor.htmlPath) - 1);
+                std::memcpy(item.descriptor.htmlPath, path.data(), pathLength);
+                item.descriptor.htmlPath[pathLength] = '\0';
+                item.descriptor.hidden = viewData->isHidden.load() ? 1 : 0;
+                item.descriptor.externalSurfaceHost = viewData->externalSurfaceHost.load() ? 1 : 0;
+                snapshot.push_back(std::move(item));
+            }
+        }
+
+        std::sort(snapshot.begin(), snapshot.end(),
+                  [](const auto& left, const auto& right) {
+                      if (left.order != right.order) return left.order < right.order;
+                      return left.descriptor.view < right.descriptor.view;
+                  });
+
+        const auto total = static_cast<uint32_t>(std::min<std::size_t>(
+            snapshot.size(), std::numeric_limits<uint32_t>::max()));
+        if (!output || capacity == 0) return total;
+
+        const auto count = std::min(total, capacity);
+        for (uint32_t index = 0; index < count; ++index) {
+            output[index] = snapshot[index].descriptor;
+        }
+        return total;
     }
 }

@@ -22,28 +22,17 @@ namespace PrismaVR_Bridge {
 
 	// --- Accessors (one field each, trivial to update if Prisma changes) ---
 
-	inline ID3D11Texture2D* GetTexture(PrismaUI::Core::PrismaView* v) {
-		return v ? v->texture : nullptr;
-	}
-
-	inline bool IsPendingRelease(PrismaUI::Core::PrismaView* v) {
-		return v ? v->pendingResourceRelease.load() : true;
-	}
-
-	inline bool HasTextureView(PrismaUI::Core::PrismaView* v) {
-		return v && v->textureView != nullptr;
-	}
-
-	inline uint32_t GetTextureWidth(PrismaUI::Core::PrismaView* v) {
-		return v ? v->textureWidth : 0;
-	}
-
-	inline uint32_t GetTextureHeight(PrismaUI::Core::PrismaView* v) {
-		return v ? v->textureHeight : 0;
+	inline PrismaUI::Core::TextureSnapshot AcquireTextureSnapshot(PrismaUI::Core::PrismaView* v) {
+		return v ? v->AcquireTextureSnapshot(false) : PrismaUI::Core::TextureSnapshot{};
 	}
 
 	inline bool IsViewHidden(PrismaUI::Core::PrismaView* v) {
 		return v ? v->isHidden.load() : true;
+	}
+
+	/// Returns whether another renderer currently owns presentation of the view.
+	inline bool IsExternallyHosted(PrismaUI::Core::PrismaView* v) {
+		return v && v->externalSurfaceHost.load();
 	}
 
 	inline ID3D11Device* GetD3DDevice() {

@@ -2,8 +2,8 @@
 
 Skyrim Next-Gen Web UI Framework.
 
-- **Docs and Guides: https://www.prismaui.dev**
-- **Discord Community: https://discord.com/invite/QYztzZY8RG**
+- **Docs and Guides: [https://www.prismaui.dev](https://www.prismaui.dev)**
+- **Discord Community: [https://discord.com/invite/QYztzZY8RG](https://discord.com/invite/QYztzZY8RG)**
 
 ## Contributing Guide
 
@@ -21,6 +21,7 @@ Skyrim Next-Gen Web UI Framework.
 - C++23 Compiler (MSVC)
 - [Ultralight SDK](https://ultralig.ht/download) 1.4.1-dev
   - place the archive "ultralight-free-sdk-1.4.1-dev-win-x64.7z" in the "external folder.
+
 ### Getting Started
 
 ```bat
@@ -45,7 +46,7 @@ Use the helper script to build with optimal settings:
 .\BuildRelease.ps1 -preset release -threads 4
 ```
 
-> **_Note:_** The script automatically launches the VS Developer Shell and configures the build environment.
+> ***Note:*** The script automatically launches the VS Developer Shell and configures the build environment.
 
 #### Manual Build
 
@@ -69,15 +70,16 @@ Available presets: `debug`, `release`
 ### Upgrading Packages (Optional)
 
 **vcpkg:**
+
 ```bat
 vcpkg upgrade
 ```
 
 ## Dependencies / Acknowledgments
 
-This plugin utilizes the **[Ultralight](https://ultralig.ht) SDK** for rendering web content.
+This plugin utilizes the [**Ultralight](https://ultralig.ht) SDK** for rendering web content.
 
-The Ultralight SDK is provided under the **[Ultralight Free License Agreement](https://ultralig.ht/free-license/LICENSE.txt)**. The full terms of this license are available in the `NOTICES.txt` file located at the root of this repository.
+The Ultralight SDK is provided under the [**Ultralight Free License Agreement**](https://ultralig.ht/free-license/LICENSE.txt). The full terms of this license are available in the `NOTICES.txt` file located at the root of this repository.
 
 ## License
 
@@ -88,18 +90,16 @@ This project is licensed under the **Prisma UI License**. Please see the [`LICEN
 This license is designed to keep the framework free for community and small commercial projects, encourage contributions, and give the author full control over public versions of the code.
 
 ✔️ **You ARE allowed to:**
-*   **Use** the framework in your non-commercial or small commercial project.
-*   **Use it commercially** if your company's total annual revenue and total funding are **under US$100,000**.
-*   **Share and distribute** the original, official framework files with anyone.
-*   **Modify** the framework for your own **private use**.
-*   **Fork the repository** for the sole purpose of submitting improvements back to the official project via a Pull Request.
+
+- **Use** the framework in your non-commercial or small commercial project.
+- **Use it commercially** if your company's total annual revenue and total funding are **under US$100,000**.
+- **Share and distribute** the original, official framework files with anyone.
+- **Modify** the framework for your own **private use**.
+- **Fork the repository** for the sole purpose of submitting improvements back to the official project via a Pull Request.
 
 ❌ **You ARE NOT allowed to:**
-*   **Publicly release or distribute your own modified versions** of this framework without the author's explicit written permission.
-*   **Use the framework commercially** if your company's revenue or funding is **over US$100,000** (unless you purchase a Pro License from Ultralight, Inc.).
-*   **Reverse-engineer** the included Ultralight SDK components.
 
-## Contributors
+- **Publicly release or distribute your own modified versions** of this framework without the author's explicit written permission.
+- **Use the framework commercially** if your company's revenue or funding is **over US$100,000** (unless you purchase a Pro License from Ultralight, Inc.).
+- **Reverse-engineer** the included Ultralight SDK components.
 
-- [StarkMP](https://github.com/StarkMP)
-- [langfod](https://github.com/langfod)

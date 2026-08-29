@@ -3,6 +3,7 @@
 #include <eh.h>  // For _set_se_translator
 
 #include "Communication.h"
+#include "ControlMapBridge.h"
 #include "InputHandler.h"
 #include "Inspector.h"
 #include "Listeners.h"
@@ -303,6 +304,9 @@ namespace PrismaUI::Core {
 
         // Process pending operations for all views
         ViewOperationQueue::ProcessAllViewOperations();
+
+        // Read ControlMap here on the render thread and push any queued snapshots to JavaScript
+        ControlMapBridge::ProcessPendingRefreshes();
 
         auto ultralightFuture = ultralightThread.submit([dev = d3dDevice, ctx = d3dContext, hwnd = hWnd]() {
             // Enable SEH to C++ exception translation for this thread (only needs to be

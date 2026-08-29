@@ -1,6 +1,7 @@
 ﻿#include "Listeners.h"
 
 #include "Communication.h"
+#include "ControlMapBridge.h"
 #include "Core.h"
 #include "PrismaUI_API.h"
 
@@ -51,6 +52,8 @@ namespace PrismaUI::Listeners {
                                              const String& /*url*/) {
         if (is_main_frame) {
             logger::info("View [{}]: LoadListener: Window object ready.", viewId_);
+            // Create the window.prismaUi object before the page's own scripts run.
+            Communication::InvokeFromUltralightThread(viewId_, Communication::PrismaObjectEnsureExpression().c_str());
         }
     }
 
@@ -58,6 +61,9 @@ namespace PrismaUI::Listeners {
                                     const String& /*url*/) {
         if (is_main_frame) {
             logger::info("View [{}]: LoadListener: DOM ready.", viewId_);
+
+            // Request updated keybindings.
+            ControlMapBridge::RequestRefresh(viewId_);
 
             ultralightThread.submit([id = viewId_] {
                 std::shared_lock lock(viewsMutex);

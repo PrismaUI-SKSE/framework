@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 class SingleThreadExecutor;
 
 namespace PrismaUI::GamepadInputHandler {
@@ -20,4 +22,7 @@ namespace PrismaUI::GamepadInputHandler {
 
     // Removes the sink and clears queued state.
     void Shutdown();
+
+    // JSON object mapping W3C Standard Gamepad button index to Skyrim gamepad button code
+    const std::string& GetW3cToSkyrimJson();
 }

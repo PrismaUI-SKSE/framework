@@ -72,45 +72,91 @@ namespace PrismaUI::ViewManager {
         return newViewId;
     }
 
-    // Helper function to perform unfocus operations (used by Hide, Unfocus, and Focus)
+    namespace {
+        void RunOnUIThread(std::function<void()> fn) {
+            if (auto* taskInterface = SKSE::GetTaskInterface()) {
+                taskInterface->AddUITask(std::move(fn));
+            } else {
+                fn();
+            }
+        }
+
+        constexpr RE::UserEvents::USER_EVENT_FLAG kBlockedControlGroups[] = {
+            RE::UserEvents::USER_EVENT_FLAG::kWheelZoom, RE::UserEvents::USER_EVENT_FLAG::kLooking,
+            RE::UserEvents::USER_EVENT_FLAG::kJumping,   RE::UserEvents::USER_EVENT_FLAG::kMovement,
+            RE::UserEvents::USER_EVENT_FLAG::kActivate,  RE::UserEvents::USER_EVENT_FLAG::kPOVSwitch,
+            RE::UserEvents::USER_EVENT_FLAG::kVATS,
+        };
+
+        std::atomic<Core::PrismaViewId> gameplayControlsOwner{0};
+
+        void ApplyGameplayControls(bool enable) {
+            auto* controlMap = RE::ControlMap::GetSingleton();
+            if (!controlMap) {
+                return;
+            }
+            for (const auto flag : kBlockedControlGroups) {
+                controlMap->ToggleControls(flag, enable, false);
+            }
+        }
+
+        void AcquireGameplayControlBlock(const Core::PrismaViewId& viewId) {
+            if (gameplayControlsOwner.exchange(viewId) == 0) {
+                RunOnUIThread([]() { ApplyGameplayControls(false); });
+            }
+        }
+
+        void ReleaseGameplayControlBlock(const Core::PrismaViewId& viewId) {
+            Core::PrismaViewId expected = viewId;
+            if (gameplayControlsOwner.compare_exchange_strong(expected, 0)) {
+                RunOnUIThread([]() { ApplyGameplayControls(true); });
+            }
+        }
+
+        void SetGamePaused(std::shared_ptr<PrismaView> viewData, bool paused) {
+            bool expected = !paused;
+            if (!viewData->isPaused.compare_exchange_strong(expected, paused)) {
+                return;
+            }
+
+            RunOnUIThread([paused]() {
+                auto* ui = RE::UI::GetSingleton();
+                if (!ui) {
+                    return;
+                }
+                if (paused) {
+                    ui->numPausesGame++;
+                } else if (ui->numPausesGame > 0) {
+                    ui->numPausesGame--;
+                }
+            });
+        }
+    }
+
+    // Helper function to perform unfocus operations (used by Hide, Unfocus, Focus and Destroy)
     // closeFocusMenu: whether to close FocusMenu (false when switching focus between views)
     static void PerformUnfocusOperations(const Core::PrismaViewId& viewId, std::shared_ptr<PrismaView> viewData,
                                          bool closeFocusMenu = true) {
-        if (!viewData || !viewData->ultralightView) {
+        if (!viewData) {
             return;
         }
 
-        if (viewData->isPaused.load()) {
-            auto ui = RE::UI::GetSingleton();
-            if (ui && ui->numPausesGame > 0) {
-                ui->numPausesGame--;
-            }
-            viewData->isPaused.store(false);
-        }
+        SetGamePaused(viewData, false);
 
         PrismaUI::InputHandler::DisableInputCapture(viewId);
         if (closeFocusMenu) {
             PrismaUI::InputHandler::ClearImeState(viewId);
         }
-        viewData->ultralightView->Unfocus();
+
+        if (viewData->ultralightView) {
+            viewData->ultralightView->Unfocus();
+        }
 
         if (closeFocusMenu && !PrismaVR::IsVRActive()) {
             FocusMenu::Close();
         }
 
-        // Only re-enable controls if we disabled them (flatscreen only)
-        if (!PrismaVR::IsVRActive()) {
-            auto controlMap = RE::ControlMap::GetSingleton();
-            controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kWheelZoom, true, false);
-            controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kLooking, true, false);
-            controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kJumping, true, false);
-            controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kMovement, true, false);
-            controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kActivate, true, false);
-            controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kPOVSwitch, true, false);
-            controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kVATS, true, false);
-            // Added for gamepads:
-            controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kFighting, true, false);
-        }
+        ReleaseGameplayControlBlock(viewId);
     }
 
     void Show(const Core::PrismaViewId& viewId) {
@@ -264,24 +310,11 @@ namespace PrismaUI::ViewManager {
 
             // In VR, the menu is a floating 3D panel — player keeps full control
             if (!PrismaVR::IsVRActive()) {
-                auto controlMap = RE::ControlMap::GetSingleton();
-                controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kWheelZoom, false, false);
-                controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kLooking, false, false);
-                controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kJumping, false, false);
-                controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kMovement, false, false);
-                controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kActivate, false, false);
-                controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kPOVSwitch, false, false);
-                controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kVATS, false, false);
-                // Added for gamepads:
-                controlMap->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kFighting, false, false);
-            }
+                AcquireGameplayControlBlock(viewId);
 
-            if (pauseGame && !PrismaVR::IsVRActive()) {
-                auto ui = RE::UI::GetSingleton();
-                if (ui) {
-                    ui->numPausesGame++;
-                    viewData->isPaused.store(true);
-                    logger::debug("Game paused for View [{}]", viewId);
+                if (pauseGame) {
+                    SetGamePaused(viewData, true);
+                    logger::debug("Game pause requested for View [{}]", viewId);
                 }
             }
 
@@ -310,26 +343,8 @@ namespace PrismaUI::ViewManager {
             if (!viewData) {
                 logger::warn("Unfocus: View [{}] not found during operation execution.", viewId);
                 PrismaUI::InputHandler::DisableInputCapture(0);
+                ReleaseGameplayControlBlock(viewId);
                 if (!PrismaVR::IsVRActive()) FocusMenu::Close();
-                return;
-            }
-
-            if (!viewData->ultralightView) {
-                logger::warn("Unfocus: View [{}] Ultralight View is not ready.", viewId);
-                if (viewData->isPaused.load()) {
-                    auto ui = RE::UI::GetSingleton();
-                    if (ui && ui->numPausesGame > 0) {
-                        ui->numPausesGame--;
-                    }
-                    viewData->isPaused.store(false);
-                }
-                PrismaUI::InputHandler::DisableInputCapture(viewId);
-                if (!PrismaVR::IsVRActive()) FocusMenu::Close();
-                return;
-            }
-
-            if (!viewData->ultralightView->HasFocus()) {
-                logger::debug("Unfocus: View [{}] does not have focus.", viewId);
                 return;
             }
 
@@ -429,9 +444,28 @@ namespace PrismaUI::ViewManager {
         ViewOperationQueue::ClearOperations(viewId);
         logger::debug("Destroy: Cleared pending operations for View [{}]", viewId);
 
-        if (HasFocus(viewId)) {
-            logger::debug("Destroy: View [{}] has focus, unfocusing first.", viewId);
-            Unfocus(viewId);
+        {
+            std::shared_ptr<PrismaView> viewDataToUnfocus = nullptr;
+            {
+                std::shared_lock lock(viewsMutex);
+                auto it = views.find(viewId);
+                if (it != views.end()) {
+                    viewDataToUnfocus = it->second;
+                }
+            }
+
+            if (viewDataToUnfocus) {
+                try {
+                    ultralightThread
+                        .submit([viewId, viewDataToUnfocus]() {
+                            PerformUnfocusOperations(viewId, viewDataToUnfocus);
+                        })
+                        .get();
+                } catch (const std::exception& e) {
+                    logger::error("Destroy: Exception while unfocusing View [{}]: {}", viewId, e.what());
+                    ReleaseGameplayControlBlock(viewId);
+                }
+            }
         }
 
         std::shared_ptr<PrismaView> viewDataToDestroy = nullptr;

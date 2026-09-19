@@ -11,6 +11,7 @@
 #include "ViewManager.h"
 #include "ViewOperationQueue.h"
 #include "ViewRenderer.h"
+#include "Utils/MainThreadQueue.h"
 #include "PrismaVR.h"
 
 namespace {
@@ -162,6 +163,8 @@ namespace PrismaUI::Core {
                 }
             })
             .get();
+
+        MainThreadQueue::Initialize();
 
         PrismaVR::Initialize();
 
@@ -544,6 +547,8 @@ namespace PrismaUI::Core {
         logger::debug("DirectXTK resources released.");
 
         InputHandler::Shutdown();
+
+        MainThreadQueue::Shutdown();
 
         d3dDevice = nullptr;
         d3dContext = nullptr;

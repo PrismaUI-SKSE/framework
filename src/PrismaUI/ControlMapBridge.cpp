@@ -1,4 +1,4 @@
-#include "ControlMapBridge.h"
+﻿#include "ControlMapBridge.h"
 
 #include <cstdio>
 #include <mutex>
@@ -8,6 +8,7 @@
 
 #include "Communication.h"
 #include "Core.h"
+#include "Utils/MainThreadQueue.h"
 
 namespace PrismaUI::ControlMapBridge {
     namespace {
@@ -182,20 +183,21 @@ namespace PrismaUI::ControlMapBridge {
             g_pending.clear();
         }
 
-        // Read ControlMap here on the render thread.
-        const std::string json = BuildJson();
+        // Read ControlMap on the main thread and push any queued snapshots to JavaScript.
+        MainThreadQueue::Post([pending = std::move(pending)]() {
+            const std::string json = BuildJson();
 
-        std::string script;
-        script.reserve(json.size() + 256);
-        script += "(function(c){c.map=";
-        script += json;
-        script += ";c.dispatchEvent(new CustomEvent(\"refreshcomplete\",{detail:c.map}));})(";
-        script += Communication::PrismaControlsEnsureExpression();
-        script += ");";
+            std::string script;
+            script.reserve(json.size() + 256);
+            script += "(function(c){c.map=";
+            script += json;
+            script += ";c.dispatchEvent(new CustomEvent(\"refreshcomplete\",{detail:c.map}));})(";
+            script += Communication::PrismaControlsEnsureExpression();
+            script += ");";
 
-        // Send the JavaScript string to each view via Invoke.
-        for (const auto viewId : pending) {
-            Communication::Invoke(viewId, script.c_str());
-        }
+            for (const auto viewId : pending) {
+                Communication::Invoke(viewId, script.c_str());
+            }
+        });
     }
 }

@@ -95,7 +95,14 @@ namespace PrismaUI::Communication {
         }
 
         // Already on the Ultralight thread, so evaluate inline rather than submitting another task.
-        viewData->ultralightView->EvaluateScript(script, nullptr, "");
+        try {
+            viewData->ultralightView->EvaluateScript(script, nullptr, "");
+        } catch (const std::exception& e) {
+            logger::error("InvokeFromUltralightThread: Exception during EvaluateScript for View [{}]: {}", viewId,
+                          e.what());
+        } catch (...) {
+            logger::error("InvokeFromUltralightThread: Unknown exception during EvaluateScript for View [{}]", viewId);
+        }
     }
 
     void RegisterJSListener(const Core::PrismaViewId& viewId, const std::string& name,

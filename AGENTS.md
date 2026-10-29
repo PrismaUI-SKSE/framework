@@ -41,7 +41,7 @@ Per-frame flow in `D3DPresent`:
 1. `ViewOperationQueue::ProcessAllViewOperations()` — drains queued Show/Hide/Focus ops
 2. `ultralightThread.submit(Renderer::Update)` — JS ticks, layout, paint
 3. `ultralightThread.submit(ViewRenderer::RenderViews)` — BitmapSurface → `pixelBuffer`
-4. Game thread: `pixelBuffer` → D3D11 texture (Map/Unmap), SpriteBatch draw sorted by `view->order`
+4. Game thread: `pixelBuffer` → D3D11 texture (`UpdateSubresource` of the dirty box only), SpriteBatch draw sorted by `view->order`
 
 ## View lifecycle
 
@@ -106,6 +106,7 @@ The gameplay-control block is tracked by *owner view* (`gameplayControlsOwner`),
 
 ## Other gotchas
 
+- **Partial uploads:** `CopyBitmapToBuffer` copies only the surface's `dirty_bounds()` and unions them into the view's `dirtyLeft/Top/Right/Bottom` (under `bufferMutex`); the texture update sends just that box and clears it. The texture is `D3D11_USAGE_DEFAULT` for this, so never go back to `Map(WRITE_DISCARD)`: discard throws away the rest of the texture. A size change or a new texture uploads the whole buffer. Uploading the whole screen per changed frame cost ~5 ms GPU at 4K for one animated element.
 - **Pixel format:** Ultralight renders **BGRA** → D3D texture is `DXGI_FORMAT_B8G8R8A8_UNORM`. Do not swap to RGBA.
 - **SEH translation** is installed on `ultralightThread`: access violations become `SEHException : std::exception`. Stack overflow is not translated — process will crash.
 - **Inspector** is a second `ultralight::View` with its own texture and `inspectorBufferMutex`. Position set via `SetInspectorBounds`.

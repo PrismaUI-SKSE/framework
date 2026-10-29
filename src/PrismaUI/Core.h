@@ -96,6 +96,9 @@ namespace PrismaUI::Core {
         uint32_t bufferWidth = 0;
         uint32_t bufferHeight = 0;
         uint32_t bufferStride = 0;
+        // Part of pixelBuffer changed since the texture was last updated (left, top, right, bottom; empty when
+        // right <= left). Guarded by bufferMutex.
+        uint32_t dirtyLeft = 0, dirtyTop = 0, dirtyRight = 0, dirtyBottom = 0;
         std::mutex bufferMutex;
         std::atomic<bool> newFrameReady = false;
         std::atomic<bool> pendingResourceRelease = false;

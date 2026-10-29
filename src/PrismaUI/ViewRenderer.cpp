@@ -45,7 +45,7 @@ namespace PrismaUI::ViewRenderer {
         BitmapSurface* surface = static_cast<BitmapSurface*>(surface_base);
 
         if (viewData->isLoadingFinished && !surface->dirty_bounds().IsEmpty()) {
-            CopyBitmapToBuffer(viewData);
+            CopyBitmapToBuffer(viewData, surface->dirty_bounds());
             surface->ClearDirtyBounds();
         }
 
@@ -53,7 +53,9 @@ namespace PrismaUI::ViewRenderer {
         Inspector::RenderInspectorView(viewData);
     }
 
-    void CopyBitmapToBuffer(std::shared_ptr<Core::PrismaView> viewData) {
+    // Copies the part of the surface that changed (dirtyBounds) into the view's pixel buffer, and adds it to the
+    // buffer's pending dirty rectangle, so the texture update sends only that part to the GPU.
+    void CopyBitmapToBuffer(std::shared_ptr<Core::PrismaView> viewData, const IntRect& dirtyBounds) {
         if (!viewData || !viewData->ultralightView) return;
         BitmapSurface* surface = static_cast<BitmapSurface*>(viewData->ultralightView->surface());
         if (!surface) return;
@@ -79,14 +81,43 @@ namespace PrismaUI::ViewRenderer {
         {
             std::lock_guard lock(viewData->bufferMutex);
             try {
-                if (viewData->pixelBuffer.size() != required_size) {
+                const bool sameLayout = viewData->pixelBuffer.size() == required_size &&
+                                        viewData->bufferWidth == width && viewData->bufferHeight == height &&
+                                        viewData->bufferStride == stride;
+                uint32_t left = 0, top = 0, right = width, bottom = height;
+                if (sameLayout) {
+                    left = static_cast<uint32_t>(std::clamp(dirtyBounds.left, 0, static_cast<int>(width)));
+                    top = static_cast<uint32_t>(std::clamp(dirtyBounds.top, 0, static_cast<int>(height)));
+                    right = static_cast<uint32_t>(std::clamp(dirtyBounds.right, 0, static_cast<int>(width)));
+                    bottom = static_cast<uint32_t>(std::clamp(dirtyBounds.bottom, 0, static_cast<int>(height)));
+                    const size_t offset = static_cast<size_t>(left) * 4;
+                    const size_t bytes = right > left ? static_cast<size_t>(right - left) * 4 : 0;
+                    for (uint32_t y = top; y < bottom && bytes > 0; ++y) {
+                        const size_t row = static_cast<size_t>(y) * stride + offset;
+                        memcpy(viewData->pixelBuffer.data() + row, static_cast<std::byte*>(pixels) + row, bytes);
+                    }
+                } else {
                     viewData->pixelBuffer.resize(required_size);
+                    memcpy(viewData->pixelBuffer.data(), pixels, required_size);
+                    viewData->bufferWidth = width;
+                    viewData->bufferHeight = height;
+                    viewData->bufferStride = stride;
+                    viewData->dirtyRight = 0;  // the whole buffer is new
                 }
-                memcpy(viewData->pixelBuffer.data(), pixels, required_size);
-                viewData->bufferWidth = width;
-                viewData->bufferHeight = height;
-                viewData->bufferStride = stride;
-                success = true;
+                if (right > left && bottom > top) {
+                    if (viewData->dirtyRight <= viewData->dirtyLeft) {
+                        viewData->dirtyLeft = left;
+                        viewData->dirtyTop = top;
+                        viewData->dirtyRight = right;
+                        viewData->dirtyBottom = bottom;
+                    } else {
+                        viewData->dirtyLeft = std::min(viewData->dirtyLeft, left);
+                        viewData->dirtyTop = std::min(viewData->dirtyTop, top);
+                        viewData->dirtyRight = std::max(viewData->dirtyRight, right);
+                        viewData->dirtyBottom = std::max(viewData->dirtyBottom, bottom);
+                    }
+                }
+                success = viewData->dirtyRight > viewData->dirtyLeft;
             } catch (const std::exception& e) {
                 logger::error("View [{}]: Exception during pixel buffer copy/resize: {}", viewData->id, e.what());
                 viewData->pixelBuffer.clear();
@@ -137,9 +168,13 @@ namespace PrismaUI::ViewRenderer {
         const bool mainFrameReady = viewData->newFrameReady.exchange(false);
         if (mainFrameReady) {
             std::lock_guard lock(viewData->bufferMutex);
-            if (!viewData->pixelBuffer.empty() && viewData->bufferWidth > 0 && viewData->bufferHeight > 0) {
+            if (!viewData->pixelBuffer.empty() && viewData->bufferWidth > 0 && viewData->bufferHeight > 0 &&
+                viewData->dirtyRight > viewData->dirtyLeft) {
+                const D3D11_BOX dirty{viewData->dirtyLeft, viewData->dirtyTop, 0, viewData->dirtyRight,
+                                      viewData->dirtyBottom, 1};
                 CopyPixelsToTexture(viewData.get(), viewData->pixelBuffer.data(), viewData->bufferWidth,
-                                    viewData->bufferHeight, viewData->bufferStride);
+                                    viewData->bufferHeight, viewData->bufferStride, dirty);
+                viewData->dirtyLeft = viewData->dirtyTop = viewData->dirtyRight = viewData->dirtyBottom = 0;
             }
         }
 
@@ -155,8 +190,9 @@ namespace PrismaUI::ViewRenderer {
         }
     }
 
+    // Sends the dirty box of the pixel buffer to the view's texture (the whole buffer when the texture is new).
     void CopyPixelsToTexture(Core::PrismaView* viewData, void* pixels, uint32_t width, uint32_t height,
-                             uint32_t stride) {
+                             uint32_t stride, D3D11_BOX dirty) {
         if (!viewData || !d3dDevice || !d3dContext || !pixels || width == 0 || height == 0) return;
 
         if (!viewData->texture || viewData->textureWidth != width || viewData->textureHeight != height) {
@@ -170,9 +206,9 @@ namespace PrismaUI::ViewRenderer {
             desc.ArraySize = 1;
             desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
             desc.SampleDesc.Count = 1;
-            desc.Usage = D3D11_USAGE_DYNAMIC;
+            desc.Usage = D3D11_USAGE_DEFAULT;  // updated in parts with UpdateSubresource
             desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-            desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+            desc.CPUAccessFlags = 0;
 
             HRESULT hr = d3dDevice->CreateTexture2D(&desc, nullptr, &viewData->texture);
 
@@ -200,26 +236,12 @@ namespace PrismaUI::ViewRenderer {
             viewData->textureWidth = width;
             viewData->textureHeight = height;
             logger::debug("View [{}]: Texture/SRV created/resized.", viewData->id);
+            dirty = D3D11_BOX{0, 0, 0, width, height, 1};  // a new texture holds nothing yet
         }
 
-        D3D11_MAPPED_SUBRESOURCE mappedResource;
-        HRESULT hr = d3dContext->Map(viewData->texture, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
-        if (FAILED(hr)) {
-            logger::error("View [{}]: Failed to map texture! HR={:#X}", viewData->id, hr);
-            return;
-        }
-
-        std::byte* source = static_cast<std::byte*>(pixels);
-        std::byte* dest = static_cast<std::byte*>(mappedResource.pData);
-        uint32_t destPitch = mappedResource.RowPitch;
-
-        if (destPitch == stride) {
-            memcpy(dest, source, (size_t)height * stride);
-        } else {
-            for (uint32_t y = 0; y < height; ++y) memcpy(dest + y * destPitch, source + y * stride, stride);
-        }
-
-        d3dContext->Unmap(viewData->texture, 0);
+        const std::byte* source =
+            static_cast<const std::byte*>(pixels) + static_cast<size_t>(dirty.top) * stride + dirty.left * 4;
+        d3dContext->UpdateSubresource(viewData->texture, 0, &dirty, source, stride, 0);
     }
 
     void DrawCursor() {
